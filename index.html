@@ -5,7 +5,7 @@
 
 <meta
   name="viewport"
-  content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  content="width=device-width, initial-scale=1, viewport-fit=cover">
 
 <meta name="theme-color" content="#02070d">
 
@@ -13,36 +13,39 @@
 
 <style>
 
-:root {
+:root{
   --bg:#02070d;
-  --panel:rgba(2,11,20,.88);
-  --panel2:rgba(4,19,32,.92);
+  --panel:#06131f;
+  --panel2:#081a29;
 
   --blue:#27bfff;
   --blue2:#087fc0;
   --blue3:#9ce6ff;
 
   --text:#eefaff;
-  --muted:#79a5bd;
+  --muted:#719bb3;
 
   --success:#52efb4;
   --error:#ff6874;
-
-  --border:rgba(39,191,255,.32);
 }
 
-* {
+/* ================================================
+   GLOBAL
+================================================ */
+
+*{
   box-sizing:border-box;
 }
 
 html,
-body {
+body{
   margin:0;
+  width:100%;
   min-height:100%;
   background:#010409;
 }
 
-body {
+body{
   color:var(--text);
 
   font-family:
@@ -54,299 +57,419 @@ body {
   overflow-x:hidden;
 }
 
-/* =========================================================
-   BACKGROUND
-========================================================= */
+/* ================================================
+   APP
+================================================ */
 
-.background {
-  position:fixed;
-  inset:0;
+.app{
+  width:100%;
+  min-height:100svh;
 
   background:
     linear-gradient(
       180deg,
-      rgba(0,5,11,.04) 0%,
-      rgba(0,5,11,.08) 28%,
-      rgba(1,8,15,.48) 48%,
-      rgba(1,7,13,.92) 68%,
-      rgba(1,5,10,.98) 100%
-    ),
-    url("nexora-terminal-bg.png")
-    center top / cover no-repeat;
-
-  z-index:0;
+      #010409,
+      #02070d
+    );
 }
 
-.background::after {
+/* ================================================
+   HERO / NEXORA WÜRZBURG
+================================================ */
+
+.hero{
+  position:relative;
+
+  height:
+    clamp(
+      210px,
+      29svh,
+      300px
+    );
+
+  overflow:hidden;
+
+  background:
+    url("nexora-terminal-bg.png")
+    center 18% / cover
+    no-repeat;
+
+  border-bottom:
+    1px solid
+    rgba(39,191,255,.25);
+}
+
+.hero::before{
   content:"";
 
   position:absolute;
   inset:0;
 
   background:
-    radial-gradient(
-      circle at 50% 44%,
-      rgba(15,153,224,.06),
-      transparent 35%
+    linear-gradient(
+      180deg,
+      rgba(0,4,9,.03) 0%,
+      rgba(0,5,10,.05) 45%,
+      rgba(2,10,17,.60) 78%,
+      #02070d 100%
     );
 }
 
-/* =========================================================
-   PAGE
-========================================================= */
+.hero::after{
+  content:"";
 
-.page {
-  position:relative;
-  z-index:2;
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
 
-  min-height:100vh;
+  height:55px;
 
+  background:
+    linear-gradient(
+      transparent,
+      #02070d
+    );
+}
+
+.hero-build{
+  position:absolute;
+
+  z-index:3;
+
+  right:12px;
+  bottom:14px;
+
+  color:
+    rgba(123,210,248,.65);
+
+  font-size:6px;
+
+  letter-spacing:1.8px;
+}
+
+/* ================================================
+   MAIN CONTENT
+================================================ */
+
+.content{
   width:100%;
 
-  display:flex;
-  justify-content:center;
+  max-width:520px;
+
+  margin:0 auto;
 
   padding:
-    calc(12px + env(safe-area-inset-top))
+    0
     10px
-    calc(18px + env(safe-area-inset-bottom));
+    calc(
+      14px +
+      env(safe-area-inset-bottom)
+    );
 }
 
-.terminal {
-  width:100%;
-  max-width:560px;
+.title{
+  margin-top:-5px;
 
-  padding-top:330px;
-}
-
-/* =========================================================
-   TITLE
-========================================================= */
-
-.terminal-heading {
   text-align:center;
-
-  margin-bottom:18px;
-
-  text-shadow:
-    0 0 12px rgba(34,178,255,.35);
 }
 
-.heading-main {
-  font-size:14px;
-  letter-spacing:3.5px;
+.title-main{
+  color:#f1fbff;
 
-  color:#f0fbff;
+  font-size:
+    clamp(
+      10px,
+      3vw,
+      13px
+    );
+
+  letter-spacing:2.6px;
 }
 
-.heading-sub {
-  margin-top:7px;
+.title-sub{
+  margin-top:5px;
 
   color:var(--blue3);
 
-  font-size:7px;
-  letter-spacing:2.4px;
+  font-size:6px;
+
+  letter-spacing:1.8px;
 }
 
-/* =========================================================
-   MAIN PANEL
-========================================================= */
+/* ================================================
+   COMPACT SYSTEM STATUS
+================================================ */
 
-.interface-panel {
-  position:relative;
-
-  border:
-    1px solid rgba(39,191,255,.32);
-
-  background:
-    linear-gradient(
-      180deg,
-      rgba(3,15,27,.91),
-      rgba(2,9,17,.96)
-    );
-
-  box-shadow:
-    0 0 32px rgba(0,132,202,.10),
-    inset 0 0 30px rgba(30,179,245,.03);
-
-  padding:
-    14px 12px 16px;
-
-  backdrop-filter:
-    blur(7px);
-}
-
-.interface-panel::before {
-  content:"";
-
-  position:absolute;
-  inset:0;
-
-  pointer-events:none;
-
-  background-image:
-    linear-gradient(
-      rgba(41,185,255,.025) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      rgba(41,185,255,.025) 1px,
-      transparent 1px
-    );
-
-  background-size:
-    22px 22px;
-}
-
-/* =========================================================
-   STATUS BAR
-========================================================= */
-
-.status-grid {
-  position:relative;
-  z-index:2;
-
+.status-strip{
   display:grid;
 
   grid-template-columns:
     repeat(3,1fr);
 
-  gap:7px;
+  gap:5px;
 
-  margin-bottom:14px;
+  margin-top:12px;
 }
 
-.status-card {
-  min-height:55px;
+.status-item{
+  min-height:42px;
 
-  padding:
-    8px 5px;
+  display:flex;
 
-  text-align:center;
+  flex-direction:column;
+
+  align-items:center;
+  justify-content:center;
+
+  padding:5px 3px;
 
   border:
-    1px solid rgba(39,191,255,.19);
+    1px solid
+    rgba(39,191,255,.20);
 
   background:
-    rgba(5,20,33,.60);
+    rgba(5,20,33,.75);
 }
 
-.status-label {
+.status-label{
   color:var(--muted);
 
-  font-size:6px;
-  letter-spacing:1.2px;
+  font-size:5.6px;
+
+  letter-spacing:.9px;
 }
 
-.status-value {
-  margin-top:6px;
-
-  font-size:7px;
-  letter-spacing:1px;
+.status-value{
+  margin-top:4px;
 
   color:var(--success);
+
+  font-size:6px;
+
+  letter-spacing:.8px;
 }
 
-.dot {
+.dot{
   display:inline-block;
 
   width:5px;
   height:5px;
 
-  margin-right:4px;
+  margin-right:3px;
 
   border-radius:50%;
 
   background:var(--success);
 
   box-shadow:
-    0 0 7px rgba(82,239,180,.9);
+    0 0 7px
+    rgba(82,239,180,.9);
 }
 
-/* =========================================================
-   CORE SCANNER
-========================================================= */
+/* ================================================
+   SCANNER
+================================================ */
 
-.scanner-section {
-  position:relative;
-  z-index:2;
-
+.scanner-shell{
   display:flex;
+
   justify-content:center;
+
+  margin:
+    8px auto 6px;
 }
 
-.scan-zone {
+.scan-zone{
   position:relative;
 
-  width:min(78vw,330px);
-  height:min(78vw,330px);
+  width:
+    clamp(
+      220px,
+      72vw,
+      300px
+    );
 
-  max-width:330px;
-  max-height:330px;
+  aspect-ratio:1 / 1;
 
-  min-width:230px;
-  min-height:230px;
+  flex:none;
 
   display:flex;
+
   align-items:center;
+
   justify-content:center;
 }
 
-/* feste Grundringe */
+/* FESTE KREISE */
 
-.base-ring {
+.ring{
   position:absolute;
 
   border-radius:50%;
 }
 
-.r1 {
-  width:97%;
-  height:97%;
+.ring.outer{
+  inset:1.5%;
 
   border:
-    1px solid rgba(57,199,255,.30);
+    1px solid
+    rgba(60,200,255,.27);
 
   box-shadow:
-    0 0 22px rgba(34,170,244,.06);
+    0 0 20px
+    rgba(27,164,230,.07);
 }
 
-.r2 {
-  width:82%;
-  height:82%;
+.ring.mid{
+  inset:13%;
 
   border:
-    1px solid rgba(68,198,255,.26);
+    1px solid
+    rgba(60,200,255,.27);
 }
 
-.r3 {
-  width:65%;
-  height:65%;
+.ring.inner{
+  inset:27%;
 
   border:
-    1px solid rgba(118,221,255,.42);
-
-  box-shadow:
-    inset 0 0 25px rgba(32,166,230,.06);
+    1px solid
+    rgba(133,225,255,.42);
 }
 
-/* äußere Tick-Skala */
+/* ================================================
+   TICKS
+================================================ */
 
-.tick-ring {
+.tick-ring{
   position:absolute;
 
-  width:89%;
-  height:89%;
+  inset:7%;
 
   border-radius:50%;
 
   background:
     repeating-conic-gradient(
-      rgba(113,218,255,.60)
+      rgba(109,214,255,.50)
       0deg 1deg,
+
       transparent
       1deg 5deg
+    );
+
+  -webkit-mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 2px),
+      #000 calc(100% - 1px)
+    );
+
+  mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 2px),
+      #000 calc(100% - 1px)
+    );
+
+  opacity:.55;
+}
+
+/* ================================================
+   ROTIERENDE SEGMENTE
+================================================ */
+
+/*
+   Der Clou:
+   Die Segmente sind ein echter Kreis
+   aus conic-gradient.
+   Keine festen Pixelpositionen mehr.
+*/
+
+.energy-segments{
+  position:absolute;
+
+  inset:4%;
+
+  border-radius:50%;
+
+  background:
+    conic-gradient(
+
+      transparent 0deg 15deg,
+
+      #70d8ff 15deg 28deg,
+
+      transparent 28deg 73deg,
+
+      #2abfff 73deg 88deg,
+
+      transparent 88deg 142deg,
+
+      #96e8ff 142deg 155deg,
+
+      transparent 155deg 215deg,
+
+      #27bfff 215deg 231deg,
+
+      transparent 231deg 291deg,
+
+      #83e2ff 291deg 304deg,
+
+      transparent 304deg 360deg
+    );
+
+  -webkit-mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 7px),
+      black calc(100% - 6px)
+    );
+
+  mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 7px),
+      black calc(100% - 6px)
+    );
+
+  filter:
+    drop-shadow(
+      0 0 7px
+      rgba(45,192,255,.8)
+    );
+
+  animation:
+    outerSpin
+    10s linear infinite;
+}
+
+.energy-segments.inner{
+  inset:18%;
+
+  background:
+    conic-gradient(
+
+      transparent 0deg 35deg,
+
+      rgba(116,220,255,.8)
+      35deg 42deg,
+
+      transparent 42deg 115deg,
+
+      rgba(39,191,255,.75)
+      115deg 124deg,
+
+      transparent 124deg 205deg,
+
+      rgba(150,232,255,.8)
+      205deg 214deg,
+
+      transparent 214deg 295deg,
+
+      rgba(39,191,255,.7)
+      295deg 305deg,
+
+      transparent 305deg 360deg
     );
 
   -webkit-mask:
@@ -363,301 +486,222 @@ body {
       black calc(100% - 2px)
     );
 
-  opacity:.55;
+  animation:
+    innerSpin
+    15s linear infinite;
 }
 
-/* rotierende Kurzsegmente */
+@keyframes outerSpin{
+  to{
+    transform:rotate(360deg);
+  }
+}
 
-.segment-layer {
+@keyframes innerSpin{
+  to{
+    transform:rotate(-360deg);
+  }
+}
+
+/* ================================================
+   FOUR FIXED MARKERS
+================================================ */
+
+.marker{
   position:absolute;
 
-  width:92%;
-  height:92%;
+  width:10px;
+  height:10px;
 
-  border-radius:50%;
+  border-style:solid;
 
-  animation:
-    rotateSegments
-    11s
-    linear
-    infinite;
-}
+  border-color:
+    rgba(158,232,255,.75);
 
-.segment-layer.secondary {
-  width:76%;
-  height:76%;
-
-  animation:
-    rotateSegmentsReverse
-    16s
-    linear
-    infinite;
-}
-
-.segment {
-  position:absolute;
-
-  left:50%;
-  top:50%;
-
-  width:15%;
-  height:5px;
-
-  margin-left:-7.5%;
-  margin-top:-2px;
-
-  border-radius:10px;
-
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      #86e0ff,
-      #25bfff,
-      transparent
+  filter:
+    drop-shadow(
+      0 0 4px
+      rgba(59,190,255,.7)
     );
-
-  box-shadow:
-    0 0 8px rgba(51,194,255,.75),
-    0 0 15px rgba(51,194,255,.28);
-
-  transform-origin:
-    50%
-    calc(50% + 138px);
 }
 
-/*
-Segmente werden mit translate
-auf einer echten Kreisbahn gesetzt
-*/
-
-.seg1 {
-  transform:
-    rotate(10deg)
-    translateY(-138px);
-}
-
-.seg2 {
-  transform:
-    rotate(86deg)
-    translateY(-138px);
-}
-
-.seg3 {
-  transform:
-    rotate(169deg)
-    translateY(-138px);
-}
-
-.seg4 {
-  transform:
-    rotate(248deg)
-    translateY(-138px);
-}
-
-.seg5 {
-  transform:
-    rotate(318deg)
-    translateY(-138px);
-}
-
-/* innere Segmente */
-
-.secondary .segment {
-  width:11%;
-  height:3px;
-
-  margin-left:-5.5%;
-
-  transform-origin:
-    50%
-    calc(50% + 112px);
-
-  opacity:.80;
-}
-
-.secondary .seg1 {
-  transform:
-    rotate(30deg)
-    translateY(-112px);
-}
-
-.secondary .seg2 {
-  transform:
-    rotate(125deg)
-    translateY(-112px);
-}
-
-.secondary .seg3 {
-  transform:
-    rotate(222deg)
-    translateY(-112px);
-}
-
-.secondary .seg4 {
-  transform:
-    rotate(305deg)
-    translateY(-112px);
-}
-
-.secondary .seg5 {
-  display:none;
-}
-
-/* feste N-Core Marker */
-
-.marker {
-  position:absolute;
-
-  width:9px;
-  height:9px;
-
-  border-top:
-    1px solid rgba(139,226,255,.8);
-
-  border-left:
-    1px solid rgba(139,226,255,.8);
+.marker.top{
+  top:5%;
+  left:50%;
 
   transform:
+    translateX(-50%)
     rotate(45deg);
 
-  opacity:.75;
+  border-width:
+    1px 0 0 1px;
 }
 
-.m-top {
-  top:5%;
-}
-
-.m-right {
+.marker.right{
   right:5%;
+  top:50%;
+
   transform:
+    translateY(-50%)
     rotate(135deg);
+
+  border-width:
+    1px 0 0 1px;
 }
 
-.m-bottom {
+.marker.bottom{
   bottom:5%;
+  left:50%;
+
   transform:
+    translateX(-50%)
     rotate(225deg);
+
+  border-width:
+    1px 0 0 1px;
 }
 
-.m-left {
+.marker.left{
   left:5%;
+  top:50%;
+
   transform:
+    translateY(-50%)
     rotate(315deg);
+
+  border-width:
+    1px 0 0 1px;
 }
 
-/* center */
+/* ================================================
+   CROSSHAIR
+================================================ */
 
-.center-core {
+.axis-x,
+.axis-y{
   position:absolute;
 
-  width:54%;
-  height:54%;
+  background:
+    rgba(42,184,255,.09);
+}
+
+.axis-x{
+  width:90%;
+  height:1px;
+}
+
+.axis-y{
+  width:1px;
+  height:90%;
+}
+
+/* ================================================
+   CENTER CORE
+================================================ */
+
+.center-core{
+  position:absolute;
+
+  inset:29%;
 
   border-radius:50%;
-
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  border:
-    1px solid rgba(127,220,255,.5);
 
   background:
     radial-gradient(
       circle,
-      rgba(24,94,139,.18),
-      rgba(2,12,21,.85) 68%
+      rgba(22,94,141,.17),
+      rgba(2,12,21,.88)
+      72%
     );
 
+  border:
+    1px solid
+    rgba(130,224,255,.48);
+
   box-shadow:
-    inset 0 0 30px rgba(28,172,238,.08),
-    0 0 18px rgba(25,166,235,.08);
+    inset
+    0 0 28px
+    rgba(30,169,235,.07),
+
+    0 0 18px
+    rgba(25,166,235,.07);
 }
 
-/* axis */
+/* ================================================
+   SCAN BRACKETS
+================================================ */
 
-.axis-x,
-.axis-y {
+.bracket{
   position:absolute;
 
-  background:
-    rgba(47,177,238,.11);
-}
+  width:18px;
+  height:18px;
 
-.axis-x {
-  width:94%;
-  height:1px;
-}
-
-.axis-y {
-  width:1px;
-  height:94%;
-}
-
-/* scan brackets */
-
-.scan-bracket {
-  position:absolute;
-
-  width:20px;
-  height:20px;
-
-  border-color:#b9efff;
+  border-color:
+    rgba(185,239,255,.9);
 
   filter:
     drop-shadow(
-      0 0 5px rgba(82,199,255,.7)
+      0 0 5px
+      rgba(82,199,255,.7)
     );
 }
 
-.b1 {
-  left:37%;
-  top:36%;
+.bracket.b1{
+  left:36%;
+  top:35%;
 
   border-left:2px solid;
   border-top:2px solid;
 }
 
-.b2 {
-  right:37%;
-  top:36%;
+.bracket.b2{
+  right:36%;
+  top:35%;
 
   border-right:2px solid;
   border-top:2px solid;
 }
 
-.b3 {
-  left:37%;
-  bottom:36%;
+.bracket.b3{
+  left:36%;
+  bottom:35%;
 
   border-left:2px solid;
   border-bottom:2px solid;
 }
 
-.b4 {
-  right:37%;
-  bottom:36%;
+.bracket.b4{
+  right:36%;
+  bottom:35%;
 
   border-right:2px solid;
   border-bottom:2px solid;
 }
 
-/* copy */
+/* ================================================
+   CENTER TEXT
+================================================ */
 
-.scan-copy {
+.scan-copy{
   position:relative;
+
   z-index:10;
 
-  text-align:center;
+  width:45%;
 
-  width:54%;
+  text-align:center;
 }
 
-.nfc-symbol {
-  color:#8ce5ff;
+.nfc-symbol{
+  color:#91e5ff;
 
-  font-size:25px;
+  font-size:
+    clamp(
+      20px,
+      6vw,
+      27px
+    );
 
   line-height:1;
 
@@ -665,426 +709,406 @@ auf einer echten Kreisbahn gesetzt
     rotate(90deg);
 
   text-shadow:
-    0 0 9px rgba(55,191,255,.85);
+    0 0 9px
+    rgba(55,191,255,.8);
 }
 
-.scan-main {
-  margin-top:12px;
+.scan-main{
+  margin-top:10px;
 
-  color:#f2fbff;
+  color:#f1fbff;
 
-  font-size:11px;
-  letter-spacing:1.8px;
+  font-size:
+    clamp(
+      8px,
+      2.6vw,
+      10px
+    );
+
+  letter-spacing:1.5px;
 }
 
-.scan-sub {
-  margin-top:5px;
+.scan-sub{
+  margin-top:4px;
 
-  color:#769eb5;
+  color:#739bb2;
 
-  font-size:6px;
-  letter-spacing:1.1px;
+  font-size:
+    clamp(
+      5px,
+      1.6vw,
+      6px
+    );
+
+  letter-spacing:.9px;
 }
 
-.scan-small {
-  margin-top:7px;
+.scan-small{
+  margin-top:6px;
 
   color:#50bde8;
 
-  font-size:5.6px;
+  font-size:
+    clamp(
+      5px,
+      1.5vw,
+      6px
+    );
+
   line-height:1.4;
 
   overflow-wrap:anywhere;
 }
 
-/* =========================================================
-   ANIMATION
-========================================================= */
-
-@keyframes rotateSegments {
-  from {
-    transform:rotate(0deg);
-  }
-
-  to {
-    transform:rotate(360deg);
-  }
-}
-
-@keyframes rotateSegmentsReverse {
-  from {
-    transform:rotate(360deg);
-  }
-
-  to {
-    transform:rotate(0deg);
-  }
-}
-
-@keyframes centerPulse {
-
-  0%,
-  100% {
-    box-shadow:
-      inset 0 0 30px rgba(28,172,238,.08),
-      0 0 18px rgba(25,166,235,.08);
-  }
-
-  50% {
-    box-shadow:
-      inset 0 0 38px rgba(28,172,238,.14),
-      0 0 30px rgba(25,166,235,.20);
-  }
-}
-
-/* SCANNING */
+/* ================================================
+   SCAN STATES
+================================================ */
 
 .scan-zone.active
-.segment-layer {
-  animation-duration:1.5s;
+.energy-segments{
+  animation-duration:
+    1.3s;
 }
 
 .scan-zone.active
-.segment-layer.secondary {
-  animation-duration:.9s;
+.energy-segments.inner{
+  animation-duration:
+    .8s;
 }
 
 .scan-zone.active
-.center-core {
+.center-core{
   animation:
-    centerPulse
-    .85s
+    pulse
+    .8s
     ease-in-out
     infinite;
+}
+
+@keyframes pulse{
+
+  0%,
+  100%{
+    box-shadow:
+      inset
+      0 0 28px
+      rgba(30,169,235,.07),
+
+      0 0 18px
+      rgba(25,166,235,.07);
+  }
+
+  50%{
+    box-shadow:
+      inset
+      0 0 38px
+      rgba(30,169,235,.16),
+
+      0 0 30px
+      rgba(25,166,235,.22);
+  }
 }
 
 /* SUCCESS */
 
 .scan-zone.success
-.segment {
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      #a2ffe0,
-      #52efb4,
-      transparent
+.energy-segments,
+.scan-zone.success
+.energy-segments.inner{
+  filter:
+    hue-rotate(65deg)
+    drop-shadow(
+      0 0 8px
+      rgba(82,239,180,.8)
     );
-
-  box-shadow:
-    0 0 10px rgba(82,239,180,.8);
 }
 
 .scan-zone.success
-.center-core {
+.center-core{
   border-color:
     rgba(82,239,180,.75);
-
-  box-shadow:
-    inset 0 0 30px rgba(82,239,180,.10),
-    0 0 30px rgba(82,239,180,.13);
 }
 
 /* ERROR */
 
 .scan-zone.error
-.segment {
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      #ff9aa2,
-      #ff6874,
-      transparent
+.energy-segments,
+.scan-zone.error
+.energy-segments.inner{
+  filter:
+    hue-rotate(145deg)
+    saturate(1.5)
+    drop-shadow(
+      0 0 8px
+      rgba(255,104,116,.65)
     );
-
-  box-shadow:
-    0 0 9px rgba(255,104,116,.55);
 }
 
 .scan-zone.error
-.center-core {
+.center-core{
   border-color:
-    rgba(255,104,116,.72);
+    rgba(255,104,116,.75);
 }
 
-/* =========================================================
-   INPUTS
-========================================================= */
+/* ================================================
+   DATA INPUT
+================================================ */
 
-.data-grid {
-  position:relative;
-  z-index:2;
-
+.data-grid{
   display:grid;
-  grid-template-columns:1fr 1fr;
 
-  gap:8px;
+  grid-template-columns:
+    1fr 1fr;
 
-  margin-top:12px;
+  gap:6px;
 }
 
-.field {
-  padding:8px;
+.field{
+  padding:7px;
 
   border:
-    1px solid rgba(39,191,255,.27);
+    1px solid
+    rgba(39,191,255,.26);
 
   background:
-    rgba(4,18,30,.72);
+    rgba(4,18,30,.80);
 }
 
-.field label {
+.field label{
   display:block;
 
-  margin-bottom:6px;
+  margin-bottom:5px;
 
   color:var(--muted);
 
-  font-size:6px;
-  letter-spacing:1.2px;
+  font-size:5.5px;
+
+  letter-spacing:1px;
 }
 
-input {
+input{
   width:100%;
-  height:44px;
+
+  height:42px;
 
   border:
-    1px solid rgba(39,191,255,.34);
+    1px solid
+    rgba(39,191,255,.33);
 
   outline:none;
 
   background:
-    rgba(1,9,16,.84);
+    rgba(1,9,16,.88);
 
-  color:#f1fbff;
+  color:white;
 
   text-align:center;
 
   font-size:15px;
 
-  letter-spacing:1.3px;
+  letter-spacing:1.2px;
 }
 
-input:focus {
+input:focus{
   border-color:var(--blue);
 
   box-shadow:
-    0 0 10px rgba(39,191,255,.12);
+    0 0 10px
+    rgba(39,191,255,.12);
 }
 
-/* =========================================================
-   BUTTON
-========================================================= */
+/* ================================================
+   SCAN BUTTON
+================================================ */
 
-.scan-button {
-  position:relative;
-  z-index:2;
-
+.scan-button{
   width:100%;
 
-  min-height:56px;
+  height:54px;
 
-  margin-top:10px;
+  margin-top:7px;
 
   border:
-    1px solid rgba(65,201,255,.65);
-
-  color:white;
+    1px solid
+    rgba(67,202,255,.62);
 
   background:
     linear-gradient(
       180deg,
-      rgba(15,109,165,.72),
-      rgba(5,52,86,.82)
+      rgba(13,111,168,.72),
+      rgba(5,49,82,.87)
     );
 
-  letter-spacing:2.8px;
+  color:#f4fcff;
 
-  font-size:10px;
+  letter-spacing:2.4px;
+
+  font-size:9px;
 
   cursor:pointer;
 
-  overflow:hidden;
-
   box-shadow:
-    inset 0 0 19px rgba(39,191,255,.12),
-    0 0 15px rgba(39,191,255,.07);
+    inset
+    0 0 18px
+    rgba(39,191,255,.12);
 }
 
-.scan-button::after {
-  content:"";
-
-  position:absolute;
-
-  top:0;
-  left:-40%;
-
-  width:26%;
-  height:100%;
-
-  transform:
-    skewX(-20deg);
-
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      rgba(157,230,255,.27),
-      transparent
-    );
-
-  animation:
-    buttonSweep 4s
-    infinite;
-}
-
-@keyframes buttonSweep {
-
-  0%,
-  68% {
-    left:-40%;
-  }
-
-  100% {
-    left:125%;
-  }
-}
-
-.scan-button:disabled {
+.scan-button:disabled{
   opacity:.38;
 
   cursor:default;
 }
 
-/* =========================================================
-   MESSAGE
-========================================================= */
+/* ================================================
+   SYSTEM MESSAGE
+================================================ */
 
-.message {
-  position:relative;
-  z-index:2;
+.message{
+  margin-top:7px;
 
-  margin-top:10px;
+  padding:9px 10px;
 
-  min-height:92px;
-
-  padding:12px;
+  min-height:72px;
 
   border:
-    1px solid rgba(39,191,255,.23);
+    1px solid
+    rgba(39,191,255,.22);
 
   background:
-    rgba(2,12,21,.78);
+    rgba(2,12,21,.84);
 }
 
-.message-label {
-  margin-bottom:8px;
+.message-label{
+  margin-bottom:6px;
 
-  color:#64acce;
+  color:#65adcf;
 
-  font-size:6px;
-  letter-spacing:1.4px;
+  font-size:5.5px;
+
+  letter-spacing:1.2px;
 }
 
-#status {
-  color:#ecf9ff;
+#status{
+  color:#edfaff;
 
-  font-size:9px;
+  font-size:8px;
 
-  line-height:1.55;
+  letter-spacing:.8px;
 
-  letter-spacing:1px;
+  line-height:1.45;
 
   white-space:pre-line;
 }
 
-#status.success {
+#status.success{
   color:var(--success);
 }
 
-#status.error {
+#status.error{
   color:var(--error);
 }
 
-#status.uid {
+#status.uid{
   color:var(--blue3);
 }
 
-/* =========================================================
+/* ================================================
    FOOTER
-========================================================= */
+================================================ */
 
-.footer {
-  position:relative;
-  z-index:2;
-
-  margin-top:12px;
-
-  padding-top:10px;
-
-  border-top:
-    1px solid rgba(39,191,255,.18);
-
+.footer{
   display:flex;
 
   justify-content:space-between;
 
-  gap:12px;
+  gap:10px;
 
-  color:#5b8ca7;
+  margin-top:8px;
 
-  font-size:5.8px;
-  letter-spacing:1.1px;
+  padding-top:8px;
+
+  border-top:
+    1px solid
+    rgba(39,191,255,.15);
+
+  color:#537f98;
+
+  font-size:5px;
+
+  letter-spacing:.8px;
 }
 
-.footer strong {
-  color:#62c7f6;
+.footer strong{
+  color:#5bc4f4;
 
   font-weight:400;
 }
 
-.build {
-  margin-top:10px;
-
-  color:#4297c2;
+.build{
+  margin-top:7px;
 
   text-align:center;
 
-  font-size:6px;
-  letter-spacing:2px;
+  color:#3e91ba;
+
+  font-size:5.5px;
+
+  letter-spacing:1.8px;
 }
 
-/* =========================================================
-   SMALL PHONES
-========================================================= */
+/* ================================================
+   VERY SMALL PHONES
+================================================ */
 
-@media (max-width:430px) {
+@media(max-width:360px){
 
-  .terminal {
-    padding-top:305px;
+  .hero{
+    height:200px;
   }
 
-  .interface-panel {
-    padding:
-      12px 8px 14px;
+  .scan-zone{
+    width:215px;
   }
 
-  .scan-zone {
-    width:min(82vw,310px);
-    height:min(82vw,310px);
+  .content{
+    padding-left:7px;
+    padding-right:7px;
   }
 
-  .heading-main {
-    font-size:11px;
+  .status-item{
+    min-height:38px;
   }
 
-  .scan-main {
-    font-size:9px;
+  .scan-button{
+    height:50px;
+  }
+}
+
+/* ================================================
+   SHORT SCREENS
+================================================ */
+
+@media(max-height:700px){
+
+  .hero{
+    height:190px;
   }
 
-  .footer {
-    font-size:5px;
+  .scan-zone{
+    width:
+      clamp(
+        205px,
+        62vw,
+        260px
+      );
+  }
+
+  .status-strip{
+    margin-top:8px;
+  }
+
+  .scanner-shell{
+    margin-top:4px;
   }
 }
 
@@ -1093,213 +1117,218 @@ input:focus {
 
 <body>
 
-<div class="background"></div>
+<div class="app">
 
-<div class="page">
 
-<div class="terminal">
+<!-- HERO -->
 
-<div class="terminal-heading">
+<div class="hero">
 
-  <div class="heading-main">
+  <div class="hero-build">
+    NEXORA // WÜRZBURG
+  </div>
+
+</div>
+
+
+<!-- CONTENT -->
+
+<main class="content">
+
+
+<div class="title">
+
+  <div class="title-main">
     N-CORE REGISTRATION TERMINAL
   </div>
 
-  <div class="heading-sub">
+  <div class="title-sub">
     SCAN // IDENTIFY // REGISTER
   </div>
 
 </div>
 
 
-<div class="interface-panel">
-
-
 <!-- SYSTEM STATUS -->
 
-<div class="status-grid">
+<div class="status-strip">
 
-  <div class="status-card">
 
-    <div class="status-label">
-      SYSTEM
-    </div>
+<div class="status-item">
 
-    <div class="status-value">
-      <span class="dot"></span>
-      ONLINE
-    </div>
+  <div class="status-label">
+    SYSTEM
+  </div>
+
+  <div class="status-value">
+    <span class="dot"></span>
+    ONLINE
+  </div>
+
+</div>
+
+
+<div class="status-item">
+
+  <div class="status-label">
+    DATABASE
+  </div>
+
+  <div
+    class="status-value"
+    id="databaseState">
+
+    <span class="dot"></span>
+    LINKING
 
   </div>
 
+</div>
 
-  <div class="status-card">
 
-    <div class="status-label">
-      DATABASE
-    </div>
+<div class="status-item">
 
-    <div
-      class="status-value"
-      id="databaseState">
+  <div class="status-label">
+    NFC
+  </div>
 
-      <span class="dot"></span>
-      LINKING
+  <div
+    class="status-value"
+    id="nfcState">
 
-    </div>
+    <span class="dot"></span>
+    READY
 
   </div>
 
+</div>
 
-  <div class="status-card">
-
-    <div class="status-label">
-      NFC INTERFACE
-    </div>
-
-    <div
-      class="status-value"
-      id="nfcState">
-
-      <span class="dot"></span>
-      READY
-
-    </div>
-
-  </div>
 
 </div>
 
 
 <!-- SCANNER -->
 
-<div class="scanner-section">
+<div class="scanner-shell">
+
 
 <div
   class="scan-zone"
   id="scanZone">
 
 
-  <div class="axis-x"></div>
-  <div class="axis-y"></div>
+<div class="axis-x"></div>
+<div class="axis-y"></div>
 
 
-  <div class="base-ring r1"></div>
-  <div class="base-ring r2"></div>
-  <div class="base-ring r3"></div>
+<div class="ring outer"></div>
+<div class="ring mid"></div>
+<div class="ring inner"></div>
 
 
-  <div class="tick-ring"></div>
+<div class="tick-ring"></div>
 
 
-  <div class="segment-layer">
+<div class="energy-segments"></div>
 
-    <div class="segment seg1"></div>
-    <div class="segment seg2"></div>
-    <div class="segment seg3"></div>
-    <div class="segment seg4"></div>
-    <div class="segment seg5"></div>
-
-  </div>
+<div class="energy-segments inner"></div>
 
 
-  <div class="segment-layer secondary">
-
-    <div class="segment seg1"></div>
-    <div class="segment seg2"></div>
-    <div class="segment seg3"></div>
-    <div class="segment seg4"></div>
-    <div class="segment seg5"></div>
-
-  </div>
+<div class="marker top"></div>
+<div class="marker right"></div>
+<div class="marker bottom"></div>
+<div class="marker left"></div>
 
 
-  <div class="marker m-top"></div>
-  <div class="marker m-right"></div>
-  <div class="marker m-bottom"></div>
-  <div class="marker m-left"></div>
+<div class="center-core"></div>
 
 
-  <div class="center-core"></div>
+<div class="bracket b1"></div>
+<div class="bracket b2"></div>
+<div class="bracket b3"></div>
+<div class="bracket b4"></div>
 
 
-  <div class="scan-bracket b1"></div>
-  <div class="scan-bracket b2"></div>
-  <div class="scan-bracket b3"></div>
-  <div class="scan-bracket b4"></div>
+<div class="scan-copy">
 
 
-  <div class="scan-copy">
+<div class="nfc-symbol">
+  )))
+</div>
 
-    <div class="nfc-symbol">
-      )))
-    </div>
 
-    <div
-      class="scan-main"
-      id="scanMain">
+<div
+  class="scan-main"
+  id="scanMain">
 
-      SYSTEM READY
+  SYSTEM READY
 
-    </div>
+</div>
 
-    <div
-      class="scan-sub"
-      id="scanSub">
 
-      WAITING FOR N-CORE
+<div
+  class="scan-sub"
+  id="scanSub">
 
-    </div>
+  WAITING FOR N-CORE
 
-    <div
-      class="scan-small"
-      id="scanSmall">
+</div>
 
-      NFC ENERGY INTERFACE
 
-    </div>
+<div
+  class="scan-small"
+  id="scanSmall">
 
-  </div>
+  NFC ENERGY INTERFACE
+
+</div>
+
+
+</div>
 
 </div>
 
 </div>
 
 
-<!-- INPUT -->
+<!-- DATA INPUT -->
 
 <div class="data-grid">
 
-  <div class="field">
 
-    <label>
-      N-CORE IDENTIFIER
-    </label>
+<div class="field">
 
-    <input
-      id="core"
-      type="text"
-      placeholder="NC-001">
+<label>
+  N-CORE IDENTIFIER
+</label>
 
-  </div>
-
-
-  <div class="field">
-
-    <label>
-      STORED ENERGY
-    </label>
-
-    <input
-      id="energy"
-      type="number"
-      inputmode="numeric"
-      placeholder="000">
-
-  </div>
+<input
+  id="core"
+  type="text"
+  placeholder="NC-001">
 
 </div>
 
+
+<div class="field">
+
+<label>
+  STORED ENERGY
+</label>
+
+<input
+  id="energy"
+  type="number"
+  inputmode="numeric"
+  placeholder="000">
+
+</div>
+
+
+</div>
+
+
+<!-- SCAN BUTTON -->
 
 <button
   class="scan-button"
@@ -1307,71 +1336,76 @@ input:focus {
   onclick="scanNFC()"
   disabled>
 
-  INITIALIZE NFC SCAN
+INITIALIZE NFC SCAN
 
 </button>
 
 
+<!-- MESSAGE -->
+
 <div class="message">
 
-  <div class="message-label">
-    SYSTEM MESSAGE
-  </div>
+<div class="message-label">
+SYSTEM MESSAGE
+</div>
 
-  <div id="status">
-    CONNECTING TO NEXORA DATABASE...
-  </div>
+<div id="status">
+CONNECTING TO NEXORA DATABASE...
+</div>
 
 </div>
 
 
+<!-- FOOTER -->
+
 <div class="footer">
 
-  <div>
-    <strong>NEXORA</strong>
-    // CENTRAL OPERATIONS
-  </div>
+<div>
+<strong>NEXORA</strong>
+ // CENTRAL OPERATIONS
+</div>
 
-  <div>
-    WÜRZBURG // FIELD NETWORK
-  </div>
+<div>
+WÜRZBURG // FIELD NETWORK
+</div>
 
 </div>
 
 
 <div class="build">
-  SYSTEM BUILD // REG-1.1
+SYSTEM BUILD // REG-1.2 MOBILE
 </div>
 
 
-</div>
-</div>
+</main>
+
 </div>
 
 
 <script>
 
-/* =========================================================
+/* ================================================
    API
-========================================================= */
+================================================ */
 
 const API =
 "https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
 
 let scanRunning = false;
+
 let scanController = null;
 
 
-/* =========================================================
-   VISUAL STATES
-========================================================= */
+/* ================================================
+   UI
+================================================ */
 
 function setScanVisual(
   mode,
   main,
   sub,
   small = "NFC ENERGY INTERFACE"
-) {
+){
 
   const zone =
     document.getElementById("scanZone");
@@ -1382,7 +1416,7 @@ function setScanVisual(
     "error"
   );
 
-  if (mode) {
+  if(mode){
     zone.classList.add(mode);
   }
 
@@ -1400,7 +1434,7 @@ function setScanVisual(
 }
 
 
-function setDatabaseState(text) {
+function setDatabaseState(text){
 
   document
     .getElementById("databaseState")
@@ -1410,7 +1444,7 @@ function setDatabaseState(text) {
 }
 
 
-function setNfcState(text) {
+function setNfcState(text){
 
   document
     .getElementById("nfcState")
@@ -1420,63 +1454,70 @@ function setNfcState(text) {
 }
 
 
-/* =========================================================
+/* ================================================
    JSONP
-========================================================= */
+================================================ */
 
-function apiRequest(params) {
+function apiRequest(params){
 
-  return new Promise((resolve, reject) => {
+  return new Promise(
+    (resolve,reject)=>{
 
-    const callbackName =
-      "nexoraCallback_" +
-      Date.now() +
-      "_" +
-      Math.floor(
-        Math.random() * 100000
-      );
-
-    const script =
-      document.createElement("script");
-
-    const timeout =
-      setTimeout(() => {
-
-        cleanup();
-
-        reject(
-          new Error(
-            "SERVER RESPONSE TIMEOUT"
-          )
+      const callbackName =
+        "nexoraCallback_" +
+        Date.now() +
+        "_" +
+        Math.floor(
+          Math.random()*100000
         );
 
-      }, 10000);
+      const script =
+        document.createElement("script");
+
+      const timeout =
+        setTimeout(()=>{
+
+          cleanup();
+
+          reject(
+            new Error(
+              "SERVER RESPONSE TIMEOUT"
+            )
+          );
+
+        },10000);
 
 
-    function cleanup() {
+      function cleanup(){
 
-      clearTimeout(timeout);
+        clearTimeout(timeout);
 
-      if (script.parentNode) {
+        if(script.parentNode){
 
-        script.parentNode
-          .removeChild(script);
+          script.parentNode
+            .removeChild(script);
+        }
+
+        try{
+
+          delete window[
+            callbackName
+          ];
+
+        }
+
+        catch(error){
+
+          window[
+            callbackName
+          ] = undefined;
+        }
       }
 
-      try {
 
-        delete window[callbackName];
-
-      } catch(error) {
-
-        window[callbackName] =
-          undefined;
-      }
-    }
-
-
-    window[callbackName] =
-      data => {
+      window[
+        callbackName
+      ] = data=>{
 
         cleanup();
 
@@ -1484,60 +1525,79 @@ function apiRequest(params) {
       };
 
 
-    const query =
-      new URLSearchParams({
-        ...params,
-        callback: callbackName,
-        _: Date.now()
-      });
+      const query =
+        new URLSearchParams({
+
+          ...params,
+
+          callback:
+            callbackName,
+
+          _:
+            Date.now()
+
+        });
 
 
-    script.onerror =
-      () => {
+      script.onerror =
+        ()=>{
 
-        cleanup();
+          cleanup();
 
-        reject(
-          new Error(
-            "SERVER CONNECTION ERROR"
-          )
-        );
-      };
-
-
-    script.src =
-      API +
-      "?" +
-      query.toString();
+          reject(
+            new Error(
+              "SERVER CONNECTION ERROR"
+            )
+          );
+        };
 
 
-    document
-      .body
-      .appendChild(script);
-  });
+      script.src =
+        API +
+        "?" +
+        query.toString();
+
+
+      document
+        .body
+        .appendChild(script);
+
+    }
+  );
 }
 
 
-/* =========================================================
+/* ================================================
    INITIALIZE
-========================================================= */
+================================================ */
 
-async function initializeTerminal() {
+async function initializeTerminal(){
 
   const status =
-    document.getElementById("status");
+    document.getElementById(
+      "status"
+    );
 
   const button =
-    document.getElementById("scanButton");
+    document.getElementById(
+      "scanButton"
+    );
 
   const coreInput =
-    document.getElementById("core");
+    document.getElementById(
+      "core"
+    );
 
   const energyInput =
-    document.getElementById("energy");
+    document.getElementById(
+      "energy"
+    );
 
 
-  setDatabaseState("LINKING");
+  setDatabaseState(
+    "LINKING"
+  );
+
 
   setScanVisual(
     "active",
@@ -1546,7 +1606,7 @@ async function initializeTerminal() {
   );
 
 
-  try {
+  try{
 
     const response =
       await apiRequest({
@@ -1554,7 +1614,7 @@ async function initializeTerminal() {
       });
 
 
-    if (!response.ok) {
+    if(!response.ok){
 
       throw new Error(
         response.error ||
@@ -1563,10 +1623,12 @@ async function initializeTerminal() {
     }
 
 
-    setDatabaseState("CONNECTED");
+    setDatabaseState(
+      "CONNECTED"
+    );
 
 
-    if (!response.nextFreeCore) {
+    if(!response.nextFreeCore){
 
       setScanVisual(
         "success",
@@ -1617,9 +1679,13 @@ async function initializeTerminal() {
 
     energyInput.focus();
 
-  } catch(error) {
+  }
 
-    setDatabaseState("OFFLINE");
+  catch(error){
+
+    setDatabaseState(
+      "OFFLINE"
+    );
 
     setScanVisual(
       "error",
@@ -1640,25 +1706,29 @@ async function initializeTerminal() {
 }
 
 
-/* =========================================================
+/* ================================================
    NFC SCAN
-========================================================= */
+================================================ */
 
-async function scanNFC() {
+async function scanNFC(){
 
   const status =
-    document.getElementById("status");
+    document.getElementById(
+      "status"
+    );
 
   const button =
-    document.getElementById("scanButton");
+    document.getElementById(
+      "scanButton"
+    );
 
 
-  if (scanRunning) {
+  if(scanRunning){
     return;
   }
 
 
-  if (!("NDEFReader" in window)) {
+  if(!("NDEFReader" in window)){
 
     setScanVisual(
       "error",
@@ -1692,7 +1762,7 @@ async function scanNFC() {
       .trim();
 
 
-  if (!/^NC-\d{3}$/.test(core)) {
+  if(!/^NC-\d{3}$/.test(core)){
 
     setScanVisual(
       "error",
@@ -1718,10 +1788,10 @@ async function scanNFC() {
     );
 
 
-  if (
+  if(
     coreNumber < 1 ||
     coreNumber > 200
-  ) {
+  ){
 
     setScanVisual(
       "error",
@@ -1740,7 +1810,7 @@ async function scanNFC() {
   }
 
 
-  if (!energy) {
+  if(!energy){
 
     setScanVisual(
       "error",
@@ -1758,11 +1828,13 @@ async function scanNFC() {
   }
 
 
-  try {
+  try{
 
-    scanRunning = true;
+    scanRunning =
+      true;
 
-    button.disabled = true;
+    button.disabled =
+      true;
 
 
     scanController =
@@ -1773,31 +1845,35 @@ async function scanNFC() {
       new NDEFReader();
 
 
-    let handled = false;
+    let handled =
+      false;
 
 
     reader.onreading =
-      async event => {
+      async event=>{
 
 
-        if (
+        if(
           handled ||
           !scanRunning
-        ) {
+        ){
           return;
         }
 
 
-        handled = true;
+        handled =
+          true;
 
-        scanRunning = false;
+        scanRunning =
+          false;
 
 
-        if (scanController) {
+        if(scanController){
 
           scanController.abort();
 
-          scanController = null;
+          scanController =
+            null;
         }
 
 
@@ -1825,9 +1901,10 @@ async function scanNFC() {
             .toUpperCase();
 
 
-        if (!uid) {
+        if(!uid){
 
-          button.disabled = false;
+          button.disabled =
+            false;
 
           setScanVisual(
             "error",
@@ -1846,7 +1923,9 @@ async function scanNFC() {
         }
 
 
-        setNfcState("DETECTED");
+        setNfcState(
+          "DETECTED"
+        );
 
 
         setScanVisual(
@@ -1874,18 +1953,27 @@ async function scanNFC() {
           "CONNECTING TO NEXORA DATABASE...";
 
 
-        try {
+        try{
 
           const response =
             await apiRequest({
-              action:"register",
-              core:core,
-              energy:energy,
-              uid:uid
+
+              action:
+                "register",
+
+              core:
+                core,
+
+              energy:
+                energy,
+
+              uid:
+                uid
+
             });
 
 
-          if (!response.ok) {
+          if(!response.ok){
 
             setScanVisual(
               "error",
@@ -1905,9 +1993,12 @@ async function scanNFC() {
               "\n\nNO DATA CHANGED";
 
 
-            setNfcState("READY");
+            setNfcState(
+              "READY"
+            );
 
-            button.disabled = false;
+            button.disabled =
+              false;
 
             return;
           }
@@ -1939,77 +2030,92 @@ async function scanNFC() {
             response.chipStatus;
 
 
-          setNfcState("READY");
+          setNfcState(
+            "READY"
+          );
 
 
-          setTimeout(() => {
+          setTimeout(
+            ()=>{
 
-            if (
-              response.nextFreeCore
-            ) {
 
-              document
-                .getElementById("core")
-                .value =
+              if(
+                response.nextFreeCore
+              ){
+
+                document
+                  .getElementById(
+                    "core"
+                  )
+                  .value =
+                    response.nextFreeCore;
+
+
+                document
+                  .getElementById(
+                    "energy"
+                  )
+                  .value =
+                    "";
+
+
+                setScanVisual(
+                  "",
+                  "SYSTEM READY",
+                  "WAITING FOR N-CORE"
+                );
+
+
+                status.className =
+                  "";
+
+                status.innerText =
+                  "SYSTEM READY\n\n" +
+                  "NEXT // " +
                   response.nextFreeCore;
 
 
-              document
-                .getElementById("energy")
-                .value =
-                  "";
+                button.disabled =
+                  false;
 
 
-              setScanVisual(
-                "",
-                "SYSTEM READY",
-                "WAITING FOR N-CORE"
-              );
+                document
+                  .getElementById(
+                    "energy"
+                  )
+                  .focus();
+
+              }
+
+              else{
+
+                setScanVisual(
+                  "success",
+                  "SERIES COMPLETE",
+                  "ALL N-CORES REGISTERED"
+                );
 
 
-              status.className =
-                "";
+                status.className =
+                  "success";
 
-              status.innerText =
-                "SYSTEM READY\n\n" +
-                "NEXT // " +
-                response.nextFreeCore;
-
-
-              button.disabled =
-                false;
+                status.innerText =
+                  "REGISTRATION SERIES COMPLETE\n\n" +
+                  "ALL N-CORES REGISTERED";
 
 
-              document
-                .getElementById("energy")
-                .focus();
+                button.disabled =
+                  true;
+              }
 
+            },
 
-            } else {
+            2600
+          );
 
-              setScanVisual(
-                "success",
-                "SERIES COMPLETE",
-                "ALL N-CORES REGISTERED"
-              );
+        }
 
-
-              status.className =
-                "success";
-
-              status.innerText =
-                "REGISTRATION SERIES COMPLETE\n\n" +
-                "ALL N-CORES REGISTERED";
-
-
-              button.disabled =
-                true;
-            }
-
-          }, 2600);
-
-
-        } catch(error) {
+        catch(error){
 
           setScanVisual(
             "error",
@@ -2029,19 +2135,21 @@ async function scanNFC() {
             "\n\nREGISTRATION NOT CONFIRMED";
 
 
-          setNfcState("READY");
+          setNfcState(
+            "READY"
+          );
         }
       };
 
 
     reader.onreadingerror =
-      () => {
+      ()=>{
 
         scanRunning =
           false;
 
 
-        if (scanController) {
+        if(scanController){
 
           scanController.abort();
 
@@ -2069,7 +2177,9 @@ async function scanNFC() {
           "N-Core erneut an das Smartphone halten.";
 
 
-        setNfcState("READY");
+        setNfcState(
+          "READY"
+        );
       };
 
 
@@ -2079,7 +2189,9 @@ async function scanNFC() {
     });
 
 
-    setNfcState("SCANNING");
+    setNfcState(
+      "SCANNING"
+    );
 
 
     setScanVisual(
@@ -2096,8 +2208,9 @@ async function scanNFC() {
       "NFC INTERFACE ACTIVE\n\n" +
       "PRESENT N-CORE";
 
+  }
 
-  } catch(error) {
+  catch(error){
 
     scanRunning =
       false;
@@ -2109,10 +2222,10 @@ async function scanNFC() {
       false;
 
 
-    if (
+    if(
       error.name ===
       "AbortError"
-    ) {
+    ){
       return;
     }
 
@@ -2132,14 +2245,16 @@ async function scanNFC() {
       error.message;
 
 
-    setNfcState("READY");
+    setNfcState(
+      "READY"
+    );
   }
 }
 
 
-/* =========================================================
+/* ================================================
    START
-========================================================= */
+================================================ */
 
 window.addEventListener(
   "load",
