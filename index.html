@@ -2,10 +2,14 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0">
+
   <title>NEXORA // N-Core Registration</title>
 
   <style>
+
     body {
       margin: 0;
       background: #050b14;
@@ -99,6 +103,7 @@
     .uid {
       color: #5bc7ff;
     }
+
   </style>
 </head>
 
@@ -106,8 +111,13 @@
 
 <div class="container">
 
-  <div class="brand">NEXORA</div>
-  <div class="subbrand">ENERGY SYSTEMS</div>
+  <div class="brand">
+    NEXORA
+  </div>
+
+  <div class="subbrand">
+    ENERGY SYSTEMS
+  </div>
 
   <div class="line"></div>
 
@@ -115,260 +125,544 @@
     N-CORE // REGISTRATION TERMINAL
   </div>
 
-  <input id="core" type="text" value="NC-001" placeholder="N-CORE ID">
+  <input
+    id="core"
+    type="text"
+    value=""
+    placeholder="N-CORE ID">
 
-  <input id="energy" type="number" value="618" placeholder="ENERGY">
+  <input
+    id="energy"
+    type="number"
+    value=""
+    placeholder="ENERGY">
 
-  <button id="scanButton" onclick="scanNFC()">
+  <button
+    id="scanButton"
+    onclick="scanNFC()"
+    disabled>
+
     SCAN N-CORE
+
   </button>
 
   <div id="status">
-    SYSTEM READY
+    CONNECTING TO NEXORA DATABASE...
   </div>
 
 </div>
+
 
 <script>
 
 const API =
 "https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
 
+
 let scanRunning = false;
 let scanController = null;
 
+
+/*
+ * JSONP Request
+ */
+function apiRequest(params) {
+
+  return new Promise((resolve, reject) => {
+
+    const callbackName =
+      "nexoraCallback_" +
+      Date.now() +
+      "_" +
+      Math.floor(Math.random() * 100000);
+
+    const script =
+      document.createElement("script");
+
+    const timeout =
+      setTimeout(() => {
+
+        cleanup();
+
+        reject(
+          new Error(
+            "SERVER RESPONSE TIMEOUT"
+          )
+        );
+
+      }, 10000);
+
+
+    function cleanup() {
+
+      clearTimeout(timeout);
+
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+
+      try {
+        delete window[callbackName];
+      } catch (error) {
+        window[callbackName] = undefined;
+      }
+    }
+
+
+    window[callbackName] = data => {
+
+      cleanup();
+
+      resolve(data);
+    };
+
+
+    const query =
+      new URLSearchParams({
+        ...params,
+        callback: callbackName,
+        _: Date.now()
+      });
+
+
+    script.onerror = () => {
+
+      cleanup();
+
+      reject(
+        new Error(
+          "SERVER CONNECTION ERROR"
+        )
+      );
+    };
+
+
+    script.src =
+      API +
+      "?" +
+      query.toString();
+
+
+    document.body.appendChild(script);
+  });
+}
+
+
+/*
+ * Beim Start automatisch
+ * ersten freien N-Core laden.
+ */
+async function initializeTerminal() {
+
+  const status =
+    document.getElementById("status");
+
+  const button =
+    document.getElementById("scanButton");
+
+  const coreInput =
+    document.getElementById("core");
+
+  const energyInput =
+    document.getElementById("energy");
+
+  try {
+
+    const response =
+      await apiRequest({
+        action: "nextfree"
+      });
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        response.error ||
+        "UNKNOWN SERVER ERROR"
+      );
+    }
+
+
+    if (!response.nextFreeCore) {
+
+      status.className = "success";
+
+      status.innerText =
+        "REGISTRATION SERIES COMPLETE\n\n" +
+        "ALL N-CORES REGISTERED";
+
+      button.disabled = true;
+
+      return;
+    }
+
+
+    coreInput.value =
+      response.nextFreeCore;
+
+    energyInput.value = "";
+
+    status.className = "";
+
+    status.innerText =
+      "SYSTEM READY\n\nNEXT // " +
+      response.nextFreeCore;
+
+    button.disabled = false;
+
+    energyInput.focus();
+
+
+  } catch (error) {
+
+    status.className = "error";
+
+    status.innerText =
+      "DATABASE CONNECTION ERROR\n\n" +
+      error.message;
+
+    button.disabled = true;
+  }
+}
+
+
+
 async function scanNFC() {
 
-  const status = document.getElementById("status");
-  const button = document.getElementById("scanButton");
+  const status =
+    document.getElementById("status");
+
+  const button =
+    document.getElementById("scanButton");
+
 
   if (scanRunning) {
     return;
   }
 
+
   if (!("NDEFReader" in window)) {
+
     status.className = "error";
+
     status.innerText =
-      "NFC INTERFACE NOT AVAILABLE\n\nAndroid + Chrome erforderlich.";
+      "NFC INTERFACE NOT AVAILABLE\n\n" +
+      "Android + Chrome erforderlich.";
+
     return;
   }
+
 
   let core =
-    document.getElementById("core").value.trim().toUpperCase();
+    document
+      .getElementById("core")
+      .value
+      .trim()
+      .toUpperCase();
+
 
   let energy =
-    document.getElementById("energy").value.trim();
+    document
+      .getElementById("energy")
+      .value
+      .trim();
+
 
   if (!/^NC-\d{3}$/.test(core)) {
+
     status.className = "error";
+
     status.innerText =
-      "CORE ID FORMAT ERROR\n\nBeispiel: NC-001";
+      "CORE ID FORMAT ERROR\n\n" +
+      "Beispiel: NC-001";
+
     return;
   }
+
 
   const coreNumber =
-    parseInt(core.substring(3), 10);
+    parseInt(
+      core.substring(3),
+      10
+    );
 
-  if (coreNumber < 1 || coreNumber > 200) {
+
+  if (
+    coreNumber < 1 ||
+    coreNumber > 200
+  ) {
+
     status.className = "error";
+
     status.innerText =
-      "CORE OUT OF RANGE\n\nNC-001 // NC-200";
+      "CORE OUT OF RANGE\n\n" +
+      "NC-001 // NC-200";
+
     return;
   }
+
 
   if (!energy) {
+
     status.className = "error";
+
     status.innerText =
       "ENERGY VALUE MISSING";
+
     return;
   }
+
 
   try {
 
     scanRunning = true;
+
     button.disabled = true;
 
-    scanController = new AbortController();
 
-    const reader = new NDEFReader();
+    scanController =
+      new AbortController();
 
-    reader.onreading = async event => {
 
-      if (!scanRunning) {
-        return;
-      }
+    const reader =
+      new NDEFReader();
 
-      /*
-       * Ab hier darf dieser Scan nur EINMAL verarbeitet werden.
-       */
 
-      scanRunning = false;
+    let handled = false;
 
-      /*
-       * NFC-Reader sofort beenden.
-       */
 
-      if (scanController) {
-        scanController.abort();
-        scanController = null;
-      }
+    reader.onreading =
+      async event => {
 
-      /*
-       * Werte JETZT noch einmal aus der Oberfläche lesen.
-       */
+        /*
+         * Zusätzliche Sicherung:
+         * exakt ein NFC-Event verarbeiten.
+         */
+        if (
+          handled ||
+          !scanRunning
+        ) {
+          return;
+        }
 
-      core =
-        document.getElementById("core").value.trim().toUpperCase();
+        handled = true;
+        scanRunning = false;
 
-      energy =
-        document.getElementById("energy").value.trim();
 
-      const uid =
-        String(event.serialNumber || "").trim().toUpperCase();
+        if (scanController) {
 
-      if (!/^NC-\d{3}$/.test(core)) {
-        button.disabled = false;
+          scanController.abort();
 
-        status.className = "error";
+          scanController = null;
+        }
+
+
+        /*
+         * Werte beim echten NFC-Kontakt
+         * nochmals lesen.
+         */
+        core =
+          document
+            .getElementById("core")
+            .value
+            .trim()
+            .toUpperCase();
+
+
+        energy =
+          document
+            .getElementById("energy")
+            .value
+            .trim();
+
+
+        const uid =
+          String(
+            event.serialNumber || ""
+          )
+            .trim()
+            .toUpperCase();
+
+
+        if (!/^NC-\d{3}$/.test(core)) {
+
+          button.disabled = false;
+
+          status.className = "error";
+
+          status.innerText =
+            "CORE ID FORMAT ERROR\n\n" +
+            "REGISTRATION ABORTED";
+
+          return;
+        }
+
+
+        if (!energy) {
+
+          button.disabled = false;
+
+          status.className = "error";
+
+          status.innerText =
+            "ENERGY VALUE MISSING\n\n" +
+            "REGISTRATION ABORTED";
+
+          return;
+        }
+
+
+        if (!uid) {
+
+          button.disabled = false;
+
+          status.className = "error";
+
+          status.innerText =
+            "N-CORE DETECTED\n\n" +
+            "UID NOT AVAILABLE";
+
+          return;
+        }
+
+
+        status.className = "uid";
+
         status.innerText =
-          "CORE ID FORMAT ERROR\n\nREGISTRATION ABORTED";
-        return;
-      }
-
-      const scannedCoreNumber =
-        parseInt(core.substring(3), 10);
-
-      if (
-        scannedCoreNumber < 1 ||
-        scannedCoreNumber > 200
-      ) {
-        button.disabled = false;
-
-        status.className = "error";
-        status.innerText =
-          "CORE OUT OF RANGE\n\nREGISTRATION ABORTED";
-        return;
-      }
-
-      if (!energy) {
-        button.disabled = false;
-
-        status.className = "error";
-        status.innerText =
-          "ENERGY VALUE MISSING\n\nREGISTRATION ABORTED";
-        return;
-      }
-
-      if (!uid) {
-        button.disabled = false;
-
-        status.className = "error";
-        status.innerText =
-          "N-CORE DETECTED\n\nUID NOT AVAILABLE";
-        return;
-      }
-
-      status.className = "uid";
-      status.innerText =
-        "N-CORE DETECTED\n\n" +
-        "REGISTERING // " + core +
-        "\n" +
-        "ENERGY // " + energy +
-        "\n" +
-        "UID // " + uid +
-        "\n\n" +
-        "CONNECTING TO NEXORA DATABASE...";
-
-      const url =
-        API +
-        "?action=register" +
-        "&core=" + encodeURIComponent(core) +
-        "&energy=" + encodeURIComponent(energy) +
-        "&uid=" + encodeURIComponent(uid);
-
-      try {
-
-        await fetch(url, {
-          method: "GET",
-          mode: "no-cors",
-          cache: "no-store"
-        });
-
-        status.className = "success";
-
-        status.innerText =
-          "N-CORE REGISTERED\n\n" +
+          "N-CORE DETECTED\n\n" +
+          "REGISTERING // " +
           core +
           "\n" +
-          "ENERGY // " + energy +
+          "ENERGY // " +
+          energy +
           "\n" +
-          "UID // " + uid +
+          "UID // " +
+          uid +
           "\n\n" +
-          "CHIP STATUS // ERFASST";
+          "CONNECTING TO NEXORA DATABASE...";
 
-        setTimeout(() => {
 
-          const coreInput =
-            document.getElementById("core");
+        try {
 
-          const energyInput =
-            document.getElementById("energy");
+          const response =
+            await apiRequest({
+              action: "register",
+              core: core,
+              energy: energy,
+              uid: uid
+            });
 
-          if (scannedCoreNumber < 200) {
 
-            coreInput.value =
-              "NC-" +
-              String(scannedCoreNumber + 1).padStart(3, "0");
+          /*
+           * Jetzt zählt ausschließlich
+           * die echte Serverantwort.
+           */
+          if (!response.ok) {
 
-            energyInput.value = "";
-
-            status.className = "";
+            status.className = "error";
 
             status.innerText =
-              "SYSTEM READY\n\nNEXT // " +
-              coreInput.value;
+              "REGISTRATION REJECTED\n\n" +
+              (response.error ||
+               "UNKNOWN SERVER ERROR") +
+              "\n\n" +
+              "NO DATA CHANGED";
 
             button.disabled = false;
 
-            energyInput.focus();
-
-          } else {
-
-            energyInput.value = "";
-
-            status.className = "success";
-
-            status.innerText =
-              "REGISTRATION SERIES COMPLETE\n\n" +
-              "NC-001 // NC-200";
-
-            button.disabled = true;
+            return;
           }
 
-        }, 3000);
 
-      } catch (error) {
+          status.className = "success";
 
-        button.disabled = false;
+          status.innerText =
+            "N-CORE REGISTERED\n\n" +
+            response.core +
+            "\n" +
+            "ENERGY // " +
+            response.energy +
+            "\n" +
+            "UID // " +
+            response.uid +
+            "\n\n" +
+            "CHIP STATUS // " +
+            response.chipStatus;
 
-        status.className = "error";
 
-        status.innerText =
-          "DATABASE CONNECTION ERROR\n\n" +
-          error.message;
-      }
-    };
+          setTimeout(() => {
+
+            const coreInput =
+              document.getElementById("core");
+
+            const energyInput =
+              document.getElementById("energy");
+
+
+            if (
+              response.nextFreeCore
+            ) {
+
+              coreInput.value =
+                response.nextFreeCore;
+
+              energyInput.value = "";
+
+              status.className = "";
+
+              status.innerText =
+                "SYSTEM READY\n\n" +
+                "NEXT // " +
+                response.nextFreeCore;
+
+              button.disabled = false;
+
+              energyInput.focus();
+
+
+            } else {
+
+              energyInput.value = "";
+
+              status.className = "success";
+
+              status.innerText =
+                "REGISTRATION SERIES COMPLETE\n\n" +
+                "ALL N-CORES REGISTERED";
+
+              button.disabled = true;
+            }
+
+          }, 3000);
+
+
+        } catch (error) {
+
+          button.disabled = false;
+
+          status.className = "error";
+
+          status.innerText =
+            "DATABASE CONNECTION ERROR\n\n" +
+            error.message +
+            "\n\n" +
+            "REGISTRATION NOT CONFIRMED";
+        }
+      };
+
 
     reader.onreadingerror = () => {
 
-      if (scanRunning) {
-        scanRunning = false;
-      }
+      scanRunning = false;
+
 
       if (scanController) {
+
         scanController.abort();
+
         scanController = null;
       }
+
 
       button.disabled = false;
 
@@ -379,9 +673,11 @@ async function scanNFC() {
         "N-Core erneut an das Smartphone halten.";
     };
 
+
     await reader.scan({
       signal: scanController.signal
     });
+
 
     status.className = "";
 
@@ -389,17 +685,21 @@ async function scanNFC() {
       "NFC INTERFACE ACTIVE\n\n" +
       "PRESENT N-CORE";
 
+
   } catch (error) {
 
     scanRunning = false;
-
     scanController = null;
 
     button.disabled = false;
 
-    if (error.name === "AbortError") {
+
+    if (
+      error.name === "AbortError"
+    ) {
       return;
     }
+
 
     status.className = "error";
 
@@ -408,6 +708,15 @@ async function scanNFC() {
       error.message;
   }
 }
+
+
+/*
+ * Terminal starten.
+ */
+window.addEventListener(
+  "load",
+  initializeTerminal
+);
 
 </script>
 
