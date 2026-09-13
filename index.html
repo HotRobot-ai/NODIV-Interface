@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXORA // N-Core Registration</title>
+
+  <style>
+    body {
+      margin: 0;
+      background: #050b14;
+      color: #eaf6ff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: auto;
+      padding: 35px 22px;
+    }
+
+    .brand {
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 4px;
+    }
+
+    .subbrand {
+      color: #5bc7ff;
+      letter-spacing: 4px;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .line {
+      height: 2px;
+      background: #168bd2;
+      margin: 25px 0 35px;
+    }
+
+    .mode {
+      color: #5bc7ff;
+      font-size: 13px;
+      letter-spacing: 2px;
+      margin-bottom: 25px;
+    }
+
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 15px;
+      margin: 7px 0;
+      background: #0a1522;
+      border: 1px solid #24465e;
+      color: white;
+      font-size: 18px;
+      text-align: center;
+      border-radius: 5px;
+    }
+
+    button {
+      width: 100%;
+      padding: 20px;
+      margin-top: 25px;
+      background: #087fc1;
+      border: none;
+      color: white;
+      font-size: 17px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:active {
+      background: #0aa7ff;
+    }
+
+    #status {
+      margin-top: 30px;
+      padding: 20px;
+      min-height: 80px;
+      border: 1px solid #17374c;
+      background: #07111c;
+      white-space: pre-line;
+      line-height: 1.6;
+    }
+
+    .success {
+      color: #62e6a7;
+    }
+
+    .error {
+      color: #ff7373;
+    }
+
+    .uid {
+      color: #5bc7ff;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="brand">NEXORA</div>
+  <div class="subbrand">ENERGY SYSTEMS</div>
+
+  <div class="line"></div>
+
+  <div class="mode">
+    N-CORE // REGISTRATION TERMINAL
+  </div>
+
+  <input
+    id="core"
+    type="text"
+    value="NC-001"
+    placeholder="N-CORE ID">
+
+  <input
+    id="energy"
+    type="number"
+    value="618"
+    placeholder="ENERGY">
+
+  <button onclick="scanNFC()">
+    SCAN N-CORE
+  </button>
+
+  <div id="status">
+    SYSTEM READY
+  </div>
+
+</div>
+
+<script>
+
+const API =
+"https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
+
+let scanActive = false;
+
+async function scanNFC() {
+
+  const status = document.getElementById("status");
+
+  if (!("NDEFReader" in window)) {
+    status.className = "error";
+    status.innerText =
+      "NFC INTERFACE NOT AVAILABLE\n\nAndroid + Chrome erforderlich.";
+    return;
+  }
+
+  const core =
+    document.getElementById("core").value.trim().toUpperCase();
+
+  const energy =
+    document.getElementById("energy").value.trim();
+
+  if (!core || !energy) {
+    status.className = "error";
+    status.innerText = "CORE DATA INCOMPLETE";
+    return;
+  }
+
+  if (scanActive) {
+    status.innerText =
+      "NFC INTERFACE ALREADY ACTIVE\n\nPRESENT N-CORE";
+    return;
+  }
+
+  try {
+
+    const reader = new NDEFReader();
+
+    await reader.scan();
+
+    scanActive = true;
+
+    status.className = "";
+    status.innerText =
+      "NFC INTERFACE ACTIVE\n\nPRESENT N-CORE";
+
+    reader.onreading = event => {
+
+      const uid = event.serialNumber;
+
+      if (!uid) {
+        status.className = "error";
+        status.innerText =
+          "N-CORE DETECTED\n\nUID NOT AVAILABLE";
+        return;
+      }
+
+      scanActive = false;
+
+      status.className = "uid";
+      status.innerText =
+        "N-CORE DETECTED\n\nUID // " +
+        uid +
+        "\n\nCONNECTING TO NEXORA DATABASE...";
+
+      const url =
+        API +
+        "?action=register" +
+        "&core=" + encodeURIComponent(core) +
+        "&energy=" + encodeURIComponent(energy) +
+        "&uid=" + encodeURIComponent(uid);
+
+      /*
+       * Für den ersten Live-Test navigieren wir direkt
+       * zur bereits getesteten NEXORA API.
+       *
+       * Dadurch umgehen wir mögliche CORS-Probleme
+       * zwischen GitHub Pages und Google Apps Script.
+       */
+
+      setTimeout(() => {
+        window.location.href = url;
+      }, 1200);
+    };
+
+    reader.onreadingerror = () => {
+      scanActive = false;
+      status.className = "error";
+      status.innerText =
+        "NFC READ ERROR\n\nN-Core erneut an das Smartphone halten.";
+    };
+
+  } catch (error) {
+
+    scanActive = false;
+
+    status.className = "error";
+    status.innerText =
+      "NFC ERROR\n\n" +
+      error.message;
+  }
+}
+
+</script>
+
+</body>
+</html>
