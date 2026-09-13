@@ -154,21 +154,38 @@ async function scanNFC() {
     return;
   }
 
-  const core =
-    document.getElementById("core").value.trim().toUpperCase();
-
-  const energy =
-    document.getElementById("energy").value.trim();
-
-  if (!core || !energy) {
-    status.className = "error";
-    status.innerText = "CORE DATA INCOMPLETE";
+  if (scanActive) {
+    status.className = "";
+    status.innerText =
+      "NFC INTERFACE ALREADY ACTIVE\n\nPRESENT N-CORE";
     return;
   }
 
-  if (scanActive) {
+  /*
+   * Vor dem Aktivieren prüfen wir nur,
+   * ob grundsätzlich etwas eingetragen ist.
+   *
+   * Die tatsächlichen Werte werden beim
+   * ERKENNEN DES NFC-CHIPS erneut gelesen.
+   */
+
+  const coreCheck =
+    document.getElementById("core").value.trim().toUpperCase();
+
+  const energyCheck =
+    document.getElementById("energy").value.trim();
+
+  if (!coreCheck || !energyCheck) {
+    status.className = "error";
     status.innerText =
-      "NFC INTERFACE ALREADY ACTIVE\n\nPRESENT N-CORE";
+      "CORE DATA INCOMPLETE";
+    return;
+  }
+
+  if (!/^NC-\d{3}$/.test(coreCheck)) {
+    status.className = "error";
+    status.innerText =
+      "CORE ID FORMAT ERROR\n\nBeispiel: NC-001";
     return;
   }
 
@@ -186,10 +203,69 @@ async function scanNFC() {
 
     reader.onreading = async event => {
 
+      /*
+       * WICHTIG:
+       * Erst JETZT lesen wir die aktuellen
+       * Werte aus den Eingabefeldern.
+       */
+
+      const core =
+        document.getElementById("core")
+          .value
+          .trim()
+          .toUpperCase();
+
+      const energy =
+        document.getElementById("energy")
+          .value
+          .trim();
+
       const uid = event.serialNumber;
+
+      if (!core || !energy) {
+        scanActive = false;
+
+        status.className = "error";
+        status.innerText =
+          "CORE DATA INCOMPLETE\n\nREGISTRATION ABORTED";
+        return;
+      }
+
+      if (!/^NC-\d{3}$/.test(core)) {
+        scanActive = false;
+
+        status.className = "error";
+        status.innerText =
+          "CORE ID FORMAT ERROR\n\nREGISTRATION ABORTED";
+        return;
+      }
+
+      const match = core.match(/^NC-(\d{3})$/);
+
+      if (!match) {
+        scanActive = false;
+
+        status.className = "error";
+        status.innerText =
+          "CORE ID INVALID";
+        return;
+      }
+
+      const coreNumber =
+        parseInt(match[1], 10);
+
+      if (coreNumber < 1 || coreNumber > 200) {
+        scanActive = false;
+
+        status.className = "error";
+        status.innerText =
+          "CORE OUT OF RANGE\n\nNC-001 // NC-200";
+        return;
+      }
 
       if (!uid) {
         scanActive = false;
+
         status.className = "error";
         status.innerText =
           "N-CORE DETECTED\n\nUID NOT AVAILABLE";
@@ -200,9 +276,14 @@ async function scanNFC() {
 
       status.className = "uid";
       status.innerText =
-        "N-CORE DETECTED\n\nUID // " +
-        uid +
-        "\n\nCONNECTING TO NEXORA DATABASE...";
+        "N-CORE DETECTED\n\n" +
+        "REGISTERING // " + core +
+        "\n" +
+        "ENERGY // " + energy +
+        "\n" +
+        "UID // " + uid.toUpperCase() +
+        "\n\n" +
+        "CONNECTING TO NEXORA DATABASE...";
 
       const url =
         API +
@@ -232,46 +313,38 @@ async function scanNFC() {
 
         setTimeout(() => {
 
-          const coreInput = document.getElementById("core");
-          const energyInput = document.getElementById("energy");
+          const coreInput =
+            document.getElementById("core");
 
-          const match = core.match(/^NC-(\d{3})$/);
+          const energyInput =
+            document.getElementById("energy");
 
-          if (match) {
+          if (coreNumber < 200) {
 
-            const currentNumber = parseInt(match[1], 10);
+            const nextNumber =
+              coreNumber + 1;
 
-            if (currentNumber < 200) {
+            coreInput.value =
+              "NC-" +
+              String(nextNumber).padStart(3, "0");
 
-              const nextNumber = currentNumber + 1;
+            energyInput.value = "";
 
-              coreInput.value =
-                "NC-" + String(nextNumber).padStart(3, "0");
+            status.className = "";
+            status.innerText =
+              "SYSTEM READY\n\nNEXT // " +
+              coreInput.value;
 
-              energyInput.value = "";
-
-              status.className = "";
-              status.innerText =
-                "SYSTEM READY\n\nNEXT // " +
-                coreInput.value;
-
-              energyInput.focus();
-
-            } else {
-
-              energyInput.value = "";
-
-              status.className = "success";
-              status.innerText =
-                "REGISTRATION SERIES COMPLETE\n\n" +
-                "NC-001 // NC-200";
-            }
+            energyInput.focus();
 
           } else {
 
-            status.className = "error";
+            energyInput.value = "";
+
+            status.className = "success";
             status.innerText =
-              "CORE ID FORMAT ERROR";
+              "REGISTRATION SERIES COMPLETE\n\n" +
+              "NC-001 // NC-200";
           }
 
         }, 3000);
@@ -286,10 +359,13 @@ async function scanNFC() {
     };
 
     reader.onreadingerror = () => {
+
       scanActive = false;
+
       status.className = "error";
       status.innerText =
-        "NFC READ ERROR\n\nN-Core erneut an das Smartphone halten.";
+        "NFC READ ERROR\n\n" +
+        "N-Core erneut an das Smartphone halten.";
     };
 
   } catch (error) {
