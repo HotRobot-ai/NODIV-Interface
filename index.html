@@ -80,7 +80,7 @@
     #status {
       margin-top: 30px;
       padding: 20px;
-      min-height: 80px;
+      min-height: 90px;
       border: 1px solid #17374c;
       background: #07111c;
       white-space: pre-line;
@@ -184,11 +184,12 @@ async function scanNFC() {
     status.innerText =
       "NFC INTERFACE ACTIVE\n\nPRESENT N-CORE";
 
-    reader.onreading = event => {
+    reader.onreading = async event => {
 
       const uid = event.serialNumber;
 
       if (!uid) {
+        scanActive = false;
         status.className = "error";
         status.innerText =
           "N-CORE DETECTED\n\nUID NOT AVAILABLE";
@@ -210,17 +211,38 @@ async function scanNFC() {
         "&energy=" + encodeURIComponent(energy) +
         "&uid=" + encodeURIComponent(uid);
 
-      /*
-       * Für den ersten Live-Test navigieren wir direkt
-       * zur bereits getesteten NEXORA API.
-       *
-       * Dadurch umgehen wir mögliche CORS-Probleme
-       * zwischen GitHub Pages und Google Apps Script.
-       */
+      try {
 
-      setTimeout(() => {
-        window.location.href = url;
-      }, 1200);
+        await fetch(url, {
+          method: "GET",
+          mode: "no-cors",
+          cache: "no-store"
+        });
+
+        status.className = "success";
+        status.innerText =
+          "N-CORE REGISTERED\n\n" +
+          core +
+          "\n" +
+          "ENERGY // " + energy +
+          "\n" +
+          "UID // " + uid.toUpperCase() +
+          "\n\n" +
+          "CHIP STATUS // ERFASST";
+
+        setTimeout(() => {
+          status.className = "";
+          status.innerText =
+            "SYSTEM READY\n\nSCAN NEXT N-CORE";
+        }, 3000);
+
+      } catch (error) {
+
+        status.className = "error";
+        status.innerText =
+          "DATABASE CONNECTION ERROR\n\n" +
+          error.message;
+      }
     };
 
     reader.onreadingerror = () => {
