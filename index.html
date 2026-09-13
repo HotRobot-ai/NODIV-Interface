@@ -231,9 +231,49 @@ async function scanNFC() {
           "CHIP STATUS // ERFASST";
 
         setTimeout(() => {
-          status.className = "";
-          status.innerText =
-            "SYSTEM READY\n\nSCAN NEXT N-CORE";
+
+          const coreInput = document.getElementById("core");
+          const energyInput = document.getElementById("energy");
+
+          const match = core.match(/^NC-(\d{3})$/);
+
+          if (match) {
+
+            const currentNumber = parseInt(match[1], 10);
+
+            if (currentNumber < 200) {
+
+              const nextNumber = currentNumber + 1;
+
+              coreInput.value =
+                "NC-" + String(nextNumber).padStart(3, "0");
+
+              energyInput.value = "";
+
+              status.className = "";
+              status.innerText =
+                "SYSTEM READY\n\nNEXT // " +
+                coreInput.value;
+
+              energyInput.focus();
+
+            } else {
+
+              energyInput.value = "";
+
+              status.className = "success";
+              status.innerText =
+                "REGISTRATION SERIES COMPLETE\n\n" +
+                "NC-001 // NC-200";
+            }
+
+          } else {
+
+            status.className = "error";
+            status.innerText =
+              "CORE ID FORMAT ERROR";
+          }
+
         }, 3000);
 
       } catch (error) {
