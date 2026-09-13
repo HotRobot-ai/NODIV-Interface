@@ -21,7 +21,7 @@
 }
 
 /* =========================================================
-   HARD MOBILE RESET
+   MOBILE RESET
 ========================================================= */
 
 *{
@@ -75,6 +75,8 @@ input{
 
 /* =========================================================
    HERO
+   REG-1.3.2:
+   lighter upper image + softer terminal transition
 ========================================================= */
 
 .hero{
@@ -96,48 +98,65 @@ input{
     no-repeat;
 }
 
+/*
+   Only a very light overlay over the upper image.
+   ENERGY SYSTEMS therefore stays clearer/brighter.
+*/
+
 .hero::before{
   content:"";
+
   position:absolute;
   inset:0;
 
   background:
     linear-gradient(
       180deg,
-      rgba(0,3,8,.02) 0%,
-      rgba(0,5,10,.04) 45%,
-      rgba(1,8,15,.40) 65%,
-      rgba(2,7,13,.82) 82%,
-      #02070d 100%
+      rgba(0,3,8,0.00) 0%,
+      rgba(0,5,10,0.01) 42%,
+      rgba(1,8,15,0.10) 65%,
+      rgba(2,7,13,0.36) 82%,
+      rgba(2,7,13,0.72) 100%
     );
 }
 
+/*
+   Softer lower fade.
+   This removes the "shadow bar" effect above the title.
+*/
+
 .hero::after{
   content:"";
+
   position:absolute;
+
   left:0;
   right:0;
   bottom:-1px;
-  height:55px;
+
+  height:42px;
 
   background:
     linear-gradient(
-      transparent,
-      #02070d
+      180deg,
+      rgba(2,7,13,0) 0%,
+      rgba(2,7,13,.35) 50%,
+      #02070d 100%
     );
 }
 
 .hero-tag{
   position:absolute;
   z-index:3;
+
   right:10px;
-  bottom:15px;
+  bottom:13px;
 
   font-size:5.5px;
   letter-spacing:1.5px;
 
   color:
-    rgba(125,211,248,.65);
+    rgba(140,220,255,.74);
 }
 
 /* =========================================================
@@ -164,14 +183,17 @@ input{
 }
 
 /* =========================================================
-   TITLE — REG 1.3.1 POLISH
+   TITLE
+   SIZE FROM REG-1.3.1 PRESERVED
 ========================================================= */
 
 .title{
   width:100%;
+
   text-align:center;
 
-  margin-top:-2px;
+  margin-top:1px;
+
   padding:0 4px;
 }
 
@@ -281,7 +303,7 @@ input{
 }
 
 /* =========================================================
-   SCANNER CONTAINER
+   SCANNER
 ========================================================= */
 
 .scanner-shell{
@@ -356,6 +378,7 @@ input{
 
 .tick-ring{
   position:absolute;
+
   inset:7%;
 
   border-radius:50%;
@@ -649,6 +672,7 @@ input{
 
 .scan-copy{
   position:relative;
+
   z-index:10;
 
   width:44%;
@@ -1262,7 +1286,7 @@ WÜRZBURG // FIELD NETWORK
 
 
 <div class="build">
-SYSTEM BUILD // REG-1.3.1 MOBILE POLISH
+SYSTEM BUILD // REG-1.3.2 VISUAL POLISH
 </div>
 
 </main>
