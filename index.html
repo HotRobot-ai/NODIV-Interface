@@ -11,123 +11,95 @@
 
 <title>NEXORA // N-Core Registration Terminal</title>
 
-
 <style>
 
 :root {
-
   --bg:#02070d;
-  --panel:#06111c;
-  --panel2:#081927;
+  --panel:rgba(2,11,20,.88);
+  --panel2:rgba(4,19,32,.92);
 
-  --blue:#1eb7ff;
-  --blue2:#007dd4;
-  --blue3:#8bdcff;
+  --blue:#27bfff;
+  --blue2:#087fc0;
+  --blue3:#9ce6ff;
 
-  --white:#eef9ff;
-  --muted:#6f9bb5;
+  --text:#eefaff;
+  --muted:#79a5bd;
 
-  --success:#47f0b0;
-  --error:#ff6470;
+  --success:#52efb4;
+  --error:#ff6874;
 
-  --border:rgba(42,184,255,.28);
+  --border:rgba(39,191,255,.32);
 }
-
-
-/* =========================================================
-   GLOBAL
-========================================================= */
 
 * {
   box-sizing:border-box;
 }
 
-html {
+html,
+body {
+  margin:0;
+  min-height:100%;
   background:#010409;
 }
 
 body {
-
-  margin:0;
-
-  min-height:100vh;
-
-  color:var(--white);
+  color:var(--text);
 
   font-family:
-    "Arial Narrow",
     "Segoe UI",
     Arial,
     Helvetica,
     sans-serif;
 
-  background:
-
-    radial-gradient(
-      circle at 50% 12%,
-      rgba(10,100,165,.20),
-      transparent 32%
-    ),
-
-    radial-gradient(
-      circle at 50% 65%,
-      rgba(0,125,212,.08),
-      transparent 38%
-    ),
-
-    linear-gradient(
-      180deg,
-      #010409,
-      #02070d 45%,
-      #01050a
-    );
-
   overflow-x:hidden;
 }
 
+/* =========================================================
+   BACKGROUND
+========================================================= */
 
-/* feines technisches Raster */
-
-body::before {
-
-  content:"";
-
+.background {
   position:fixed;
   inset:0;
 
-  pointer-events:none;
-
-  background-image:
-
-    linear-gradient(
-      rgba(34,161,232,.025) 1px,
-      transparent 1px
-    ),
-
-    linear-gradient(
-      90deg,
-      rgba(34,161,232,.025) 1px,
-      transparent 1px
-    );
-
-  background-size:28px 28px;
-
-  mask-image:
+  background:
     linear-gradient(
       180deg,
-      transparent,
-      black 10%,
-      black 85%,
-      transparent
-    );
+      rgba(0,5,11,.04) 0%,
+      rgba(0,5,11,.08) 28%,
+      rgba(1,8,15,.48) 48%,
+      rgba(1,7,13,.92) 68%,
+      rgba(1,5,10,.98) 100%
+    ),
+    url("nexora-terminal-bg.png")
+    center top / cover no-repeat;
+
+  z-index:0;
 }
 
+.background::after {
+  content:"";
+
+  position:absolute;
+  inset:0;
+
+  background:
+    radial-gradient(
+      circle at 50% 44%,
+      rgba(15,153,224,.06),
+      transparent 35%
+    );
+}
 
 /* =========================================================
    PAGE
 ========================================================= */
 
 .page {
+  position:relative;
+  z-index:2;
+
+  min-height:100vh;
 
   width:100%;
 
@@ -137,652 +109,247 @@ body::before {
   padding:
     calc(12px + env(safe-area-inset-top))
     10px
-    calc(14px + env(safe-area-inset-bottom));
+    calc(18px + env(safe-area-inset-bottom));
 }
 
-
 .terminal {
-
-  position:relative;
-
   width:100%;
   max-width:560px;
 
-  min-height:100vh;
-
-  overflow:hidden;
-
-  border:
-    1px solid rgba(42,184,255,.28);
-
-  background:
-
-    radial-gradient(
-      circle at 50% 28%,
-      rgba(0,135,214,.11),
-      transparent 27%
-    ),
-
-    linear-gradient(
-      180deg,
-      rgba(4,14,24,.98),
-      rgba(2,8,14,.99)
-    );
-
-  box-shadow:
-
-    0 0 80px rgba(0,119,187,.12),
-
-    inset
-    0 0 60px rgba(0,133,210,.025);
+  padding-top:330px;
 }
-
-
-/* obere Lichtkante */
-
-.top-beam {
-
-  height:2px;
-
-  background:
-
-    linear-gradient(
-      90deg,
-      transparent 3%,
-      var(--blue),
-      var(--blue3),
-      var(--blue),
-      transparent 97%
-    );
-
-  box-shadow:
-    0 0 20px rgba(42,184,255,.8);
-}
-
-
-.content {
-
-  position:relative;
-  z-index:3;
-
-  padding:18px 14px 12px;
-}
-
 
 /* =========================================================
-   BRAND
+   TITLE
 ========================================================= */
 
-.brand-block {
-
+.terminal-heading {
   text-align:center;
 
-  padding:
-    7px 8px 14px;
+  margin-bottom:18px;
 
-  border-bottom:
-    1px solid rgba(42,184,255,.17);
+  text-shadow:
+    0 0 12px rgba(34,178,255,.35);
 }
 
-
-.master-logo {
-
-  display:block;
-
-  width:min(78%, 390px);
-
-  max-height:96px;
-
-  object-fit:contain;
-
-  margin:0 auto 4px;
-}
-
-
-/*
-Fallback falls PNG noch nicht im Repository liegt
-*/
-
-.logo-fallback {
-
-  display:none;
-
-  font-size:31px;
-  font-weight:600;
-
-  letter-spacing:7px;
-
-  color:#eaf7ff;
-}
-
-
-.energy-system-fallback {
-
-  display:none;
-
-  margin-top:6px;
-
-  color:var(--blue3);
-
-  font-size:10px;
-
-  letter-spacing:5px;
-}
-
-
-/* Würzburg Signatur */
-
-.city-signature {
-
-  display:block;
-
-  width:min(74%, 350px);
-
-  max-height:70px;
-
-  object-fit:contain;
-
-  margin:
-    7px auto 2px;
-
-  filter:
-
-    drop-shadow(
-      0 0 7px
-      rgba(22,174,255,.40)
-    );
-}
-
-
-.city-text {
-
-  margin-top:5px;
-
-  color:var(--blue3);
-
-  font-size:9px;
-
-  letter-spacing:4px;
-}
-
-
-.city-coordinate {
-
-  margin-top:5px;
-
-  color:#568aa8;
-
-  font-size:7px;
-
-  letter-spacing:2px;
-}
-
-
-/* =========================================================
-   TERMINAL TITLE
-========================================================= */
-
-.terminal-head {
-
-  text-align:center;
-
-  padding:
-    16px 2px 8px;
-}
-
-
-.head-main {
-
-  color:#edfaff;
-
+.heading-main {
   font-size:14px;
+  letter-spacing:3.5px;
 
-  letter-spacing:3.7px;
-
-  font-weight:500;
+  color:#f0fbff;
 }
 
-
-.head-sub {
-
+.heading-sub {
   margin-top:7px;
 
   color:var(--blue3);
 
   font-size:7px;
-
-  letter-spacing:2.3px;
+  letter-spacing:2.4px;
 }
 
-
 /* =========================================================
-   SYSTEM GRID
+   MAIN PANEL
 ========================================================= */
 
-.system-layout {
+.interface-panel {
+  position:relative;
+
+  border:
+    1px solid rgba(39,191,255,.32);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(3,15,27,.91),
+      rgba(2,9,17,.96)
+    );
+
+  box-shadow:
+    0 0 32px rgba(0,132,202,.10),
+    inset 0 0 30px rgba(30,179,245,.03);
+
+  padding:
+    14px 12px 16px;
+
+  backdrop-filter:
+    blur(7px);
+}
+
+.interface-panel::before {
+  content:"";
+
+  position:absolute;
+  inset:0;
+
+  pointer-events:none;
+
+  background-image:
+    linear-gradient(
+      rgba(41,185,255,.025) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(41,185,255,.025) 1px,
+      transparent 1px
+    );
+
+  background-size:
+    22px 22px;
+}
+
+/* =========================================================
+   STATUS BAR
+========================================================= */
+
+.status-grid {
+  position:relative;
+  z-index:2;
 
   display:grid;
 
   grid-template-columns:
-    92px 1fr 92px;
+    repeat(3,1fr);
 
-  align-items:center;
+  gap:7px;
 
-  gap:8px;
-
-  margin-top:14px;
+  margin-bottom:14px;
 }
 
-
-/* gemeinsame HUD Seitenkarten */
-
-.side-panel {
-
-  min-height:288px;
-
-  padding:12px 9px;
-
-  position:relative;
-
-  border:
-    1px solid rgba(42,184,255,.46);
-
-  background:
-
-    linear-gradient(
-      180deg,
-      rgba(4,19,31,.80),
-      rgba(2,11,19,.90)
-    );
-
-  box-shadow:
-
-    inset
-    0 0 18px
-    rgba(0,139,221,.05);
-}
-
-
-/* abgeschnittene HUD-Ecken */
-
-.side-panel::before,
-.side-panel::after {
-
-  content:"";
-
-  position:absolute;
-
-  width:13px;
-  height:13px;
-
-  border-color:var(--blue);
-}
-
-
-.side-panel::before {
-
-  left:-1px;
-  top:-1px;
-
-  border-left:2px solid;
-  border-top:2px solid;
-}
-
-
-.side-panel::after {
-
-  right:-1px;
-  bottom:-1px;
-
-  border-right:2px solid;
-  border-bottom:2px solid;
-}
-
-
-/* Statuszeilen */
-
-.sys-item {
+.status-card {
+  min-height:55px;
 
   padding:
-    8px 0 11px;
+    8px 5px;
 
-  border-bottom:
-    1px solid rgba(42,184,255,.12);
+  text-align:center;
+
+  border:
+    1px solid rgba(39,191,255,.19);
+
+  background:
+    rgba(5,20,33,.60);
 }
 
+.status-label {
+  color:var(--muted);
 
-.sys-item:last-child {
-
-  border-bottom:none;
+  font-size:6px;
+  letter-spacing:1.2px;
 }
 
-
-.sys-label {
-
-  color:#7daac4;
+.status-value {
+  margin-top:6px;
 
   font-size:7px;
-
-  letter-spacing:1.3px;
-
-  line-height:1.45;
-}
-
-
-.sys-value {
-
-  margin-top:5px;
+  letter-spacing:1px;
 
   color:var(--success);
-
-  font-size:7px;
-
-  letter-spacing:1.2px;
-
-  line-height:1.4;
 }
 
-
-.indicator {
-
+.dot {
   display:inline-block;
 
-  width:6px;
-  height:6px;
+  width:5px;
+  height:5px;
 
-  margin-right:5px;
+  margin-right:4px;
 
   border-radius:50%;
 
   background:var(--success);
 
   box-shadow:
-    0 0 10px rgba(71,240,176,.85);
+    0 0 7px rgba(82,239,180,.9);
 }
-
-
-.sys-main-value {
-
-  margin-top:5px;
-
-  color:#eaf9ff;
-
-  font-size:13px;
-
-  letter-spacing:1px;
-}
-
-
-/* rechte Seite */
-
-.data-item {
-
-  padding:
-    7px 0 12px;
-
-  border-bottom:
-    1px solid rgba(42,184,255,.15);
-}
-
-
-.data-item:last-child {
-
-  border-bottom:none;
-}
-
-
-.data-label {
-
-  color:#62a5cb;
-
-  font-size:7px;
-
-  letter-spacing:1.3px;
-}
-
-
-.data-value {
-
-  margin-top:7px;
-
-  color:#e4f5ff;
-
-  font-size:10px;
-
-  letter-spacing:1.5px;
-
-  overflow-wrap:anywhere;
-}
-
 
 /* =========================================================
-   ENERGY CORE SCANNER
+   CORE SCANNER
 ========================================================= */
 
-.scanner-wrap {
+.scanner-section {
+  position:relative;
+  z-index:2;
 
   display:flex;
-
-  align-items:center;
   justify-content:center;
-
-  min-width:0;
 }
-
 
 .scan-zone {
-
   position:relative;
 
-  width:
-    min(67vw, 290px);
+  width:min(78vw,330px);
+  height:min(78vw,330px);
 
-  height:
-    min(67vw, 290px);
+  max-width:330px;
+  max-height:330px;
 
-  max-width:290px;
-  max-height:290px;
-
-  min-width:175px;
-  min-height:175px;
+  min-width:230px;
+  min-height:230px;
 
   display:flex;
-
-  justify-content:center;
   align-items:center;
+  justify-content:center;
 }
 
+/* feste Grundringe */
 
-/* äußere Kreise */
-
-.ring {
-
+.base-ring {
   position:absolute;
 
   border-radius:50%;
-
-  pointer-events:none;
 }
 
-
-.ring-static {
-
-  width:96%;
-  height:96%;
+.r1 {
+  width:97%;
+  height:97%;
 
   border:
-    1px solid
-    rgba(47,179,247,.34);
+    1px solid rgba(57,199,255,.30);
 
   box-shadow:
-
-    inset
-    0 0 30px
-    rgba(0,121,198,.04),
-
-    0 0 22px
-    rgba(0,121,198,.04);
+    0 0 22px rgba(34,170,244,.06);
 }
 
+.r2 {
+  width:82%;
+  height:82%;
 
-/* heller segmentierter Ring */
-
-.ring-segments-outer {
-
-  width:91%;
-  height:91%;
-
-  background:
-
-    conic-gradient(
-
-      from 0deg,
-
-      transparent 0deg 12deg,
-
-      rgba(55,199,255,.18)
-      12deg 24deg,
-
-      transparent 24deg 46deg,
-
-      rgba(139,220,255,.95)
-      46deg 66deg,
-
-      transparent 66deg 102deg,
-
-      rgba(30,183,255,.18)
-      102deg 119deg,
-
-      transparent 119deg 158deg,
-
-      rgba(30,183,255,.80)
-      158deg 176deg,
-
-      transparent 176deg 220deg,
-
-      rgba(139,220,255,.95)
-      220deg 245deg,
-
-      transparent 245deg 292deg,
-
-      rgba(30,183,255,.70)
-      292deg 310deg,
-
-      transparent 310deg 360deg
-    );
-
-  -webkit-mask:
-
-    radial-gradient(
-      farthest-side,
-      transparent calc(100% - 8px),
-      #000 calc(100% - 7px)
-    );
-
-  mask:
-
-    radial-gradient(
-      farthest-side,
-      transparent calc(100% - 8px),
-      #000 calc(100% - 7px)
-    );
-
-  animation:
-    slowSpin 13s linear infinite;
-
-  filter:
-
-    drop-shadow(
-      0 0 7px
-      rgba(39,188,255,.65)
-    );
+  border:
+    1px solid rgba(68,198,255,.26);
 }
 
+.r3 {
+  width:65%;
+  height:65%;
 
-/* zweiter gegenläufiger Segmentring */
+  border:
+    1px solid rgba(118,221,255,.42);
 
-.ring-segments-inner {
-
-  width:80%;
-  height:80%;
-
-  background:
-
-    conic-gradient(
-
-      transparent 0 20deg,
-
-      rgba(30,183,255,.9)
-      20deg 26deg,
-
-      transparent 26deg 62deg,
-
-      rgba(30,183,255,.35)
-      62deg 70deg,
-
-      transparent 70deg 123deg,
-
-      rgba(139,220,255,.85)
-      123deg 130deg,
-
-      transparent 130deg 195deg,
-
-      rgba(30,183,255,.65)
-      195deg 205deg,
-
-      transparent 205deg 278deg,
-
-      rgba(139,220,255,.75)
-      278deg 285deg,
-
-      transparent 285deg 360deg
-    );
-
-  -webkit-mask:
-
-    radial-gradient(
-      farthest-side,
-      transparent calc(100% - 3px),
-      black calc(100% - 2px)
-    );
-
-  mask:
-
-    radial-gradient(
-      farthest-side,
-      transparent calc(100% - 3px),
-      black calc(100% - 2px)
-    );
-
-  animation:
-    reverseSpin 19s linear infinite;
+  box-shadow:
+    inset 0 0 25px rgba(32,166,230,.06);
 }
 
-
-/* feine Tick-Markierungen */
+/* äußere Tick-Skala */
 
 .tick-ring {
-
   position:absolute;
 
-  width:73%;
-  height:73%;
+  width:89%;
+  height:89%;
 
   border-radius:50%;
 
   background:
-
     repeating-conic-gradient(
-
-      rgba(83,205,255,.68)
+      rgba(113,218,255,.60)
       0deg 1deg,
-
       transparent
       1deg 5deg
     );
 
   -webkit-mask:
-
     radial-gradient(
       farthest-side,
       transparent calc(100% - 3px),
@@ -790,218 +357,351 @@ Fallback falls PNG noch nicht im Repository liegt
     );
 
   mask:
-
     radial-gradient(
       farthest-side,
       transparent calc(100% - 3px),
       black calc(100% - 2px)
     );
 
-  opacity:.7;
-
-  animation:
-    slowSpin 32s linear infinite;
+  opacity:.55;
 }
 
+/* rotierende Kurzsegmente */
 
-/* innerer Scan-Kreis */
-
-.inner-disc {
-
+.segment-layer {
   position:absolute;
 
-  width:60%;
-  height:60%;
+  width:92%;
+  height:92%;
 
   border-radius:50%;
 
-  border:
-    1px solid
-    rgba(86,202,255,.58);
+  animation:
+    rotateSegments
+    11s
+    linear
+    infinite;
+}
+
+.segment-layer.secondary {
+  width:76%;
+  height:76%;
+
+  animation:
+    rotateSegmentsReverse
+    16s
+    linear
+    infinite;
+}
+
+.segment {
+  position:absolute;
+
+  left:50%;
+  top:50%;
+
+  width:15%;
+  height:5px;
+
+  margin-left:-7.5%;
+  margin-top:-2px;
+
+  border-radius:10px;
 
   background:
-
-    radial-gradient(
-      circle,
-      rgba(18,74,111,.11),
-      rgba(2,11,18,.8) 75%
+    linear-gradient(
+      90deg,
+      transparent,
+      #86e0ff,
+      #25bfff,
+      transparent
     );
 
   box-shadow:
+    0 0 8px rgba(51,194,255,.75),
+    0 0 15px rgba(51,194,255,.28);
 
-    inset
-    0 0 40px
-    rgba(0,153,231,.08),
-
-    0 0 20px
-    rgba(0,153,231,.07);
+  transform-origin:
+    50%
+    calc(50% + 138px);
 }
 
+/*
+Segmente werden mit translate
+auf einer echten Kreisbahn gesetzt
+*/
 
-/* Fadenkreuz */
+.seg1 {
+  transform:
+    rotate(10deg)
+    translateY(-138px);
+}
+
+.seg2 {
+  transform:
+    rotate(86deg)
+    translateY(-138px);
+}
+
+.seg3 {
+  transform:
+    rotate(169deg)
+    translateY(-138px);
+}
+
+.seg4 {
+  transform:
+    rotate(248deg)
+    translateY(-138px);
+}
+
+.seg5 {
+  transform:
+    rotate(318deg)
+    translateY(-138px);
+}
+
+/* innere Segmente */
+
+.secondary .segment {
+  width:11%;
+  height:3px;
+
+  margin-left:-5.5%;
+
+  transform-origin:
+    50%
+    calc(50% + 112px);
+
+  opacity:.80;
+}
+
+.secondary .seg1 {
+  transform:
+    rotate(30deg)
+    translateY(-112px);
+}
+
+.secondary .seg2 {
+  transform:
+    rotate(125deg)
+    translateY(-112px);
+}
+
+.secondary .seg3 {
+  transform:
+    rotate(222deg)
+    translateY(-112px);
+}
+
+.secondary .seg4 {
+  transform:
+    rotate(305deg)
+    translateY(-112px);
+}
+
+.secondary .seg5 {
+  display:none;
+}
+
+/* feste N-Core Marker */
+
+.marker {
+  position:absolute;
+
+  width:9px;
+  height:9px;
+
+  border-top:
+    1px solid rgba(139,226,255,.8);
+
+  border-left:
+    1px solid rgba(139,226,255,.8);
+
+  transform:
+    rotate(45deg);
+
+  opacity:.75;
+}
+
+.m-top {
+  top:5%;
+}
+
+.m-right {
+  right:5%;
+  transform:
+    rotate(135deg);
+}
+
+.m-bottom {
+  bottom:5%;
+  transform:
+    rotate(225deg);
+}
+
+.m-left {
+  left:5%;
+  transform:
+    rotate(315deg);
+}
+
+/* center */
+
+.center-core {
+  position:absolute;
+
+  width:54%;
+  height:54%;
+
+  border-radius:50%;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border:
+    1px solid rgba(127,220,255,.5);
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(24,94,139,.18),
+      rgba(2,12,21,.85) 68%
+    );
+
+  box-shadow:
+    inset 0 0 30px rgba(28,172,238,.08),
+    0 0 18px rgba(25,166,235,.08);
+}
+
+/* axis */
 
 .axis-x,
 .axis-y {
-
   position:absolute;
 
   background:
-    rgba(42,184,255,.10);
+    rgba(47,177,238,.11);
 }
 
-
 .axis-x {
-
   width:94%;
   height:1px;
 }
 
-
 .axis-y {
-
-  height:94%;
   width:1px;
+  height:94%;
 }
 
+/* scan brackets */
 
-/* Scan-Corners */
-
-.corner {
-
+.scan-bracket {
   position:absolute;
 
-  width:17px;
-  height:17px;
+  width:20px;
+  height:20px;
 
-  border-color:#b0eaff;
+  border-color:#b9efff;
 
   filter:
     drop-shadow(
-      0 0 5px
-      rgba(42,184,255,.8)
+      0 0 5px rgba(82,199,255,.7)
     );
 }
 
-
-.corner.c1 {
-
-  left:39%;
-  top:35%;
+.b1 {
+  left:37%;
+  top:36%;
 
   border-left:2px solid;
   border-top:2px solid;
 }
 
-
-.corner.c2 {
-
-  right:39%;
-  top:35%;
+.b2 {
+  right:37%;
+  top:36%;
 
   border-right:2px solid;
   border-top:2px solid;
 }
 
-
-.corner.c3 {
-
-  left:39%;
-  bottom:35%;
+.b3 {
+  left:37%;
+  bottom:36%;
 
   border-left:2px solid;
   border-bottom:2px solid;
 }
 
-
-.corner.c4 {
-
-  right:39%;
-  bottom:35%;
+.b4 {
+  right:37%;
+  bottom:36%;
 
   border-right:2px solid;
   border-bottom:2px solid;
 }
 
-
-/* Scaninhalt */
+/* copy */
 
 .scan-copy {
-
   position:relative;
   z-index:10;
 
-  width:54%;
-
   text-align:center;
-}
 
+  width:54%;
+}
 
 .nfc-symbol {
+  color:#8ce5ff;
 
-  font-size:28px;
-
-  transform:rotate(90deg);
-
-  color:#8bdcff;
-
-  text-shadow:
-
-    0 0 8px
-    rgba(66,195,255,.8),
-
-    0 0 18px
-    rgba(32,160,234,.4);
+  font-size:25px;
 
   line-height:1;
-}
 
+  transform:
+    rotate(90deg);
+
+  text-shadow:
+    0 0 9px rgba(55,191,255,.85);
+}
 
 .scan-main {
+  margin-top:12px;
 
-  margin-top:14px;
+  color:#f2fbff;
 
-  font-size:10px;
-
-  letter-spacing:2px;
-
-  color:#eefaff;
+  font-size:11px;
+  letter-spacing:1.8px;
 }
-
 
 .scan-sub {
-
   margin-top:5px;
 
+  color:#769eb5;
+
   font-size:6px;
-
-  letter-spacing:1.4px;
-
-  color:#6d9bb6;
+  letter-spacing:1.1px;
 }
 
-
-.scan-uid {
-
+.scan-small {
   margin-top:7px;
 
-  font-size:5.5px;
+  color:#50bde8;
 
-  line-height:1.45;
-
-  letter-spacing:.8px;
-
-  color:#5bbbe8;
+  font-size:5.6px;
+  line-height:1.4;
 
   overflow-wrap:anywhere;
 }
 
-
 /* =========================================================
-   ANIMATION STATES
+   ANIMATION
 ========================================================= */
 
-@keyframes slowSpin {
-
+@keyframes rotateSegments {
   from {
     transform:rotate(0deg);
   }
@@ -1011,9 +711,7 @@ Fallback falls PNG noch nicht im Repository liegt
   }
 }
 
-
-@keyframes reverseSpin {
-
+@keyframes rotateSegmentsReverse {
   from {
     transform:rotate(360deg);
   }
@@ -1023,315 +721,229 @@ Fallback falls PNG noch nicht im Repository liegt
   }
 }
 
+@keyframes centerPulse {
 
-@keyframes scanPulse {
-
-  0%,100% {
-    opacity:.7;
-    filter:
-      drop-shadow(
-        0 0 5px
-        rgba(42,184,255,.5)
-      );
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 30px rgba(28,172,238,.08),
+      0 0 18px rgba(25,166,235,.08);
   }
 
   50% {
-    opacity:1;
-
-    filter:
-      drop-shadow(
-        0 0 14px
-        rgba(89,205,255,1)
-      );
+    box-shadow:
+      inset 0 0 38px rgba(28,172,238,.14),
+      0 0 30px rgba(25,166,235,.20);
   }
 }
 
-
-/* während NFC Scan */
+/* SCANNING */
 
 .scan-zone.active
-.ring-segments-outer {
+.segment-layer {
+  animation-duration:1.5s;
+}
 
+.scan-zone.active
+.segment-layer.secondary {
+  animation-duration:.9s;
+}
+
+.scan-zone.active
+.center-core {
   animation:
-    slowSpin 1.6s linear infinite;
+    centerPulse
+    .85s
+    ease-in-out
+    infinite;
+}
 
-  filter:
-    drop-shadow(
-      0 0 11px
-      rgba(49,195,255,.95)
+/* SUCCESS */
+
+.scan-zone.success
+.segment {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #a2ffe0,
+      #52efb4,
+      transparent
     );
-}
-
-
-.scan-zone.active
-.ring-segments-inner {
-
-  animation:
-    reverseSpin .95s linear infinite;
-}
-
-
-.scan-zone.active
-.tick-ring {
-
-  animation:
-    reverseSpin 2.7s linear infinite;
-}
-
-
-.scan-zone.active
-.inner-disc {
-
-  animation:
-    scanPulse 1s ease-in-out infinite;
-}
-
-
-/* Erfolg */
-
-.scan-zone.success
-.ring-segments-outer,
-.scan-zone.success
-.ring-segments-inner {
-
-  filter:
-
-    hue-rotate(70deg)
-
-    drop-shadow(
-      0 0 13px
-      rgba(71,240,176,.85)
-    );
-}
-
-
-.scan-zone.success
-.inner-disc {
-
-  border-color:
-    rgba(71,240,176,.9);
 
   box-shadow:
-
-    inset
-    0 0 40px
-    rgba(71,240,176,.10),
-
-    0 0 25px
-    rgba(71,240,176,.12);
+    0 0 10px rgba(82,239,180,.8);
 }
 
-
-/* Fehler */
-
-.scan-zone.error
-.ring-segments-outer,
-.scan-zone.error
-.ring-segments-inner {
-
-  filter:
-
-    hue-rotate(145deg)
-    saturate(1.8)
-
-    drop-shadow(
-      0 0 12px
-      rgba(255,80,90,.7)
-    );
-}
-
-
-.scan-zone.error
-.inner-disc {
-
+.scan-zone.success
+.center-core {
   border-color:
-    rgba(255,100,112,.75);
+    rgba(82,239,180,.75);
+
+  box-shadow:
+    inset 0 0 30px rgba(82,239,180,.10),
+    0 0 30px rgba(82,239,180,.13);
 }
 
+/* ERROR */
+
+.scan-zone.error
+.segment {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #ff9aa2,
+      #ff6874,
+      transparent
+    );
+
+  box-shadow:
+    0 0 9px rgba(255,104,116,.55);
+}
+
+.scan-zone.error
+.center-core {
+  border-color:
+    rgba(255,104,116,.72);
+}
 
 /* =========================================================
-   INPUT AREA
+   INPUTS
 ========================================================= */
 
 .data-grid {
+  position:relative;
+  z-index:2;
 
   display:grid;
-
-  grid-template-columns:
-    1fr 1fr;
+  grid-template-columns:1fr 1fr;
 
   gap:8px;
 
-  margin-top:16px;
+  margin-top:12px;
 }
 
-
-.input-panel {
-
-  position:relative;
-
-  padding:
-    8px 9px 9px;
+.field {
+  padding:8px;
 
   border:
-    1px solid rgba(42,184,255,.34);
+    1px solid rgba(39,191,255,.27);
 
   background:
-
-    linear-gradient(
-      180deg,
-      rgba(5,21,34,.87),
-      rgba(3,13,23,.92)
-    );
+    rgba(4,18,30,.72);
 }
 
-
-.field-title {
+.field label {
+  display:block;
 
   margin-bottom:6px;
 
-  color:#5fa8cf;
+  color:var(--muted);
 
-  font-size:7px;
-
-  letter-spacing:1.4px;
+  font-size:6px;
+  letter-spacing:1.2px;
 }
 
-
 input {
-
   width:100%;
-
-  height:42px;
+  height:44px;
 
   border:
-    1px solid rgba(42,184,255,.38);
-
-  border-radius:0;
+    1px solid rgba(39,191,255,.34);
 
   outline:none;
 
   background:
-    rgba(1,8,15,.75);
+    rgba(1,9,16,.84);
 
-  color:#eaf9ff;
+  color:#f1fbff;
 
   text-align:center;
 
   font-size:15px;
 
-  letter-spacing:1.5px;
+  letter-spacing:1.3px;
 }
-
 
 input:focus {
-
-  border-color:
-    var(--blue);
+  border-color:var(--blue);
 
   box-shadow:
-
-    0 0 12px
-    rgba(42,184,255,.12),
-
-    inset
-    0 0 10px
-    rgba(42,184,255,.035);
+    0 0 10px rgba(39,191,255,.12);
 }
 
-
 /* =========================================================
-   SCAN BUTTON
+   BUTTON
 ========================================================= */
 
 .scan-button {
+  position:relative;
+  z-index:2;
 
   width:100%;
 
+  min-height:56px;
+
   margin-top:10px;
 
-  min-height:55px;
-
   border:
-    1px solid rgba(76,203,255,.68);
+    1px solid rgba(65,201,255,.65);
 
-  border-radius:0;
-
-  position:relative;
-
-  overflow:hidden;
-
-  color:#f2fbff;
+  color:white;
 
   background:
-
     linear-gradient(
       180deg,
-      rgba(12,87,135,.60),
-      rgba(5,46,77,.75)
+      rgba(15,109,165,.72),
+      rgba(5,52,86,.82)
     );
+
+  letter-spacing:2.8px;
 
   font-size:10px;
 
-  font-weight:500;
-
-  letter-spacing:3.2px;
-
   cursor:pointer;
 
+  overflow:hidden;
+
   box-shadow:
-
-    inset
-    0 0 22px
-    rgba(23,163,236,.14),
-
-    0 0 18px
-    rgba(23,163,236,.08);
-
-  transition:
-    .18s ease;
+    inset 0 0 19px rgba(39,191,255,.12),
+    0 0 15px rgba(39,191,255,.07);
 }
 
-
-/* animierter Lichtstrich */
-
-.scan-button::before {
-
+.scan-button::after {
   content:"";
 
   position:absolute;
 
   top:0;
-  left:-35%;
+  left:-40%;
 
-  width:25%;
+  width:26%;
   height:100%;
 
-  background:
+  transform:
+    skewX(-20deg);
 
+  background:
     linear-gradient(
       90deg,
       transparent,
-      rgba(134,225,255,.32),
+      rgba(157,230,255,.27),
       transparent
     );
 
-  transform:skewX(-20deg);
-
   animation:
-    buttonSweep 4.5s
-    ease-in-out infinite;
+    buttonSweep 4s
+    infinite;
 }
-
 
 @keyframes buttonSweep {
 
-  0% {
-    left:-35%;
-  }
-
-  70% {
-    left:-35%;
+  0%,
+  68% {
+    left:-40%;
   }
 
   100% {
@@ -1339,814 +951,355 @@ input:focus {
   }
 }
 
-
 .scan-button:disabled {
-
-  opacity:.34;
+  opacity:.38;
 
   cursor:default;
 }
 
-
-.scan-button:not(:disabled):active {
-
-  transform:scale(.995);
-
-  background:
-
-    linear-gradient(
-      180deg,
-      rgba(25,157,225,.72),
-      rgba(6,74,116,.82)
-    );
-}
-
-
 /* =========================================================
-   SYSTEM MESSAGE
+   MESSAGE
 ========================================================= */
 
-.message-panel {
+.message {
+  position:relative;
+  z-index:2;
 
   margin-top:10px;
 
-  min-height:86px;
-
-  display:grid;
-
-  grid-template-columns:
-    36px 1fr;
-
-  gap:10px;
-
-  align-items:start;
+  min-height:92px;
 
   padding:12px;
 
   border:
-    1px solid rgba(42,184,255,.26);
+    1px solid rgba(39,191,255,.23);
 
   background:
-    rgba(3,13,22,.84);
+    rgba(2,12,21,.78);
 }
 
+.message-label {
+  margin-bottom:8px;
 
-.console-icon {
+  color:#64acce;
 
-  width:31px;
-  height:31px;
-
-  display:flex;
-
-  align-items:center;
-  justify-content:center;
-
-  border:
-    1px solid rgba(42,184,255,.5);
-
-  color:#7bd7ff;
-
-  font-size:15px;
+  font-size:6px;
+  letter-spacing:1.4px;
 }
-
-
-.message-title {
-
-  color:#69acd0;
-
-  font-size:7px;
-
-  letter-spacing:1.5px;
-
-  margin-bottom:7px;
-}
-
 
 #status {
-
-  white-space:pre-line;
-
-  color:#e9f9ff;
+  color:#ecf9ff;
 
   font-size:9px;
 
-  letter-spacing:1.1px;
-
   line-height:1.55;
+
+  letter-spacing:1px;
+
+  white-space:pre-line;
 }
 
-
 #status.success {
-
   color:var(--success);
 }
 
-
 #status.error {
-
   color:var(--error);
 }
 
-
 #status.uid {
-
   color:var(--blue3);
 }
 
-
 /* =========================================================
-   LOWER CITY AREA
+   FOOTER
 ========================================================= */
 
-.city-footer {
-
+.footer {
   position:relative;
-
-  margin:
-    14px -14px 0;
-
-  padding:
-    32px 18px 11px;
-
-  min-height:130px;
-
-  overflow:hidden;
-
-  border-top:
-    1px solid rgba(42,184,255,.13);
-
-  background:
-
-    radial-gradient(
-      ellipse at bottom,
-      rgba(0,108,173,.16),
-      transparent 65%
-    );
-}
-
-
-/* abstrahierter Würzburg-Horizont */
-
-.city-footer::before {
-
-  content:"";
-
-  position:absolute;
-
-  inset:0;
-
-  opacity:.25;
-
-  background:
-
-    linear-gradient(
-      180deg,
-      transparent,
-      rgba(0,88,146,.05) 40%,
-      rgba(0,61,103,.20)
-    );
-}
-
-
-.footer-line {
-
-  position:absolute;
-
-  left:8%;
-  right:8%;
-  top:14px;
-
-  height:1px;
-
-  background:
-
-    linear-gradient(
-      90deg,
-      transparent,
-      rgba(42,184,255,.75),
-      transparent
-    );
-}
-
-
-.footer-grid {
-
-  position:relative;
-
   z-index:2;
 
-  display:grid;
+  margin-top:12px;
 
-  grid-template-columns:
-    1fr auto 1fr;
+  padding-top:10px;
 
-  align-items:end;
+  border-top:
+    1px solid rgba(39,191,255,.18);
 
-  gap:10px;
+  display:flex;
+
+  justify-content:space-between;
+
+  gap:12px;
+
+  color:#5b8ca7;
+
+  font-size:5.8px;
+  letter-spacing:1.1px;
 }
 
+.footer strong {
+  color:#62c7f6;
 
-.footer-left,
-.footer-right {
-
-  color:#527f9a;
-
-  font-size:5.5px;
-
-  line-height:1.7;
-
-  letter-spacing:1.2px;
+  font-weight:400;
 }
-
-
-.footer-right {
-
-  text-align:right;
-}
-
-
-.footer-center {
-
-  text-align:center;
-}
-
-
-.footer-brand {
-
-  color:#68c7f5;
-
-  font-size:9px;
-
-  letter-spacing:2.5px;
-}
-
-
-.footer-mode {
-
-  margin-top:5px;
-
-  color:#507f9a;
-
-  font-size:5.5px;
-
-  letter-spacing:1px;
-}
-
 
 .build {
+  margin-top:10px;
 
-  margin-top:15px;
-
-  padding-top:9px;
-
-  position:relative;
-
-  z-index:2;
-
-  border-top:
-    1px solid rgba(42,184,255,.22);
-
-  color:#4f9fc9;
+  color:#4297c2;
 
   text-align:center;
 
   font-size:6px;
-
-  letter-spacing:2.3px;
+  letter-spacing:2px;
 }
 
-
 /* =========================================================
-   MOBILE ADJUSTMENTS
+   SMALL PHONES
 ========================================================= */
 
-@media (max-width:420px) {
+@media (max-width:430px) {
 
-  .content {
+  .terminal {
+    padding-top:305px;
+  }
+
+  .interface-panel {
     padding:
-      14px 9px 10px;
-  }
-
-  .system-layout {
-
-    grid-template-columns:
-      76px 1fr 76px;
-
-    gap:5px;
-  }
-
-  .side-panel {
-
-    min-height:255px;
-
-    padding:
-      8px 6px;
-  }
-
-  .sys-label,
-  .data-label {
-
-    font-size:5.7px;
-
-    letter-spacing:.8px;
-  }
-
-  .sys-value {
-
-    font-size:5.7px;
-  }
-
-  .sys-main-value {
-
-    font-size:11px;
-  }
-
-  .data-value {
-
-    font-size:7px;
+      12px 8px 14px;
   }
 
   .scan-zone {
+    width:min(82vw,310px);
+    height:min(82vw,310px);
+  }
 
-    width:min(62vw,245px);
-    height:min(62vw,245px);
+  .heading-main {
+    font-size:11px;
   }
 
   .scan-main {
-
-    font-size:8px;
+    font-size:9px;
   }
 
-  .nfc-symbol {
-
-    font-size:25px;
-  }
-
-  .master-logo {
-
-    width:76%;
-  }
-
-  .terminal-head {
-
-    padding-top:13px;
-  }
-
-  .head-main {
-
-    font-size:11px;
-
-    letter-spacing:2.5px;
-  }
-
-  .city-footer {
-
-    margin:
-      13px -9px 0;
-  }
-}
-
-
-@media (max-width:355px) {
-
-  .system-layout {
-
-    grid-template-columns:
-      67px 1fr 67px;
-  }
-
-  .side-panel {
-
-    min-height:230px;
-  }
-
-  .scan-zone {
-
-    width:180px;
-    height:180px;
-
-    min-width:160px;
-    min-height:160px;
+  .footer {
+    font-size:5px;
   }
 }
 
 </style>
 </head>
 
-
 <body>
 
+<div class="background"></div>
 
 <div class="page">
 
 <div class="terminal">
 
-<div class="top-beam"></div>
+<div class="terminal-heading">
 
+  <div class="heading-main">
+    N-CORE REGISTRATION TERMINAL
+  </div>
 
-<div class="content">
-
-
-<!-- =====================================================
-     BRAND
-===================================================== -->
-
-<div class="brand-block">
-
-
-<img
-  class="master-logo"
-  src="NEXORA_MASTER_LOGO_ENERGY_SYSTEMS_TRANSPARENT.png"
-  alt="NEXORA Energy Systems"
-  onerror="
-    this.style.display='none';
-    document.getElementById('logoFallback').style.display='block';
-    document.getElementById('energyFallback').style.display='block';
-  ">
-
-
-<div
-  id="logoFallback"
-  class="logo-fallback">
-
-  NEXORA
+  <div class="heading-sub">
+    SCAN // IDENTIFY // REGISTER
+  </div>
 
 </div>
 
 
-<div
-  id="energyFallback"
-  class="energy-system-fallback">
-
-  ENERGY SYSTEMS
-
-</div>
+<div class="interface-panel">
 
 
-<img
-  class="city-signature"
-  src="NEXORA_SIGNATURE_WUERZBURG_TRANSPARENT.png"
-  alt="Würzburg Signature"
-  onerror="
-    this.style.display='none';
-  ">
+<!-- SYSTEM STATUS -->
+
+<div class="status-grid">
+
+  <div class="status-card">
+
+    <div class="status-label">
+      SYSTEM
+    </div>
+
+    <div class="status-value">
+      <span class="dot"></span>
+      ONLINE
+    </div>
+
+  </div>
 
 
-<div class="city-text">
+  <div class="status-card">
 
-WÜRZBURG
+    <div class="status-label">
+      DATABASE
+    </div>
 
-</div>
+    <div
+      class="status-value"
+      id="databaseState">
 
+      <span class="dot"></span>
+      LINKING
 
-<div class="city-coordinate">
+    </div>
 
-49.7913° N&nbsp;&nbsp;&nbsp;9.9534° E
-
-</div>
-
-
-</div>
-
-
-
-<!-- =====================================================
-     TITLE
-===================================================== -->
-
-<div class="terminal-head">
-
-<div class="head-main">
-
-N-CORE REGISTRATION TERMINAL
-
-</div>
-
-<div class="head-sub">
-
-SCAN // IDENTIFY // REGISTER
-
-</div>
-
-</div>
+  </div>
 
 
+  <div class="status-card">
 
-<!-- =====================================================
-     MAIN HUD
-===================================================== -->
+    <div class="status-label">
+      NFC INTERFACE
+    </div>
 
-<div class="system-layout">
+    <div
+      class="status-value"
+      id="nfcState">
 
+      <span class="dot"></span>
+      READY
 
-<!-- LEFT SYSTEM PANEL -->
+    </div>
 
-<div class="side-panel">
-
-
-<div class="sys-item">
-
-<div class="sys-label">
-
-SYSTEM
-
-</div>
-
-<div class="sys-value">
-
-<span class="indicator"></span>
-ONLINE
-
-</div>
+  </div>
 
 </div>
 
 
+<!-- SCANNER -->
 
-<div class="sys-item">
-
-<div class="sys-label">
-
-DATABASE
-
-</div>
-
-<div
-  class="sys-value"
-  id="databaseState">
-
-<span class="indicator"></span>
-LINKING
-
-</div>
-
-</div>
-
-
-
-<div class="sys-item">
-
-<div class="sys-label">
-
-NFC MODULE
-
-</div>
-
-<div
-  class="sys-value"
-  id="nfcState">
-
-<span class="indicator"></span>
-READY
-
-</div>
-
-</div>
-
-
-
-<div class="sys-item">
-
-<div class="sys-label">
-
-NEXT CORE
-
-</div>
-
-<div
-  class="sys-main-value"
-  id="nextCoreDisplay">
-
----
-
-</div>
-
-</div>
-
-
-</div>
-
-
-
-<!-- CENTER SCANNER -->
-
-<div class="scanner-wrap">
-
+<div class="scanner-section">
 
 <div
   class="scan-zone"
   id="scanZone">
 
 
-<div class="axis-x"></div>
-<div class="axis-y"></div>
+  <div class="axis-x"></div>
+  <div class="axis-y"></div>
 
 
-<div class="ring ring-static"></div>
-
-<div class="ring ring-segments-outer"></div>
-
-<div class="ring ring-segments-inner"></div>
-
-<div class="tick-ring"></div>
-
-<div class="inner-disc"></div>
+  <div class="base-ring r1"></div>
+  <div class="base-ring r2"></div>
+  <div class="base-ring r3"></div>
 
 
-<div class="corner c1"></div>
-<div class="corner c2"></div>
-<div class="corner c3"></div>
-<div class="corner c4"></div>
+  <div class="tick-ring"></div>
 
 
-<div class="scan-copy">
+  <div class="segment-layer">
+
+    <div class="segment seg1"></div>
+    <div class="segment seg2"></div>
+    <div class="segment seg3"></div>
+    <div class="segment seg4"></div>
+    <div class="segment seg5"></div>
+
+  </div>
 
 
-<div class="nfc-symbol">
+  <div class="segment-layer secondary">
 
-)))
+    <div class="segment seg1"></div>
+    <div class="segment seg2"></div>
+    <div class="segment seg3"></div>
+    <div class="segment seg4"></div>
+    <div class="segment seg5"></div>
 
-</div>
-
-
-<div
-  class="scan-main"
-  id="scanMain">
-
-SYSTEM READY
-
-</div>
+  </div>
 
 
-<div
-  class="scan-sub"
-  id="scanSub">
-
-WAITING FOR N-CORE
-
-</div>
+  <div class="marker m-top"></div>
+  <div class="marker m-right"></div>
+  <div class="marker m-bottom"></div>
+  <div class="marker m-left"></div>
 
 
-<div
-  class="scan-uid"
-  id="scanSmall">
-
-NFC ENERGY INTERFACE
-
-</div>
+  <div class="center-core"></div>
 
 
-</div>
+  <div class="scan-bracket b1"></div>
+  <div class="scan-bracket b2"></div>
+  <div class="scan-bracket b3"></div>
+  <div class="scan-bracket b4"></div>
 
 
-</div>
+  <div class="scan-copy">
 
+    <div class="nfc-symbol">
+      )))
+    </div>
 
-</div>
+    <div
+      class="scan-main"
+      id="scanMain">
 
+      SYSTEM READY
 
+    </div>
 
-<!-- RIGHT DATA PANEL -->
+    <div
+      class="scan-sub"
+      id="scanSub">
 
-<div class="side-panel">
+      WAITING FOR N-CORE
 
+    </div>
 
-<div class="data-item">
+    <div
+      class="scan-small"
+      id="scanSmall">
 
-<div class="data-label">
+      NFC ENERGY INTERFACE
 
-N-CORE
+    </div>
 
-</div>
-
-<div
-  class="data-value"
-  id="rightCore">
-
-AWAITING
+  </div>
 
 </div>
 
 </div>
 
 
-
-<div class="data-item">
-
-<div class="data-label">
-
-UID
-
-</div>
-
-<div
-  class="data-value"
-  id="rightUid">
-
-—
-
-</div>
-
-</div>
-
-
-
-<div class="data-item">
-
-<div class="data-label">
-
-STATUS
-
-</div>
-
-<div
-  class="data-value"
-  id="rightStatus">
-
-READY
-
-</div>
-
-</div>
-
-
-
-<div class="data-item">
-
-<div class="data-label">
-
-ENERGY
-
-</div>
-
-<div
-  class="data-value"
-  id="rightEnergy">
-
-—
-
-</div>
-
-</div>
-
-
-</div>
-
-
-</div>
-
-
-
-<!-- =====================================================
-     DATA INPUT
-===================================================== -->
+<!-- INPUT -->
 
 <div class="data-grid">
 
+  <div class="field">
 
-<div class="input-panel">
+    <label>
+      N-CORE IDENTIFIER
+    </label>
 
-<div class="field-title">
+    <input
+      id="core"
+      type="text"
+      placeholder="NC-001">
 
-N-CORE IDENTIFIER
-
-</div>
-
-<input
-  id="core"
-  type="text"
-  value=""
-  placeholder="NC-001">
-
-</div>
+  </div>
 
 
+  <div class="field">
 
-<div class="input-panel">
+    <label>
+      STORED ENERGY
+    </label>
 
-<div class="field-title">
+    <input
+      id="energy"
+      type="number"
+      inputmode="numeric"
+      placeholder="000">
 
-STORED ENERGY
-
-</div>
-
-<input
-  id="energy"
-  type="number"
-  inputmode="numeric"
-  value=""
-  placeholder="000">
+  </div>
 
 </div>
 
-
-</div>
-
-
-
-<!-- =====================================================
-     BUTTON
-===================================================== -->
 
 <button
   class="scan-button"
@@ -2154,141 +1307,63 @@ STORED ENERGY
   onclick="scanNFC()"
   disabled>
 
-INITIALIZE NFC SCAN
+  INITIALIZE NFC SCAN
 
 </button>
 
 
+<div class="message">
 
-<!-- =====================================================
-     MESSAGE PANEL
-===================================================== -->
+  <div class="message-label">
+    SYSTEM MESSAGE
+  </div>
 
-<div class="message-panel">
-
-
-<div class="console-icon">
-
-›_
+  <div id="status">
+    CONNECTING TO NEXORA DATABASE...
+  </div>
 
 </div>
 
 
-<div>
+<div class="footer">
 
+  <div>
+    <strong>NEXORA</strong>
+    // CENTRAL OPERATIONS
+  </div>
 
-<div class="message-title">
-
-SYSTEM MESSAGE
-
-</div>
-
-
-<div id="status">
-
-CONNECTING TO NEXORA DATABASE...
-
-</div>
-
-
-</div>
-
-
-</div>
-
-
-
-<!-- =====================================================
-     LOWER CITY AREA
-===================================================== -->
-
-<div class="city-footer">
-
-
-<div class="footer-line"></div>
-
-
-<div class="footer-grid">
-
-
-<div class="footer-left">
-
-PEOPLE<br>
-PLACES<br>
-ENERGY<br>
-CONNECTED
-
-</div>
-
-
-<div class="footer-center">
-
-
-<div class="footer-brand">
-
-NEXORA
-
-</div>
-
-
-<div class="footer-mode">
-
-CENTRAL OPERATIONS<br>
-WÜRZBURG // FIELD NETWORK
-
-</div>
-
-
-</div>
-
-
-<div class="footer-right">
-
-ENERGY<br>
-BEYOND<br>
-LIMITS.
-
-</div>
-
+  <div>
+    WÜRZBURG // FIELD NETWORK
+  </div>
 
 </div>
 
 
 <div class="build">
-
-SYSTEM BUILD // REG-1.0
-
-</div>
-
-
+  SYSTEM BUILD // REG-1.1
 </div>
 
 
 </div>
 </div>
 </div>
-
 
 
 <script>
 
-
 /* =========================================================
-   NEXORA API
+   API
 ========================================================= */
 
 const API =
 "https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
 
-
 let scanRunning = false;
-
 let scanController = null;
 
 
-
 /* =========================================================
-   UI HELPERS
+   VISUAL STATES
 ========================================================= */
 
 function setScanVisual(
@@ -2301,38 +1376,28 @@ function setScanVisual(
   const zone =
     document.getElementById("scanZone");
 
-
   zone.classList.remove(
     "active",
     "success",
     "error"
   );
 
-
   if (mode) {
-
     zone.classList.add(mode);
   }
 
-
   document
     .getElementById("scanMain")
-    .innerText =
-      main;
-
+    .innerText = main;
 
   document
     .getElementById("scanSub")
-    .innerText =
-      sub;
-
+    .innerText = sub;
 
   document
     .getElementById("scanSmall")
-    .innerText =
-      small;
+    .innerText = small;
 }
-
 
 
 function setDatabaseState(text) {
@@ -2340,10 +1405,9 @@ function setDatabaseState(text) {
   document
     .getElementById("databaseState")
     .innerHTML =
-      '<span class="indicator"></span>' +
+      '<span class="dot"></span>' +
       text;
 }
-
 
 
 function setNfcState(text) {
@@ -2351,454 +1415,229 @@ function setNfcState(text) {
   document
     .getElementById("nfcState")
     .innerHTML =
-      '<span class="indicator"></span>' +
+      '<span class="dot"></span>' +
       text;
 }
 
 
-
-function setCurrentCore(core) {
-
-  document
-    .getElementById("nextCoreDisplay")
-    .innerText =
-      core || "---";
-
-
-  document
-    .getElementById("rightCore")
-    .innerText =
-      core || "AWAITING";
-}
-
-
-
-function setRightData(
-  uid = "—",
-  status = "READY",
-  energy = "—"
-) {
-
-  document
-    .getElementById("rightUid")
-    .innerText =
-      uid;
-
-
-  document
-    .getElementById("rightStatus")
-    .innerText =
-      status;
-
-
-  document
-    .getElementById("rightEnergy")
-    .innerText =
-      energy;
-}
-
-
-
 /* =========================================================
-   JSONP API REQUEST
+   JSONP
 ========================================================= */
 
 function apiRequest(params) {
 
+  return new Promise((resolve, reject) => {
 
-  return new Promise(
-    (resolve, reject) => {
+    const callbackName =
+      "nexoraCallback_" +
+      Date.now() +
+      "_" +
+      Math.floor(
+        Math.random() * 100000
+      );
 
+    const script =
+      document.createElement("script");
 
-      const callbackName =
-        "nexoraCallback_" +
-        Date.now() +
-        "_" +
-        Math.floor(
-          Math.random() *
-          100000
+    const timeout =
+      setTimeout(() => {
+
+        cleanup();
+
+        reject(
+          new Error(
+            "SERVER RESPONSE TIMEOUT"
+          )
         );
 
-
-      const script =
-        document.createElement(
-          "script"
-        );
+      }, 10000);
 
 
-      const timeout =
-        setTimeout(
-          () => {
+    function cleanup() {
 
-            cleanup();
+      clearTimeout(timeout);
 
-            reject(
-              new Error(
-                "SERVER RESPONSE TIMEOUT"
-              )
-            );
+      if (script.parentNode) {
 
-          },
-
-          10000
-        );
-
-
-
-      function cleanup() {
-
-
-        clearTimeout(
-          timeout
-        );
-
-
-        if (
-          script.parentNode
-        ) {
-
-          script
-            .parentNode
-            .removeChild(
-              script
-            );
-        }
-
-
-        try {
-
-          delete window[
-            callbackName
-          ];
-
-        }
-
-        catch(error) {
-
-          window[
-            callbackName
-          ] =
-            undefined;
-        }
+        script.parentNode
+          .removeChild(script);
       }
 
+      try {
 
+        delete window[callbackName];
 
-      window[
-        callbackName
-      ] =
-        data => {
+      } catch(error) {
 
-          cleanup();
-
-          resolve(
-            data
-          );
-        };
-
-
-
-      const query =
-        new URLSearchParams({
-
-          ...params,
-
-          callback:
-            callbackName,
-
-          _:
-            Date.now()
-
-        });
-
-
-
-      script.onerror =
-        () => {
-
-
-          cleanup();
-
-
-          reject(
-            new Error(
-              "SERVER CONNECTION ERROR"
-            )
-          );
-        };
-
-
-
-      script.src =
-        API +
-        "?" +
-        query.toString();
-
-
-
-      document
-        .body
-        .appendChild(
-          script
-        );
+        window[callbackName] =
+          undefined;
+      }
     }
-  );
+
+
+    window[callbackName] =
+      data => {
+
+        cleanup();
+
+        resolve(data);
+      };
+
+
+    const query =
+      new URLSearchParams({
+        ...params,
+        callback: callbackName,
+        _: Date.now()
+      });
+
+
+    script.onerror =
+      () => {
+
+        cleanup();
+
+        reject(
+          new Error(
+            "SERVER CONNECTION ERROR"
+          )
+        );
+      };
+
+
+    script.src =
+      API +
+      "?" +
+      query.toString();
+
+
+    document
+      .body
+      .appendChild(script);
+  });
 }
 
 
-
 /* =========================================================
-   TERMINAL INITIALISIEREN
+   INITIALIZE
 ========================================================= */
 
 async function initializeTerminal() {
 
-
   const status =
-    document.getElementById(
-      "status"
-    );
-
+    document.getElementById("status");
 
   const button =
-    document.getElementById(
-      "scanButton"
-    );
-
+    document.getElementById("scanButton");
 
   const coreInput =
-    document.getElementById(
-      "core"
-    );
-
+    document.getElementById("core");
 
   const energyInput =
-    document.getElementById(
-      "energy"
-    );
+    document.getElementById("energy");
 
 
-
-  setDatabaseState(
-    "LINKING"
-  );
-
-
-  setNfcState(
-    "READY"
-  );
-
+  setDatabaseState("LINKING");
 
   setScanVisual(
-
     "active",
-
     "INITIALIZING",
-
     "DATABASE LINK"
-
   );
-
-
-  setRightData(
-    "—",
-    "INITIALIZING",
-    "—"
-  );
-
 
 
   try {
 
-
     const response =
       await apiRequest({
-
-        action:
-          "nextfree"
-
+        action:"nextfree"
       });
 
 
-
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
 
       throw new Error(
-
         response.error ||
-
         "UNKNOWN SERVER ERROR"
-
       );
     }
 
 
-
-    setDatabaseState(
-      "CONNECTED"
-    );
+    setDatabaseState("CONNECTED");
 
 
-
-    if (
-      !response.nextFreeCore
-    ) {
-
-
-      setCurrentCore(
-        "---"
-      );
-
+    if (!response.nextFreeCore) {
 
       setScanVisual(
-
         "success",
-
         "SERIES COMPLETE",
-
         "ALL N-CORES REGISTERED"
-
       );
-
-
-      setRightData(
-
-        "—",
-
-        "COMPLETE",
-
-        "—"
-
-      );
-
 
       status.className =
         "success";
 
-
       status.innerText =
-
         "REGISTRATION SERIES COMPLETE\n\n" +
-
         "ALL N-CORES REGISTERED";
-
 
       button.disabled =
         true;
-
 
       return;
     }
 
 
-
     coreInput.value =
       response.nextFreeCore;
-
 
     energyInput.value =
       "";
 
 
-    setCurrentCore(
-      response.nextFreeCore
-    );
-
-
-    setRightData(
-      "—",
-      "READY",
-      "—"
-    );
-
-
-
     setScanVisual(
-
       "",
-
       "SYSTEM READY",
-
       "WAITING FOR N-CORE"
-
     );
-
 
 
     status.className =
       "";
 
-
     status.innerText =
-
       "SYSTEM READY\n\n" +
-
       "NEXT // " +
-
       response.nextFreeCore;
-
 
 
     button.disabled =
       false;
 
 
-
     energyInput.focus();
 
+  } catch(error) {
 
-  }
-
-
-  catch(error) {
-
-
-    setDatabaseState(
-      "OFFLINE"
-    );
-
-
-    setCurrentCore(
-      "---"
-    );
-
-
-    setRightData(
-      "—",
-      "OFFLINE",
-      "—"
-    );
-
+    setDatabaseState("OFFLINE");
 
     setScanVisual(
-
       "error",
-
       "LINK FAILURE",
-
       "DATABASE UNAVAILABLE"
-
     );
-
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "DATABASE CONNECTION ERROR\n\n" +
-
       error.message;
-
 
     button.disabled =
       true;
   }
 }
-
 
 
 /* =========================================================
@@ -2807,138 +1646,76 @@ async function initializeTerminal() {
 
 async function scanNFC() {
 
-
   const status =
-    document.getElementById(
-      "status"
-    );
-
+    document.getElementById("status");
 
   const button =
-    document.getElementById(
-      "scanButton"
-    );
+    document.getElementById("scanButton");
 
 
-
-  if (
-    scanRunning
-  ) {
-
+  if (scanRunning) {
     return;
   }
 
 
-
-  if (
-    !(
-      "NDEFReader"
-      in window
-    )
-  ) {
-
+  if (!("NDEFReader" in window)) {
 
     setScanVisual(
-
       "error",
-
       "NFC OFFLINE",
-
       "INTERFACE NOT AVAILABLE"
-
     );
-
-
-    setRightData(
-      "—",
-      "NFC OFFLINE",
-      "—"
-    );
-
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "NFC INTERFACE NOT AVAILABLE\n\n" +
-
       "Android + Chrome erforderlich.";
-
 
     return;
   }
 
 
-
   let core =
-
     document
-      .getElementById(
-        "core"
-      )
+      .getElementById("core")
       .value
       .trim()
       .toUpperCase();
 
 
-
   let energy =
-
     document
-      .getElementById(
-        "energy"
-      )
+      .getElementById("energy")
       .value
       .trim();
 
 
-
-  if (
-    !/^NC-\d{3}$/.test(
-      core
-    )
-  ) {
-
+  if (!/^NC-\d{3}$/.test(core)) {
 
     setScanVisual(
-
       "error",
-
       "INPUT ERROR",
-
       "INVALID CORE IDENTIFIER"
-
     );
-
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "CORE ID FORMAT ERROR\n\n" +
-
       "Beispiel: NC-001";
-
 
     return;
   }
 
 
-
   const coreNumber =
-
     parseInt(
-
       core.substring(3),
-
       10
-
     );
-
 
 
   if (
@@ -2946,855 +1723,418 @@ async function scanNFC() {
     coreNumber > 200
   ) {
 
-
     setScanVisual(
-
       "error",
-
       "INPUT ERROR",
-
       "CORE OUT OF RANGE"
-
     );
-
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "CORE OUT OF RANGE\n\n" +
-
       "NC-001 // NC-200";
 
-
     return;
   }
 
 
-
-  if (
-    !energy
-  ) {
-
+  if (!energy) {
 
     setScanVisual(
-
       "error",
-
       "INPUT ERROR",
-
       "ENERGY VALUE REQUIRED"
-
     );
-
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "ENERGY VALUE MISSING";
-
 
     return;
   }
-
 
 
   try {
 
+    scanRunning = true;
 
-    scanRunning =
-      true;
-
-
-    button.disabled =
-      true;
-
+    button.disabled = true;
 
 
     scanController =
       new AbortController();
 
 
-
     const reader =
       new NDEFReader();
 
 
-
-    let handled =
-      false;
-
+    let handled = false;
 
 
     reader.onreading =
       async event => {
 
 
-
         if (
           handled ||
           !scanRunning
         ) {
-
           return;
         }
 
 
+        handled = true;
 
-        handled =
-          true;
-
-
-        scanRunning =
-          false;
+        scanRunning = false;
 
 
-
-        if (
-          scanController
-        ) {
-
+        if (scanController) {
 
           scanController.abort();
 
-
-          scanController =
-            null;
+          scanController = null;
         }
 
 
-
         core =
-
           document
-            .getElementById(
-              "core"
-            )
+            .getElementById("core")
             .value
             .trim()
             .toUpperCase();
 
 
-
         energy =
-
           document
-            .getElementById(
-              "energy"
-            )
+            .getElementById("energy")
             .value
             .trim();
 
 
-
         const uid =
-
           String(
-
             event.serialNumber ||
-
             ""
-
           )
             .trim()
             .toUpperCase();
 
 
+        if (!uid) {
 
-        if (
-          !uid
-        ) {
-
-
-          button.disabled =
-            false;
-
+          button.disabled = false;
 
           setScanVisual(
-
             "error",
-
             "READ FAILURE",
-
             "UID NOT AVAILABLE"
-
           );
-
-
-          setRightData(
-            "—",
-            "READ ERROR",
-            energy
-          );
-
 
           status.className =
             "error";
 
-
           status.innerText =
-
             "N-CORE DETECTED\n\n" +
-
             "UID NOT AVAILABLE";
-
 
           return;
         }
 
 
-
-        setNfcState(
-          "DETECTED"
-        );
-
-
-        setRightData(
-
-          uid,
-
-          "VERIFYING",
-
-          energy
-
-        );
+        setNfcState("DETECTED");
 
 
         setScanVisual(
-
           "active",
-
           "N-CORE DETECTED",
-
           "VERIFYING UID",
-
           uid
-
         );
-
 
 
         status.className =
           "uid";
 
-
         status.innerText =
-
           "N-CORE DETECTED\n\n" +
-
           "REGISTERING // " +
           core +
-
           "\n" +
-
           "ENERGY // " +
           energy +
-
           "\n" +
-
           "UID // " +
           uid +
-
           "\n\n" +
-
           "CONNECTING TO NEXORA DATABASE...";
-
 
 
         try {
 
-
-
           const response =
             await apiRequest({
-
-              action:
-                "register",
-
-              core:
-                core,
-
-              energy:
-                energy,
-
-              uid:
-                uid
-
+              action:"register",
+              core:core,
+              energy:energy,
+              uid:uid
             });
 
 
-
-          if (
-            !response.ok
-          ) {
-
-
+          if (!response.ok) {
 
             setScanVisual(
-
               "error",
-
               "REGISTRATION DENIED",
-
               "DATABASE REJECTED"
-
             );
-
-
-            setRightData(
-
-              uid,
-
-              "REJECTED",
-
-              energy
-
-            );
-
 
             status.className =
               "error";
 
-
             status.innerText =
-
               "REGISTRATION REJECTED\n\n" +
-
               (
                 response.error ||
-
                 "UNKNOWN SERVER ERROR"
-              )
-
-              +
-
+              ) +
               "\n\nNO DATA CHANGED";
 
 
-            setNfcState(
-              "READY"
-            );
+            setNfcState("READY");
 
-
-            button.disabled =
-              false;
-
+            button.disabled = false;
 
             return;
           }
 
 
-
-          /* ------------------------------
-             SUCCESS
-          ------------------------------ */
-
-
           setScanVisual(
-
             "success",
-
             "CONFIRMED",
-
             response.core +
             " // REGISTERED",
-
             response.uid
-
           );
-
-
-
-          setRightData(
-
-            response.uid,
-
-            "REGISTERED",
-
-            response.energy
-
-          );
-
 
 
           status.className =
             "success";
 
-
           status.innerText =
-
             "N-CORE REGISTERED\n\n" +
-
             response.core +
-
             "\n" +
-
             "ENERGY // " +
             response.energy +
-
             "\n" +
-
             "UID // " +
             response.uid +
-
             "\n\n" +
-
             "CHIP STATUS // " +
             response.chipStatus;
 
 
-
-          setNfcState(
-            "READY"
-          );
+          setNfcState("READY");
 
 
+          setTimeout(() => {
 
-          setTimeout(
-            () => {
+            if (
+              response.nextFreeCore
+            ) {
 
-
-
-              const coreInput =
-
-                document
-                  .getElementById(
-                    "core"
-                  );
-
-
-              const energyInput =
-
-                document
-                  .getElementById(
-                    "energy"
-                  );
-
-
-
-              if (
-                response.nextFreeCore
-              ) {
-
-
-
-                coreInput.value =
+              document
+                .getElementById("core")
+                .value =
                   response.nextFreeCore;
 
 
-
-                energyInput.value =
+              document
+                .getElementById("energy")
+                .value =
                   "";
 
 
+              setScanVisual(
+                "",
+                "SYSTEM READY",
+                "WAITING FOR N-CORE"
+              );
 
-                setCurrentCore(
-                  response.nextFreeCore
-                );
 
+              status.className =
+                "";
 
+              status.innerText =
+                "SYSTEM READY\n\n" +
+                "NEXT // " +
+                response.nextFreeCore;
 
-                setRightData(
-                  "—",
-                  "READY",
-                  "—"
-                );
 
+              button.disabled =
+                false;
 
 
-                setScanVisual(
+              document
+                .getElementById("energy")
+                .focus();
 
-                  "",
 
-                  "SYSTEM READY",
+            } else {
 
-                  "WAITING FOR N-CORE"
+              setScanVisual(
+                "success",
+                "SERIES COMPLETE",
+                "ALL N-CORES REGISTERED"
+              );
 
-                );
 
+              status.className =
+                "success";
 
+              status.innerText =
+                "REGISTRATION SERIES COMPLETE\n\n" +
+                "ALL N-CORES REGISTERED";
 
-                status.className =
-                  "";
 
+              button.disabled =
+                true;
+            }
 
-                status.innerText =
+          }, 2600);
 
-                  "SYSTEM READY\n\n" +
 
-                  "NEXT // " +
-
-                  response.nextFreeCore;
-
-
-
-                button.disabled =
-                  false;
-
-
-
-                energyInput.focus();
-
-
-
-              }
-
-
-              else {
-
-
-
-                energyInput.value =
-                  "";
-
-
-
-                setCurrentCore(
-                  "---"
-                );
-
-
-
-                setRightData(
-                  "—",
-                  "COMPLETE",
-                  "—"
-                );
-
-
-
-                setScanVisual(
-
-                  "success",
-
-                  "SERIES COMPLETE",
-
-                  "ALL N-CORES REGISTERED"
-
-                );
-
-
-
-                status.className =
-                  "success";
-
-
-                status.innerText =
-
-                  "REGISTRATION SERIES COMPLETE\n\n" +
-
-                  "ALL N-CORES REGISTERED";
-
-
-
-                button.disabled =
-                  true;
-              }
-
-
-            },
-
-            2600
-          );
-
-
-
-        }
-
-
-        catch(error) {
-
-
+        } catch(error) {
 
           setScanVisual(
-
             "error",
-
             "LINK FAILURE",
-
             "REGISTRATION NOT CONFIRMED"
-
           );
-
-
-
-          setRightData(
-
-            uid,
-
-            "LINK FAILURE",
-
-            energy
-
-          );
-
-
 
           button.disabled =
             false;
 
-
-
           status.className =
             "error";
 
-
           status.innerText =
-
             "DATABASE CONNECTION ERROR\n\n" +
-
             error.message +
-
-            "\n\n" +
-
-            "REGISTRATION NOT CONFIRMED";
+            "\n\nREGISTRATION NOT CONFIRMED";
 
 
-
-          setNfcState(
-            "READY"
-          );
+          setNfcState("READY");
         }
       };
-
 
 
     reader.onreadingerror =
       () => {
 
-
-
         scanRunning =
           false;
 
 
-
-        if (
-          scanController
-        ) {
-
+        if (scanController) {
 
           scanController.abort();
-
 
           scanController =
             null;
         }
-
 
 
         button.disabled =
           false;
 
 
-
         setScanVisual(
-
           "error",
-
           "READ FAILURE",
-
           "PRESENT N-CORE AGAIN"
-
         );
-
-
-
-        setRightData(
-
-          "—",
-
-          "READ ERROR",
-
-          energy
-
-        );
-
 
 
         status.className =
           "error";
 
-
         status.innerText =
-
           "NFC READ ERROR\n\n" +
-
           "N-Core erneut an das Smartphone halten.";
 
 
-
-        setNfcState(
-          "READY"
-        );
+        setNfcState("READY");
       };
 
 
-
     await reader.scan({
-
       signal:
         scanController.signal
-
     });
 
 
-
-    setNfcState(
-      "SCANNING"
-    );
-
-
-
-    setRightData(
-
-      "—",
-
-      "SCANNING",
-
-      energy
-
-    );
-
+    setNfcState("SCANNING");
 
 
     setScanVisual(
-
       "active",
-
       "SCANNING",
-
       "PRESENT N-CORE"
-
     );
-
 
 
     status.className =
       "";
 
-
     status.innerText =
-
       "NFC INTERFACE ACTIVE\n\n" +
-
       "PRESENT N-CORE";
 
 
-
-  }
-
-
-  catch(error) {
-
-
+  } catch(error) {
 
     scanRunning =
       false;
 
-
     scanController =
       null;
 
-
     button.disabled =
       false;
-
 
 
     if (
       error.name ===
       "AbortError"
     ) {
-
       return;
     }
 
 
-
     setScanVisual(
-
       "error",
-
       "NFC FAILURE",
-
       "INTERFACE ERROR"
-
     );
-
-
-
-    setRightData(
-
-      "—",
-
-      "NFC ERROR",
-
-      energy
-
-    );
-
 
 
     status.className =
       "error";
 
-
     status.innerText =
-
       "NFC ERROR\n\n" +
-
       error.message;
 
 
-
-    setNfcState(
-      "READY"
-    );
+    setNfcState("READY");
   }
 }
-
-
-
-/* =========================================================
-   INPUT SYNC
-========================================================= */
-
-document
-  .getElementById("core")
-  .addEventListener(
-    "input",
-    function() {
-
-      setCurrentCore(
-        this.value
-          .trim()
-          .toUpperCase()
-      );
-    }
-  );
-
-
-document
-  .getElementById("energy")
-  .addEventListener(
-    "input",
-    function() {
-
-      document
-        .getElementById(
-          "rightEnergy"
-        )
-        .innerText =
-          this.value || "—";
-    }
-  );
-
 
 
 /* =========================================================
@@ -3802,15 +2142,11 @@ document
 ========================================================= */
 
 window.addEventListener(
-
   "load",
-
   initializeTerminal
-
 );
 
 </script>
-
 
 </body>
 </html>
