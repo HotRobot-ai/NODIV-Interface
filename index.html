@@ -32,24 +32,15 @@ html,
 body{
   margin:0;
   padding:0;
-
   width:100%;
   max-width:100%;
-
   min-height:100%;
-
   overflow-x:hidden;
-
   background:#010409;
 }
 
 body{
-  font-family:
-    "Segoe UI",
-    Arial,
-    Helvetica,
-    sans-serif;
-
+  font-family:"Segoe UI",Arial,Helvetica,sans-serif;
   color:var(--text);
 }
 
@@ -71,9 +62,7 @@ input{
 .app{
   width:100%;
   max-width:100%;
-
   min-height:100svh;
-
   overflow-x:hidden;
 
   background:
@@ -90,7 +79,6 @@ input{
 
 .hero{
   position:relative;
-
   width:100%;
 
   height:
@@ -110,7 +98,6 @@ input{
 
 .hero::before{
   content:"";
-
   position:absolute;
   inset:0;
 
@@ -127,13 +114,10 @@ input{
 
 .hero::after{
   content:"";
-
   position:absolute;
-
   left:0;
   right:0;
   bottom:-1px;
-
   height:55px;
 
   background:
@@ -145,14 +129,11 @@ input{
 
 .hero-tag{
   position:absolute;
-
   z-index:3;
-
   right:10px;
   bottom:15px;
 
   font-size:5.5px;
-
   letter-spacing:1.5px;
 
   color:
@@ -167,7 +148,6 @@ input{
   position:relative;
 
   width:100%;
-
   max-width:480px;
 
   margin:0 auto;
@@ -184,34 +164,48 @@ input{
 }
 
 /* =========================================================
-   TITLE
+   TITLE — REG 1.3.1 POLISH
 ========================================================= */
 
 .title{
+  width:100%;
   text-align:center;
 
-  margin-top:-5px;
+  margin-top:-2px;
+  padding:0 4px;
 }
 
 .title-main{
-  font-size:
-    clamp(
-      10px,
-      3vw,
-      13px
-    );
-
-  letter-spacing:2.4px;
+  width:100%;
 
   color:#f1fbff;
+
+  font-size:
+    clamp(
+      15px,
+      4.8vw,
+      22px
+    );
+
+  font-weight:500;
+
+  line-height:1.12;
+
+  letter-spacing:1.6px;
+
+  text-align:center;
+
+  overflow-wrap:normal;
+  word-break:normal;
+  text-wrap:balance;
 }
 
 .title-sub{
-  margin-top:5px;
+  margin-top:7px;
 
-  font-size:5.8px;
+  font-size:6.2px;
 
-  letter-spacing:1.7px;
+  letter-spacing:1.9px;
 
   color:var(--blue3);
 }
@@ -228,24 +222,20 @@ input{
 
   gap:5px;
 
-  margin-top:11px;
+  margin-top:12px;
 
   width:100%;
 }
 
 .status-item{
   min-width:0;
-
   min-height:40px;
 
   padding:5px 2px;
 
   display:flex;
-
   flex-direction:column;
-
   align-items:center;
-
   justify-content:center;
 
   background:
@@ -258,9 +248,7 @@ input{
 
 .status-label{
   font-size:5.3px;
-
   letter-spacing:.8px;
-
   color:var(--muted);
 }
 
@@ -268,7 +256,6 @@ input{
   margin-top:4px;
 
   font-size:5.7px;
-
   letter-spacing:.7px;
 
   color:var(--success);
@@ -301,37 +288,27 @@ input{
   width:100%;
 
   display:flex;
-
   justify-content:center;
-
   align-items:center;
 
   overflow:hidden;
 
-  margin:
-    6px auto 4px;
+  margin:6px auto 4px;
 }
 
 .scan-zone{
   position:relative;
 
-  width:
-    min(
-      100%,
-      288px
-    );
+  width:min(100%,288px);
 
   aspect-ratio:1 / 1;
 
-  flex:
-    0 0 auto;
+  flex:0 0 auto;
 
   max-width:100%;
 
   display:flex;
-
   align-items:center;
-
   justify-content:center;
 
   overflow:hidden;
@@ -345,9 +322,7 @@ input{
 
 .ring{
   position:absolute;
-
   border-radius:50%;
-
   pointer-events:none;
 }
 
@@ -381,18 +356,14 @@ input{
 
 .tick-ring{
   position:absolute;
-
   inset:7%;
 
   border-radius:50%;
 
   background:
     repeating-conic-gradient(
-      rgba(109,214,255,.48)
-      0deg 1deg,
-
-      transparent
-      1deg 5deg
+      rgba(109,214,255,.48) 0deg 1deg,
+      transparent 1deg 5deg
     );
 
   -webkit-mask:
@@ -425,39 +396,17 @@ input{
 
   background:
     conic-gradient(
-
-      transparent
-      0deg 17deg,
-
-      #78dcff
-      17deg 29deg,
-
-      transparent
-      29deg 78deg,
-
-      #25bfff
-      78deg 92deg,
-
-      transparent
-      92deg 145deg,
-
-      #96e8ff
-      145deg 157deg,
-
-      transparent
-      157deg 220deg,
-
-      #27bfff
-      220deg 234deg,
-
-      transparent
-      234deg 298deg,
-
-      #83e2ff
-      298deg 310deg,
-
-      transparent
-      310deg 360deg
+      transparent 0deg 17deg,
+      #78dcff 17deg 29deg,
+      transparent 29deg 78deg,
+      #25bfff 78deg 92deg,
+      transparent 92deg 145deg,
+      #96e8ff 145deg 157deg,
+      transparent 157deg 220deg,
+      #27bfff 220deg 234deg,
+      transparent 234deg 298deg,
+      #83e2ff 298deg 310deg,
+      transparent 310deg 360deg
     );
 
   -webkit-mask:
@@ -492,33 +441,15 @@ input{
 
   background:
     conic-gradient(
-
-      transparent
-      0deg 38deg,
-
-      rgba(116,220,255,.82)
-      38deg 45deg,
-
-      transparent
-      45deg 120deg,
-
-      rgba(39,191,255,.72)
-      120deg 129deg,
-
-      transparent
-      129deg 210deg,
-
-      rgba(150,232,255,.82)
-      210deg 219deg,
-
-      transparent
-      219deg 299deg,
-
-      rgba(39,191,255,.72)
-      299deg 308deg,
-
-      transparent
-      308deg 360deg
+      transparent 0deg 38deg,
+      rgba(116,220,255,.82) 38deg 45deg,
+      transparent 45deg 120deg,
+      rgba(39,191,255,.72) 120deg 129deg,
+      transparent 129deg 210deg,
+      rgba(150,232,255,.82) 210deg 219deg,
+      transparent 219deg 299deg,
+      rgba(39,191,255,.72) 299deg 308deg,
+      transparent 308deg 360deg
     );
 
   -webkit-mask:
@@ -662,12 +593,8 @@ input{
     );
 
   box-shadow:
-    inset
-    0 0 28px
-    rgba(30,169,235,.07),
-
-    0 0 16px
-    rgba(25,166,235,.07);
+    inset 0 0 28px rgba(30,169,235,.07),
+    0 0 16px rgba(25,166,235,.07);
 }
 
 /* =========================================================
@@ -722,7 +649,6 @@ input{
 
 .scan-copy{
   position:relative;
-
   z-index:10;
 
   width:44%;
@@ -735,8 +661,7 @@ input{
 
   font-size:24px;
 
-  transform:
-    rotate(90deg);
+  transform:rotate(90deg);
 
   line-height:1;
 
@@ -781,18 +706,15 @@ input{
    ACTIVE / SUCCESS / ERROR
 ========================================================= */
 
-.scan-zone.active
-.energy-segments{
+.scan-zone.active .energy-segments{
   animation-duration:1.3s;
 }
 
-.scan-zone.active
-.energy-segments.inner{
+.scan-zone.active .energy-segments.inner{
   animation-duration:.8s;
 }
 
-.scan-zone.active
-.center-core{
+.scan-zone.active .center-core{
   animation:
     pulse
     .8s
@@ -805,29 +727,19 @@ input{
   0%,
   100%{
     box-shadow:
-      inset
-      0 0 28px
-      rgba(30,169,235,.07),
-
-      0 0 16px
-      rgba(25,166,235,.07);
+      inset 0 0 28px rgba(30,169,235,.07),
+      0 0 16px rgba(25,166,235,.07);
   }
 
   50%{
     box-shadow:
-      inset
-      0 0 36px
-      rgba(30,169,235,.15),
-
-      0 0 28px
-      rgba(25,166,235,.22);
+      inset 0 0 36px rgba(30,169,235,.15),
+      0 0 28px rgba(25,166,235,.22);
   }
 }
 
-.scan-zone.success
-.energy-segments,
-.scan-zone.success
-.energy-segments.inner{
+.scan-zone.success .energy-segments,
+.scan-zone.success .energy-segments.inner{
   filter:
     hue-rotate(65deg)
     drop-shadow(
@@ -836,16 +748,13 @@ input{
     );
 }
 
-.scan-zone.success
-.center-core{
+.scan-zone.success .center-core{
   border-color:
     rgba(82,239,180,.75);
 }
 
-.scan-zone.error
-.energy-segments,
-.scan-zone.error
-.energy-segments.inner{
+.scan-zone.error .energy-segments,
+.scan-zone.error .energy-segments.inner{
   filter:
     hue-rotate(145deg)
     saturate(1.6)
@@ -855,8 +764,7 @@ input{
     );
 }
 
-.scan-zone.error
-.center-core{
+.scan-zone.error .center-core{
   border-color:
     rgba(255,104,116,.75);
 }
@@ -905,7 +813,6 @@ input{
   display:block;
 
   width:100%;
-
   min-width:0;
 
   height:41px;
@@ -942,7 +849,6 @@ input:focus{
 
 .scan-button{
   width:100%;
-
   max-width:100%;
 
   height:52px;
@@ -971,7 +877,6 @@ input:focus{
 
 .scan-button:disabled{
   opacity:.38;
-
   cursor:default;
 }
 
@@ -981,7 +886,6 @@ input:focus{
 
 .message{
   width:100%;
-
   max-width:100%;
 
   margin-top:7px;
@@ -1066,7 +970,6 @@ input:focus{
 
 .footer strong{
   color:#5bc4f4;
-
   font-weight:400;
 }
 
@@ -1086,11 +989,21 @@ input:focus{
    VERY SMALL DEVICES
 ========================================================= */
 
-@media(max-width:360px){
+@media(max-width:380px){
 
   .content{
     padding-left:6px;
     padding-right:6px;
+  }
+
+  .title-main{
+    font-size:14px;
+    line-height:1.15;
+    letter-spacing:1.2px;
+  }
+
+  .title-sub{
+    margin-top:6px;
   }
 
   .hero{
@@ -1098,11 +1011,7 @@ input:focus{
   }
 
   .scan-zone{
-    width:
-      min(
-        100%,
-        250px
-      );
+    width:min(100%,250px);
   }
 
   .status-item{
@@ -1121,11 +1030,7 @@ input:focus{
   }
 
   .scan-zone{
-    width:
-      min(
-        100%,
-        245px
-      );
+    width:min(100%,245px);
   }
 
   .scanner-shell{
@@ -1140,8 +1045,6 @@ input:focus{
 
 <div class="app">
 
-<!-- HERO -->
-
 <div class="hero">
 
   <div class="hero-tag">
@@ -1152,8 +1055,6 @@ input:focus{
 
 
 <main class="content">
-
-<!-- TITLE -->
 
 <div class="title">
 
@@ -1167,8 +1068,6 @@ input:focus{
 
 </div>
 
-
-<!-- STATUS -->
 
 <div class="status-strip">
 
@@ -1224,14 +1123,11 @@ input:focus{
 </div>
 
 
-<!-- SCANNER -->
-
 <div class="scanner-shell">
 
 <div
   class="scan-zone"
   id="scanZone">
-
 
 <div class="axis-x"></div>
 <div class="axis-y"></div>
@@ -1294,8 +1190,6 @@ NFC ENERGY INTERFACE
 </div>
 
 
-<!-- INPUT -->
-
 <div class="data-grid">
 
 <div class="field">
@@ -1329,8 +1223,6 @@ STORED ENERGY
 </div>
 
 
-<!-- BUTTON -->
-
 <button
   class="scan-button"
   id="scanButton"
@@ -1341,8 +1233,6 @@ INITIALIZE NFC SCAN
 
 </button>
 
-
-<!-- MESSAGE -->
 
 <div class="message">
 
@@ -1356,8 +1246,6 @@ CONNECTING TO NEXORA DATABASE...
 
 </div>
 
-
-<!-- FOOTER -->
 
 <div class="footer">
 
@@ -1374,7 +1262,7 @@ WÜRZBURG // FIELD NETWORK
 
 
 <div class="build">
-SYSTEM BUILD // REG-1.3 MOBILE FIX
+SYSTEM BUILD // REG-1.3.1 MOBILE POLISH
 </div>
 
 </main>
@@ -1384,20 +1272,12 @@ SYSTEM BUILD // REG-1.3 MOBILE FIX
 
 <script>
 
-/* =========================================================
-   API
-========================================================= */
-
 const API =
 "https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
 
 let scanRunning = false;
 let scanController = null;
 
-
-/* =========================================================
-   UI
-========================================================= */
 
 function setScanVisual(
   mode,
@@ -1453,10 +1333,6 @@ function setNfcState(text){
 }
 
 
-/* =========================================================
-   JSONP
-========================================================= */
-
 function apiRequest(params){
 
   return new Promise(
@@ -1492,36 +1368,23 @@ function apiRequest(params){
         clearTimeout(timeout);
 
         if(script.parentNode){
-
-          script.parentNode
-            .removeChild(script);
+          script.parentNode.removeChild(script);
         }
 
         try{
-
-          delete window[
-            callbackName
-          ];
-
+          delete window[callbackName];
         }
 
         catch(error){
-
-          window[
-            callbackName
-          ] =
-            undefined;
+          window[callbackName] = undefined;
         }
       }
 
 
-      window[
-        callbackName
-      ] =
+      window[callbackName] =
         data=>{
 
           cleanup();
-
           resolve(data);
         };
 
@@ -1568,10 +1431,6 @@ function apiRequest(params){
 }
 
 
-/* =========================================================
-   INITIALIZE
-========================================================= */
-
 async function initializeTerminal(){
 
   const status =
@@ -1587,9 +1446,7 @@ async function initializeTerminal(){
     document.getElementById("energy");
 
 
-  setDatabaseState(
-    "LINKING"
-  );
+  setDatabaseState("LINKING");
 
 
   setScanVisual(
@@ -1616,9 +1473,7 @@ async function initializeTerminal(){
     }
 
 
-    setDatabaseState(
-      "CONNECTED"
-    );
+    setDatabaseState("CONNECTED");
 
 
     if(!response.nextFreeCore){
@@ -1669,16 +1524,13 @@ async function initializeTerminal(){
     button.disabled =
       false;
 
-
     energyInput.focus();
 
   }
 
   catch(error){
 
-    setDatabaseState(
-      "OFFLINE"
-    );
+    setDatabaseState("OFFLINE");
 
     setScanVisual(
       "error",
@@ -1698,10 +1550,6 @@ async function initializeTerminal(){
   }
 }
 
-
-/* =========================================================
-   NFC SCAN
-========================================================= */
 
 async function scanNFC(){
 
@@ -1860,9 +1708,7 @@ async function scanNFC(){
         if(scanController){
 
           scanController.abort();
-
-          scanController =
-            null;
+          scanController = null;
         }
 
 
@@ -1886,8 +1732,8 @@ async function scanNFC(){
             event.serialNumber ||
             ""
           )
-            .trim()
-            .toUpperCase();
+          .trim()
+          .toUpperCase();
 
 
         if(!uid){
@@ -1912,9 +1758,7 @@ async function scanNFC(){
         }
 
 
-        setNfcState(
-          "DETECTED"
-        );
+        setNfcState("DETECTED");
 
 
         setScanVisual(
@@ -1975,9 +1819,7 @@ async function scanNFC(){
               "\n\nNO DATA CHANGED";
 
 
-            setNfcState(
-              "READY"
-            );
+            setNfcState("READY");
 
             button.disabled =
               false;
@@ -2012,9 +1854,7 @@ async function scanNFC(){
             response.chipStatus;
 
 
-          setNfcState(
-            "READY"
-          );
+          setNfcState("READY");
 
 
           setTimeout(()=>{
@@ -2108,9 +1948,7 @@ async function scanNFC(){
             "\n\nREGISTRATION NOT CONFIRMED";
 
 
-          setNfcState(
-            "READY"
-          );
+          setNfcState("READY");
         }
       };
 
@@ -2125,9 +1963,7 @@ async function scanNFC(){
         if(scanController){
 
           scanController.abort();
-
-          scanController =
-            null;
+          scanController = null;
         }
 
 
@@ -2151,9 +1987,7 @@ async function scanNFC(){
           "N-Core erneut an das Smartphone halten.";
 
 
-        setNfcState(
-          "READY"
-        );
+        setNfcState("READY");
       };
 
 
@@ -2163,9 +1997,7 @@ async function scanNFC(){
     });
 
 
-    setNfcState(
-      "SCANNING"
-    );
+    setNfcState("SCANNING");
 
 
     setScanVisual(
@@ -2221,16 +2053,10 @@ async function scanNFC(){
       error.message;
 
 
-    setNfcState(
-      "READY"
-    );
+    setNfcState("READY");
   }
 }
 
-
-/* =========================================================
-   START
-========================================================= */
 
 window.addEventListener(
   "load",
