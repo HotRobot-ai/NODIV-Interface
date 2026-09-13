@@ -73,8 +73,9 @@
       cursor: pointer;
     }
 
-    button:active {
-      background: #0aa7ff;
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
     }
 
     #status {
@@ -114,19 +115,11 @@
     N-CORE // REGISTRATION TERMINAL
   </div>
 
-  <input
-    id="core"
-    type="text"
-    value="NC-001"
-    placeholder="N-CORE ID">
+  <input id="core" type="text" value="NC-001" placeholder="N-CORE ID">
 
-  <input
-    id="energy"
-    type="number"
-    value="618"
-    placeholder="ENERGY">
+  <input id="energy" type="number" value="618" placeholder="ENERGY">
 
-  <button onclick="scanNFC()">
+  <button id="scanButton" onclick="scanNFC()">
     SCAN N-CORE
   </button>
 
@@ -141,11 +134,17 @@
 const API =
 "https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
 
-let scanActive = false;
+let scanRunning = false;
+let scanController = null;
 
 async function scanNFC() {
 
   const status = document.getElementById("status");
+  const button = document.getElementById("scanButton");
+
+  if (scanRunning) {
+    return;
+  }
 
   if (!("NDEFReader" in window)) {
     status.className = "error";
@@ -154,85 +153,81 @@ async function scanNFC() {
     return;
   }
 
-  if (scanActive) {
-    status.className = "";
-    status.innerText =
-      "NFC INTERFACE ALREADY ACTIVE\n\nPRESENT N-CORE";
-    return;
-  }
-
-  /*
-   * Vor dem Aktivieren prüfen wir nur,
-   * ob grundsätzlich etwas eingetragen ist.
-   *
-   * Die tatsächlichen Werte werden beim
-   * ERKENNEN DES NFC-CHIPS erneut gelesen.
-   */
-
-  const coreCheck =
+  let core =
     document.getElementById("core").value.trim().toUpperCase();
 
-  const energyCheck =
+  let energy =
     document.getElementById("energy").value.trim();
 
-  if (!coreCheck || !energyCheck) {
-    status.className = "error";
-    status.innerText =
-      "CORE DATA INCOMPLETE";
-    return;
-  }
-
-  if (!/^NC-\d{3}$/.test(coreCheck)) {
+  if (!/^NC-\d{3}$/.test(core)) {
     status.className = "error";
     status.innerText =
       "CORE ID FORMAT ERROR\n\nBeispiel: NC-001";
     return;
   }
 
+  const coreNumber =
+    parseInt(core.substring(3), 10);
+
+  if (coreNumber < 1 || coreNumber > 200) {
+    status.className = "error";
+    status.innerText =
+      "CORE OUT OF RANGE\n\nNC-001 // NC-200";
+    return;
+  }
+
+  if (!energy) {
+    status.className = "error";
+    status.innerText =
+      "ENERGY VALUE MISSING";
+    return;
+  }
+
   try {
+
+    scanRunning = true;
+    button.disabled = true;
+
+    scanController = new AbortController();
 
     const reader = new NDEFReader();
 
-    await reader.scan();
-
-    scanActive = true;
-
-    status.className = "";
-    status.innerText =
-      "NFC INTERFACE ACTIVE\n\nPRESENT N-CORE";
-
     reader.onreading = async event => {
 
-      /*
-       * WICHTIG:
-       * Erst JETZT lesen wir die aktuellen
-       * Werte aus den Eingabefeldern.
-       */
-
-      const core =
-        document.getElementById("core")
-          .value
-          .trim()
-          .toUpperCase();
-
-      const energy =
-        document.getElementById("energy")
-          .value
-          .trim();
-
-      const uid = event.serialNumber;
-
-      if (!core || !energy) {
-        scanActive = false;
-
-        status.className = "error";
-        status.innerText =
-          "CORE DATA INCOMPLETE\n\nREGISTRATION ABORTED";
+      if (!scanRunning) {
         return;
       }
 
+      /*
+       * Ab hier darf dieser Scan nur EINMAL verarbeitet werden.
+       */
+
+      scanRunning = false;
+
+      /*
+       * NFC-Reader sofort beenden.
+       */
+
+      if (scanController) {
+        scanController.abort();
+        scanController = null;
+      }
+
+      /*
+       * Werte JETZT noch einmal aus der Oberfläche lesen.
+       */
+
+      core =
+        document.getElementById("core").value.trim().toUpperCase();
+
+      energy =
+        document.getElementById("energy").value.trim();
+
+      const uid =
+        String(event.serialNumber || "").trim().toUpperCase();
+
       if (!/^NC-\d{3}$/.test(core)) {
-        scanActive = false;
+        button.disabled = false;
 
         status.className = "error";
         status.innerText =
@@ -240,39 +235,38 @@ async function scanNFC() {
         return;
       }
 
-      const match = core.match(/^NC-(\d{3})$/);
+      const scannedCoreNumber =
+        parseInt(core.substring(3), 10);
 
-      if (!match) {
-        scanActive = false;
+      if (
+        scannedCoreNumber < 1 ||
+        scannedCoreNumber > 200
+      ) {
+        button.disabled = false;
 
         status.className = "error";
         status.innerText =
-          "CORE ID INVALID";
+          "CORE OUT OF RANGE\n\nREGISTRATION ABORTED";
         return;
       }
 
-      const coreNumber =
-        parseInt(match[1], 10);
-
-      if (coreNumber < 1 || coreNumber > 200) {
-        scanActive = false;
+      if (!energy) {
+        button.disabled = false;
 
         status.className = "error";
         status.innerText =
-          "CORE OUT OF RANGE\n\nNC-001 // NC-200";
+          "ENERGY VALUE MISSING\n\nREGISTRATION ABORTED";
         return;
       }
 
       if (!uid) {
-        scanActive = false;
+        button.disabled = false;
 
         status.className = "error";
         status.innerText =
           "N-CORE DETECTED\n\nUID NOT AVAILABLE";
         return;
       }
-
-      scanActive = false;
 
       status.className = "uid";
       status.innerText =
@@ -281,7 +275,7 @@ async function scanNFC() {
         "\n" +
         "ENERGY // " + energy +
         "\n" +
-        "UID // " + uid.toUpperCase() +
+        "UID // " + uid +
         "\n\n" +
         "CONNECTING TO NEXORA DATABASE...";
 
@@ -301,13 +295,14 @@ async function scanNFC() {
         });
 
         status.className = "success";
+
         status.innerText =
           "N-CORE REGISTERED\n\n" +
           core +
           "\n" +
           "ENERGY // " + energy +
           "\n" +
-          "UID // " + uid.toUpperCase() +
+          "UID // " + uid +
           "\n\n" +
           "CHIP STATUS // ERFASST";
 
@@ -319,21 +314,21 @@ async function scanNFC() {
           const energyInput =
             document.getElementById("energy");
 
-          if (coreNumber < 200) {
-
-            const nextNumber =
-              coreNumber + 1;
+          if (scannedCoreNumber < 200) {
 
             coreInput.value =
               "NC-" +
-              String(nextNumber).padStart(3, "0");
+              String(scannedCoreNumber + 1).padStart(3, "0");
 
             energyInput.value = "";
 
             status.className = "";
+
             status.innerText =
               "SYSTEM READY\n\nNEXT // " +
               coreInput.value;
+
+            button.disabled = false;
 
             energyInput.focus();
 
@@ -342,16 +337,22 @@ async function scanNFC() {
             energyInput.value = "";
 
             status.className = "success";
+
             status.innerText =
               "REGISTRATION SERIES COMPLETE\n\n" +
               "NC-001 // NC-200";
+
+            button.disabled = true;
           }
 
         }, 3000);
 
       } catch (error) {
 
+        button.disabled = false;
+
         status.className = "error";
+
         status.innerText =
           "DATABASE CONNECTION ERROR\n\n" +
           error.message;
@@ -360,19 +361,48 @@ async function scanNFC() {
 
     reader.onreadingerror = () => {
 
-      scanActive = false;
+      if (scanRunning) {
+        scanRunning = false;
+      }
+
+      if (scanController) {
+        scanController.abort();
+        scanController = null;
+      }
+
+      button.disabled = false;
 
       status.className = "error";
+
       status.innerText =
         "NFC READ ERROR\n\n" +
         "N-Core erneut an das Smartphone halten.";
     };
 
+    await reader.scan({
+      signal: scanController.signal
+    });
+
+    status.className = "";
+
+    status.innerText =
+      "NFC INTERFACE ACTIVE\n\n" +
+      "PRESENT N-CORE";
+
   } catch (error) {
 
-    scanActive = false;
+    scanRunning = false;
+
+    scanController = null;
+
+    button.disabled = false;
+
+    if (error.name === "AbortError") {
+      return;
+    }
 
     status.className = "error";
+
     status.innerText =
       "NFC ERROR\n\n" +
       error.message;
