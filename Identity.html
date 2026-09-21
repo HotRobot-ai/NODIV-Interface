@@ -1,1 +1,260 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#050a11">
+  <title>NODIV // Identity Terminal</title>
+  <style>
+    :root{
+      --bg:#050a11; --panel:#0a111b; --panel2:#0d1723; --line:#1c3348;
+      --blue:#36b8ff; --blue2:#8cddff; --text:#eef8ff; --muted:#7790a3;
+      --ok:#70f0bd; --bad:#ff657a; --warn:#ffd36a;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:
+      radial-gradient(circle at 50% -10%,#12304a 0,#07111c 34%,var(--bg) 67%);
+      color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+    body{min-height:100vh;display:grid;place-items:center;padding:22px}
+    .terminal{width:min(620px,100%);border:1px solid #17344a;background:rgba(5,10,17,.94);
+      box-shadow:0 0 0 1px #07121d,0 22px 70px #000b;border-radius:22px;overflow:hidden}
+    .top{padding:22px 22px 16px;border-bottom:1px solid #12283a;position:relative}
+    .top:after{content:"";position:absolute;left:22px;right:22px;bottom:-1px;height:1px;
+      background:linear-gradient(90deg,transparent,var(--blue),transparent);box-shadow:0 0 14px var(--blue)}
+    .brand{font-weight:900;letter-spacing:.24em;font-size:21px}
+    .brand span{color:var(--blue)}
+    .sub{margin-top:5px;color:var(--muted);font-size:11px;letter-spacing:.18em}
+    .statusrow{display:flex;justify-content:space-between;gap:12px;padding:13px 22px;
+      border-bottom:1px solid #102131;font:700 10px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;color:var(--muted)}
+    .online{color:var(--ok)}
+    main{padding:26px 22px 22px}
+    .eyebrow{text-align:center;color:var(--blue2);font:700 11px ui-monospace,monospace;letter-spacing:.18em}
+    h1{text-align:center;font-size:clamp(25px,7vw,38px);letter-spacing:.06em;margin:8px 0 5px}
+    .lead{text-align:center;color:var(--muted);font-size:13px;margin:0 auto 25px;max-width:420px}
+    .scan{width:100%;min-height:78px;border:1px solid #2676a5;border-radius:15px;
+      color:#eaf9ff;background:linear-gradient(180deg,#10314a,#0b2031);font-weight:900;
+      letter-spacing:.12em;font-size:15px;cursor:pointer;box-shadow:inset 0 0 24px #2ab4ff13,0 0 28px #2ab4ff12}
+    .scan:disabled{opacity:.45;cursor:not-allowed}
+    .scan small{display:block;color:#80cfee;font-size:10px;margin-top:5px}
+    .message{margin-top:18px;border:1px solid var(--line);border-radius:15px;background:var(--panel);
+      padding:18px;text-align:center;min-height:92px;display:grid;place-items:center}
+    .message strong{display:block;letter-spacing:.12em}
+    .message p{margin:7px 0 0;color:var(--muted);font-size:12px}
+    .message.ok{border-color:#286b5a;box-shadow:inset 0 0 25px #52efb00b}
+    .message.ok strong{color:var(--ok)}
+    .message.bad{border-color:#713140}.message.bad strong{color:var(--bad)}
+    .card{display:none;margin-top:18px;border:1px solid #1b425c;border-radius:17px;overflow:hidden;
+      background:linear-gradient(145deg,#0d1a27,#08111b)}
+    .card.show{display:block}
+    .verified{padding:13px 17px;border-bottom:1px solid #183448;color:var(--ok);
+      font:800 11px ui-monospace,monospace;letter-spacing:.13em}
+    .identity{padding:20px 17px}
+    .id{font-size:34px;font-weight:950;letter-spacing:.06em}
+    .role{color:var(--blue);font-weight:850;letter-spacing:.16em;margin-top:2px}
+    .name{color:var(--muted);margin-top:6px;font-size:13px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}
+    .cell{background:#07101a;border:1px solid #152b3d;border-radius:10px;padding:11px}
+    .label{color:#647d91;font:700 9px ui-monospace,monospace;letter-spacing:.1em}
+    .value{margin-top:5px;font-weight:800;font-size:13px;word-break:break-word}
+    .yes{color:var(--ok)} .no{color:#7890a0}
+    footer{padding:0 22px 20px;text-align:center;color:#41576a;font:9px ui-monospace,monospace;letter-spacing:.09em}
+    @media(max-width:430px){body{padding:10px}.terminal{border-radius:16px}.grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<section class="terminal">
+  <header class="top">
+    <div class="brand">NO<span>DIV</span></div>
+    <div class="sub">NODE DIVISION // IDENTITY INTERFACE</div>
+  </header>
+
+  <div class="statusrow">
+    <span><span class="online">●</span> SYSTEM ONLINE</span>
+    <span id="nfcState">NFC CHECKING</span>
+  </div>
+
+  <main>
+    <div class="eyebrow">MISSION WÜRZBURG // ACCESS CONTROL</div>
+    <h1>IDENTITY TERMINAL</h1>
+    <p class="lead">Access Card scannen. Identität, Rolle und Berechtigungen werden vom NODIV CORE geprüft.</p>
+
+    <button class="scan" id="scanBtn" type="button">
+      INITIALIZE NFC SCAN
+      <small>ACCESS CARD AN DAS GERÄT HALTEN</small>
+    </button>
+
+    <div class="message" id="message">
+      <div>
+        <strong>SCAN READY</strong>
+        <p>Warte auf Initialisierung.</p>
+      </div>
+    </div>
+
+    <section class="card" id="identityCard">
+      <div class="verified">✓ IDENTITY VERIFIED // ACCESS GRANTED</div>
+      <div class="identity">
+        <div class="id" id="identityId">—</div>
+        <div class="role" id="role">—</div>
+        <div class="name" id="displayName"></div>
+
+        <div class="grid">
+          <div class="cell"><div class="label">CLEARANCE</div><div class="value" id="clearance">—</div></div>
+          <div class="cell"><div class="label">CARD STATUS</div><div class="value" id="cardStatus">—</div></div>
+          <div class="cell"><div class="label">CORE CAPACITY</div><div class="value" id="capacity">—</div></div>
+          <div class="cell"><div class="label">NODE ACCESS</div><div class="value" id="nodeAccess">—</div></div>
+          <div class="cell"><div class="label">CATCH ACCESS</div><div class="value" id="catchAccess">—</div></div>
+          <div class="cell"><div class="label">GHOST</div><div class="value" id="ghost">—</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer>NODIV CORE // IDENTITY-1.0 // SERVER AUTHORITATIVE</footer>
+</section>
+
+<script>
+const API_URL =
+  'https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
+
+const $ = id => document.getElementById(id);
+let reader = null;
+let scanning = false;
+
+function apiRequest(params) {
+  return new Promise((resolve, reject) => {
+    const callback = '__nodiv_identity_' + Date.now() + '_' + Math.floor(Math.random()*100000);
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => cleanup(new Error('NODIV API antwortet nicht.')), 10000);
+
+    function cleanup(error, data) {
+      clearTimeout(timeout);
+      try { delete window[callback]; } catch (_) {}
+      script.remove();
+      error ? reject(error) : resolve(data);
+    }
+
+    window[callback] = data => cleanup(null, data);
+    script.onerror = () => cleanup(new Error('NODIV API konnte nicht erreicht werden.'));
+
+    const q = new URLSearchParams({...params, callback});
+    script.src = API_URL + '?' + q.toString();
+    document.body.appendChild(script);
+  });
+}
+
+function setMessage(kind, title, detail) {
+  const box = $('message');
+  box.className = 'message' + (kind ? ' ' + kind : '');
+  box.innerHTML = '<div><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(detail || '') + '</p></div>';
+}
+
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function yn(v) {
+  return v ? '<span class="yes">GRANTED</span>' : '<span class="no">DENIED</span>';
+}
+
+function showIdentity(data) {
+  $('identityId').textContent = data.identity || '—';
+  $('role').textContent = data.role || '—';
+  $('displayName').textContent = data.displayName || '';
+  $('clearance').textContent = data.clearance || '—';
+  $('cardStatus').textContent = data.status || '—';
+  $('capacity').textContent = Number.isFinite(Number(data.coreCapacity)) ? data.coreCapacity : '—';
+  $('nodeAccess').innerHTML = yn(Boolean(data.nodeAccess));
+  $('catchAccess').innerHTML = yn(Boolean(data.catchAccess));
+  $('ghost').textContent = data.ghostActive ? 'ACTIVE' : 'CLEAR';
+  $('identityCard').classList.add('show');
+}
+
+function hideIdentity() {
+  $('identityCard').classList.remove('show');
+}
+
+async function identify(uid) {
+  setMessage('', 'VERIFYING IDENTITY', 'NODIV CORE prüft Access Card …');
+  hideIdentity();
+
+  const data = await apiRequest({action:'identify', uid});
+
+  if (!data || data.ok !== true) {
+    throw new Error(data?.error || 'Identity-Prüfung fehlgeschlagen.');
+  }
+
+  if (!data.authenticated) {
+    const reason =
+      data.reason === 'CARD_INACTIVE' ? 'Karte ist nicht aktiv.' :
+      data.reason === 'UNKNOWN_CARD' ? 'Karte ist nicht registriert.' :
+      'Zugriff verweigert.';
+    setMessage('bad', 'ACCESS DENIED', reason);
+    return;
+  }
+
+  showIdentity(data);
+  setMessage('ok', 'IDENTITY VERIFIED', (data.identity || '') + ' // ' + (data.role || ''));
+}
+
+async function startScan() {
+  if (scanning) return;
+
+  if (!('NDEFReader' in window)) {
+    setMessage('bad','NFC NOT AVAILABLE','Android + Chrome mit Web NFC erforderlich.');
+    return;
+  }
+
+  scanning = true;
+  $('scanBtn').disabled = true;
+  hideIdentity();
+
+  try {
+    reader = new NDEFReader();
+    await reader.scan();
+    $('nfcState').textContent = 'NFC ARMED';
+    setMessage('', 'NFC ARMED', 'Access Card jetzt an das Smartphone halten.');
+
+    reader.onreadingerror = () => {
+      setMessage('bad','SCAN ERROR','NFC-Karte konnte nicht gelesen werden.');
+      scanning = false;
+      $('scanBtn').disabled = false;
+    };
+
+    reader.onreading = async event => {
+      if (!scanning) return;
+      scanning = false;
+      $('scanBtn').disabled = false;
+
+      const uid = event.serialNumber || '';
+      if (!uid) {
+        setMessage('bad','UID MISSING','Die NFC UID konnte nicht gelesen werden.');
+        return;
+      }
+
+      $('nfcState').textContent = 'NFC READ';
+      try {
+        await identify(uid);
+      } catch (err) {
+        setMessage('bad','SYSTEM ERROR',err.message || String(err));
+      }
+    };
+  } catch (err) {
+    scanning = false;
+    $('scanBtn').disabled = false;
+    $('nfcState').textContent = 'NFC READY';
+    setMessage('bad','NFC ERROR',err.message || 'NFC konnte nicht gestartet werden.');
+  }
+}
+
+$('scanBtn').addEventListener('click', startScan);
+
+if ('NDEFReader' in window) {
+  $('nfcState').textContent = 'NFC READY';
+} else {
+  $('nfcState').textContent = 'NFC UNAVAILABLE';
+}
+</script>
+</body>
+</html>
 
