@@ -94,13 +94,13 @@
     <section class="step locked" id="dataStep">
       <div class="stephead">03 // IDENTITY DATA</div>
       <label for="identity">IDENTITY ID</label>
-      <input id="identity" maxlength="24" placeholder="z. B. P002" disabled>
+      <input id="identity" maxlength="24" placeholder="Rolle wählen" readonly disabled>
+      <div class="newuid" id="identityInfo">IDENTITY // SERVER ASSIGNED</div>
       <label for="role">ROLE</label>
       <select id="role" disabled>
         <option value="">Rolle wählen</option>
         <option value="PIONEER">PIONEER</option>
         <option value="LOCAL">LOCAL</option>
-        <option value="UNBOUND">UNBOUND</option>
         <option value="FOP">FOP</option>
       </select>
       <label for="displayName">DISPLAY NAME (OPTIONAL)</label>
@@ -122,7 +122,7 @@
       </div>
     </section>
   </main>
-  <footer>NODIV CORE // ACCESS-CARD-1.0 // SERVER AUTHORITATIVE</footer>
+  <footer>NODIV CORE // ACCESS-CARD-1.1 // SERVER AUTHORITATIVE</footer>
 </section>
 
 <script>
@@ -189,23 +189,58 @@ $('newBtn').onclick=async()=>{
       throw new Error('Diese Karte ist bereits im NODIV-System bekannt.');
     newCardUid=uid;$('newUid').textContent='UID // '+uid;
     $('dataStep').classList.remove('locked');
-    ['identity','role','displayName'].forEach(id=>$(id).disabled=false);
-    validate();msg('ok','NEW CARD ACCEPTED','Identitätsdaten eingeben.');
+    $('identity').disabled=false;
+    $('role').disabled=false;
+    $('displayName').disabled=false;
+    await loadNextIdentity();
+    validate();msg('ok','NEW CARD ACCEPTED','Rolle wählen. Identity wird vom Server vergeben.');
   }catch(e){msg('bad','NEW CARD REJECTED',e.message||String(e))}
 };
-function validate(){
-  const identity=$('identity').value.trim().toUpperCase();
-  $('identity').value=identity;
-  $('registerBtn').disabled=!(authorizerUid&&newCardUid&&/^[A-Z0-9_-]{2,24}$/.test(identity)&&$('role').value);
+async function loadNextIdentity(){
+  const role=$('role').value;
+  $('identity').value='';
+  $('identityInfo').textContent='IDENTITY // SERVER ASSIGNED';
+
+  if(!role){validate();return}
+
+  try{
+    const data=await apiRequest({action:'nextidentity',role});
+    if(!data?.ok)throw new Error(data?.error||'Identity-Abfrage fehlgeschlagen.');
+
+    if(!data.available || !data.nextIdentity){
+      $('identityInfo').textContent=role+' LIMIT // '+data.count+' OF '+data.limit;
+      msg('bad','ROLE LIMIT REACHED',role+' // '+data.count+' von '+data.limit);
+      validate();
+      return;
+    }
+
+    $('identity').value=data.nextIdentity;
+    $('identityInfo').textContent=
+      'NEXT FREE // '+data.nextIdentity+' // '+data.count+' OF '+data.limit+' ASSIGNED';
+    validate();
+  }catch(e){
+    $('identityInfo').textContent='IDENTITY // ERROR';
+    msg('bad','IDENTITY LOOKUP FAILED',e.message||String(e));
+    validate();
+  }
 }
-$('identity').addEventListener('input',validate);$('role').addEventListener('change',validate);
+
+function validate(){
+  $('registerBtn').disabled=!(
+    authorizerUid &&
+    newCardUid &&
+    /^[A-Z0-9_-]{2,24}$/.test($('identity').value) &&
+    $('role').value
+  );
+}
+$('role').addEventListener('change',loadNextIdentity);
 $('registerBtn').onclick=async()=>{
   try{
     $('registerBtn').disabled=true;
     msg('','REGISTERING','NODIV CORE legt die Access Card an …');
     const data=await apiRequest({
       action:'registeraccesscard',authorizerUid,uid:newCardUid,
-      identity:$('identity').value.trim().toUpperCase(),role:$('role').value,
+      role:$('role').value,
       displayName:$('displayName').value.trim()
     });
     if(!data?.ok)throw new Error(data?.error||'Registrierung fehlgeschlagen.');
