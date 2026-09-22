@@ -122,7 +122,7 @@
       </div>
     </section>
   </main>
-  <footer>NODIV CORE // ACCESS-CARD-1.1 // SERVER AUTHORITATIVE</footer>
+  <footer>NODIV CORE // ACCESS-CARD-1.2 // SERVER AUTHORITATIVE</footer>
 </section>
 
 <script>
@@ -151,17 +151,49 @@ function msg(kind,title,detail){
   $('message').innerHTML='<div><strong>'+esc(title)+'</strong><p>'+esc(detail||'')+'</p></div>';
 }
 async function scanOnce(purpose){
-  if(scanning)return;
-  if(!('NDEFReader' in window))throw new Error('Android + Chrome mit Web NFC erforderlich.');
-  scanning=true;$('nfcState').textContent='NFC ARMED';
+  if(scanning) throw new Error('Ein NFC Scan läuft bereits.');
+  if(!('NDEFReader' in window)) throw new Error('Android + Chrome mit Web NFC erforderlich.');
+
+  scanning=true;
+  $('nfcState').textContent='NFC ARMED';
+
   try{
-    const reader=new NDEFReader();await reader.scan();
-    return await new Promise((resolve,reject)=>{
-      reader.onreadingerror=()=>{scanning=false;reject(new Error('NFC-Karte konnte nicht gelesen werden.'))};
-      reader.onreading=e=>{if(!scanning)return;scanning=false;$('nfcState').textContent='NFC READ';
-        const uid=e.serialNumber||'';uid?resolve(uid):reject(new Error('NFC UID fehlt.'))};
+    const reader=new NDEFReader();
+    await reader.scan();
+
+    const uid=await new Promise((resolve,reject)=>{
+      let finished=false;
+
+      const finish=(error,value)=>{
+        if(finished)return;
+        finished=true;
+        scanning=false;
+        $('nfcState').textContent=error?'NFC READY':'NFC READ';
+        error?reject(error):resolve(value);
+      };
+
+      reader.onreadingerror=()=>finish(new Error('NFC-Karte konnte nicht gelesen werden.'));
+
+      reader.onreading=e=>{
+        const raw=e && typeof e.serialNumber==='string' ? e.serialNumber.trim() : '';
+        const invalid=!raw || raw.toLowerCase()==='undefined' || raw.toLowerCase()==='null';
+
+        if(invalid){
+          finish(new Error('Keine gültige NFC UID gelesen. Bitte erneut scannen.'));
+          return;
+        }
+
+        finish(null,raw);
+      };
     });
-  }catch(e){scanning=false;$('nfcState').textContent='NFC READY';throw e}
+
+    return uid;
+
+  }catch(e){
+    scanning=false;
+    $('nfcState').textContent='NFC READY';
+    throw e;
+  }
 }
 $('authBtn').onclick=async()=>{
   try{
@@ -180,21 +212,63 @@ $('authBtn').onclick=async()=>{
 };
 $('newBtn').onclick=async()=>{
   try{
-    msg('','NEW CARD SCAN','Neue, unregistrierte Karte an das Smartphone halten.');
+    newCardUid='';
+    $('newUid').textContent='UID // —';
+    $('identity').value='';
+    $('identityInfo').textContent='IDENTITY // SERVER ASSIGNED';
+    $('registerBtn').disabled=true;
+
+    msg('','NEW CARD SCAN','Neue NFC-Karte an das Smartphone halten.');
+
     const uid=await scanOnce('new');
-    if(uid===authorizerUid)throw new Error('Das ist die Autorisierungs-Karte.');
-    const check=await apiRequest({action:'identify',uid});
-    if(!check?.ok)throw new Error(check?.error||'Kartenprüfung fehlgeschlagen.');
-    if(check.authenticated || check.status!=='UNKNOWN_CARD')
-      throw new Error('Diese Karte ist bereits im NODIV-System bekannt.');
-    newCardUid=uid;$('newUid').textContent='UID // '+uid;
+
+    if(!uid || typeof uid!=='string' || uid.trim()==='' ||
+       uid.toLowerCase()==='undefined' || uid.toLowerCase()==='null'){
+      throw new Error('Keine gültige NFC UID gelesen.');
+    }
+
+    if(uid===authorizerUid){
+      throw new Error('Das ist die Autorisierungs-Karte.');
+    }
+
+    /*
+     * Globale Preflight-Prüfung im NODIV CORE.
+     * Prüft ACCESS_CARD + N_CORE + NODE, nicht nur Identity Cards.
+     */
+    const check=await apiRequest({action:'uidlookup',uid});
+
+    if(!check?.ok){
+      throw new Error(check?.error||'Globale UID-Prüfung fehlgeschlagen.');
+    }
+
+    if(!check.available){
+      const owner=[
+        check.type||'UNKNOWN',
+        check.id||'',
+        check.identity||''
+      ].filter(Boolean).join(' // ');
+
+      throw new Error('UID bereits vergeben // '+owner);
+    }
+
+    newCardUid=uid;
+    $('newUid').textContent='UID // '+uid;
+
     $('dataStep').classList.remove('locked');
     $('identity').disabled=false;
     $('role').disabled=false;
     $('displayName').disabled=false;
+
     await loadNextIdentity();
-    validate();msg('ok','NEW CARD ACCEPTED','Rolle wählen. Identity wird vom Server vergeben.');
-  }catch(e){msg('bad','NEW CARD REJECTED',e.message||String(e))}
+    validate();
+    msg('ok','NEW CARD ACCEPTED','UID ist NODIV-weit frei. Rolle wählen.');
+
+  }catch(e){
+    newCardUid='';
+    $('newUid').textContent='UID // —';
+    $('registerBtn').disabled=true;
+    msg('bad','NEW CARD REJECTED',e.message||String(e));
+  }
 };
 async function loadNextIdentity(){
   const role=$('role').value;
