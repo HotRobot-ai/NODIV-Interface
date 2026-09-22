@@ -60,7 +60,24 @@
     .value{margin-top:5px;font-weight:800;font-size:13px;word-break:break-word}
     footer{padding:0 22px 20px;text-align:center;color:#41576a;font:9px ui-monospace,monospace;letter-spacing:.09em}
     @media(max-width:430px){body{padding:10px}.terminal{border-radius:16px}.grid{grid-template-columns:1fr 1fr}}
-  </style>
+  
+    .inline-feedback{
+      display:none;
+      margin-top:10px;
+      padding:10px 12px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.035);
+      font-size:12px;
+      line-height:1.45;
+      letter-spacing:.04em;
+      overflow-wrap:anywhere;
+    }
+    .inline-feedback.show{display:block}
+    .inline-feedback.ok{border-color:rgba(120,255,180,.48)}
+    .inline-feedback.bad{border-color:rgba(255,95,95,.62)}
+    .inline-feedback strong{display:block;margin-bottom:3px}
+
+</style>
 </head>
 <body>
 <section class="terminal">
@@ -82,6 +99,7 @@
       <button class="scan" id="authBtn" type="button">SCAN AUTHORIZATION CARD
         <small>FOUNDER / FOP ACCESS CARD</small></button>
       <div class="auth" id="authInfo"></div>
+      <div class="inline-feedback" id="authFeedback" aria-live="polite"></div>
     </section>
 
     <section class="step locked" id="newStep">
@@ -89,6 +107,7 @@
       <button class="scan" id="newBtn" type="button" disabled>SCAN NEW CARD
         <small>UNREGISTERED NFC CARD</small></button>
       <div class="newuid" id="newUid">UID // —</div>
+      <div class="inline-feedback" id="scanFeedback" aria-live="polite"></div>
     </section>
 
     <section class="step locked" id="dataStep">
@@ -106,9 +125,10 @@
       <label for="displayName">DISPLAY NAME (OPTIONAL)</label>
       <input id="displayName" maxlength="40" placeholder="Name / Callsign" disabled>
       <button class="submit" id="registerBtn" type="button" disabled>REGISTER ACCESS CARD</button>
+      <div class="inline-feedback" id="registerFeedback" aria-live="polite"></div>
     </section>
 
-    <div class="message" id="message"><div><strong>READY</strong><p>Autorisierungs-Karte scannen.</p></div></div>
+    <div class="message" id="message" style="display:none"><div><strong>READY</strong><p>Autorisierungs-Karte scannen.</p></div></div>
 
     <section class="result" id="result">
       <h2>✓ ACCESS CARD REGISTERED</h2>
@@ -122,7 +142,7 @@
       </div>
     </section>
   </main>
-  <footer>NODIV CORE // ACCESS-CARD-1.2 // SERVER AUTHORITATIVE</footer>
+  <footer>NODIV CORE // ACCESS-CARD-1.3 // INLINE FEEDBACK</footer>
 </section>
 
 <script>
@@ -149,6 +169,18 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function msg(kind,title,detail){
   $('message').className='message'+(kind?' '+kind:'');
   $('message').innerHTML='<div><strong>'+esc(title)+'</strong><p>'+esc(detail||'')+'</p></div>';
+}
+function localMsg(target,kind,title,detail){
+  const el=$(target);
+  if(!el)return;
+  el.className='inline-feedback show'+(kind?' '+kind:'');
+  el.innerHTML='<strong>'+esc(title)+'</strong><span>'+esc(detail||'')+'</span>';
+}
+function clearLocal(target){
+  const el=$(target);
+  if(!el)return;
+  el.className='inline-feedback';
+  el.innerHTML='';
 }
 async function scanOnce(purpose){
   if(scanning) throw new Error('Ein NFC Scan läuft bereits.');
@@ -197,7 +229,8 @@ async function scanOnce(purpose){
 }
 $('authBtn').onclick=async()=>{
   try{
-    msg('','AUTHORIZATION','Founder/FOP Karte an das Smartphone halten.');
+    clearLocal('authFeedback');
+    localMsg('authFeedback','','AUTHORIZATION','Founder/FOP Karte an das Smartphone halten.');
     const uid=await scanOnce('auth');
     const data=await apiRequest({action:'identify',uid});
     if(!data?.ok||!data.authenticated)throw new Error('Karte ist nicht aktiv oder nicht registriert.');
@@ -207,18 +240,19 @@ $('authBtn').onclick=async()=>{
     $('authInfo').textContent='✓ '+data.identity+' // '+data.role+' // AUTHORIZED';
     $('authInfo').classList.add('show');$('authStep').classList.add('ok');
     $('newStep').classList.remove('locked');$('newBtn').disabled=false;
-    msg('ok','AUTHORIZED',data.identity+' // '+data.role);
-  }catch(e){msg('bad','AUTHORIZATION FAILED',e.message||String(e))}
+    localMsg('authFeedback','ok','AUTHORIZED',data.identity+' // '+data.role);
+  }catch(e){localMsg('authFeedback','bad','AUTHORIZATION FAILED',e.message||String(e))}
 };
 $('newBtn').onclick=async()=>{
   try{
+    clearLocal('scanFeedback');
     newCardUid='';
     $('newUid').textContent='UID // —';
     $('identity').value='';
     $('identityInfo').textContent='IDENTITY // SERVER ASSIGNED';
     $('registerBtn').disabled=true;
 
-    msg('','NEW CARD SCAN','Neue NFC-Karte an das Smartphone halten.');
+    localMsg('scanFeedback','','NEW CARD SCAN','Neue NFC-Karte an das Smartphone halten.');
 
     const uid=await scanOnce('new');
 
@@ -261,13 +295,13 @@ $('newBtn').onclick=async()=>{
 
     await loadNextIdentity();
     validate();
-    msg('ok','NEW CARD ACCEPTED','UID ist NODIV-weit frei. Rolle wählen.');
+    localMsg('scanFeedback','ok','NEW CARD ACCEPTED','UID ist NODIV-weit frei. Rolle wählen.');
 
   }catch(e){
     newCardUid='';
     $('newUid').textContent='UID // —';
     $('registerBtn').disabled=true;
-    msg('bad','NEW CARD REJECTED',e.message||String(e));
+    localMsg('scanFeedback','bad','NEW CARD REJECTED',e.message||String(e));
   }
 };
 async function loadNextIdentity(){
@@ -283,7 +317,7 @@ async function loadNextIdentity(){
 
     if(!data.available || !data.nextIdentity){
       $('identityInfo').textContent=role+' LIMIT // '+data.count+' OF '+data.limit;
-      msg('bad','ROLE LIMIT REACHED',role+' // '+data.count+' von '+data.limit);
+      localMsg('registerFeedback','bad','ROLE LIMIT REACHED',role+' // '+data.count+' von '+data.limit);
       validate();
       return;
     }
@@ -294,7 +328,7 @@ async function loadNextIdentity(){
     validate();
   }catch(e){
     $('identityInfo').textContent='IDENTITY // ERROR';
-    msg('bad','IDENTITY LOOKUP FAILED',e.message||String(e));
+    localMsg('registerFeedback','bad','IDENTITY LOOKUP FAILED',e.message||String(e));
     validate();
   }
 }
@@ -307,11 +341,12 @@ function validate(){
     $('role').value
   );
 }
-$('role').addEventListener('change',loadNextIdentity);
+$('role').addEventListener('change',()=>{clearLocal('registerFeedback');loadNextIdentity()});
 $('registerBtn').onclick=async()=>{
   try{
+    clearLocal('registerFeedback');
     $('registerBtn').disabled=true;
-    msg('','REGISTERING','NODIV CORE legt die Access Card an …');
+    localMsg('registerFeedback','','REGISTERING','NODIV CORE legt die Access Card an …');
     const data=await apiRequest({
       action:'registeraccesscard',authorizerUid,uid:newCardUid,
       role:$('role').value,
@@ -321,9 +356,9 @@ $('registerBtn').onclick=async()=>{
     $('rCard').textContent=data.cardId||'—';$('rIdentity').textContent=data.identity||'—';
     $('rRole').textContent=data.role||'—';$('rCapacity').textContent=data.coreCapacity ?? '—';
     $('rNode').textContent=data.nodeAccess?'GRANTED':'DENIED';$('rCatch').textContent=data.catchAccess?'GRANTED':'DENIED';
-    $('result').classList.add('show');msg('ok','REGISTRATION COMPLETE',(data.identity||'')+' // '+(data.role||''));
+    $('result').classList.add('show');localMsg('registerFeedback','ok','REGISTRATION COMPLETE',(data.identity||'')+' // '+(data.role||''));
     $('newBtn').disabled=true;['identity','role','displayName'].forEach(id=>$(id).disabled=true);
-  }catch(e){msg('bad','REGISTRATION FAILED',e.message||String(e));validate()}
+  }catch(e){localMsg('registerFeedback','bad','REGISTRATION FAILED',e.message||String(e));validate()}
 };
 if('NDEFReader' in window)$('nfcState').textContent='NFC READY';
 else $('nfcState').textContent='NFC UNAVAILABLE';
