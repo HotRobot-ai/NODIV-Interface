@@ -1286,7 +1286,7 @@ WÜRZBURG // FIELD NETWORK
 
 
 <div class="build">
-SYSTEM BUILD // REG-1.3.3 NODIV MIGRATION
+SYSTEM BUILD // REG-1.3.4 INPUT STATE FIX
 </div>
 
 </main>
@@ -1301,6 +1301,18 @@ const API =
 
 let scanRunning = false;
 let scanController = null;
+let databaseReady = false;
+
+function updateScanButtonState(){
+  const button = document.getElementById("scanButton");
+  const core = document.getElementById("core").value.trim().toUpperCase();
+  const energyRaw = document.getElementById("energy").value.trim();
+  const n = /^NC-\d{3}$/.test(core) ? parseInt(core.substring(3),10) : NaN;
+  const energy = Number(energyRaw);
+  const coreValid = Number.isInteger(n) && n >= 1 && n <= 200;
+  const energyValid = energyRaw !== "" && Number.isFinite(energy) && energy >= 0;
+  button.disabled = !databaseReady || scanRunning || !coreValid || !energyValid;
+}
 
 
 function setScanVisual(
@@ -1470,6 +1482,9 @@ async function initializeTerminal(){
     document.getElementById("energy");
 
 
+  databaseReady = false;
+  updateScanButtonState();
+
   setDatabaseState("LINKING");
 
 
@@ -1498,6 +1513,7 @@ async function initializeTerminal(){
 
 
     setDatabaseState("CONNECTED");
+    databaseReady = true;
 
 
     if(!response.nextFreeCore){
@@ -1545,8 +1561,7 @@ async function initializeTerminal(){
       response.nextFreeCore;
 
 
-    button.disabled =
-      false;
+    updateScanButtonState();
 
     energyInput.focus();
 
@@ -1554,6 +1569,7 @@ async function initializeTerminal(){
 
   catch(error){
 
+    databaseReady = false;
     setDatabaseState("OFFLINE");
 
     setScanVisual(
@@ -1694,8 +1710,7 @@ async function scanNFC(){
     scanRunning =
       true;
 
-    button.disabled =
-      true;
+    updateScanButtonState();
 
 
     scanController =
@@ -2081,6 +2096,9 @@ async function scanNFC(){
   }
 }
 
+
+document.getElementById("core").addEventListener("input", updateScanButtonState);
+document.getElementById("energy").addEventListener("input", updateScanButtonState);
 
 window.addEventListener(
   "load",
