@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020608">
+<title>NODIV // Interface V2 Concept 02</title>
+<style>
+:root{--bg:#020608;--ink:#eaf7f8;--dim:#6d8387;--c:#43efff;--c2:#0e7f8c;--g:#69ffb0;--a:#ffd064;--r:#ff6476;--line:#17353b}
+*{box-sizing:border-box}body{margin:0;background:#020608;color:var(--ink);font-family:Arial,Helvetica,sans-serif;min-height:100vh;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(#43efff05 1px,transparent 1px),linear-gradient(90deg,#43efff04 1px,transparent 1px);background-size:28px 28px;mask-image:linear-gradient(to bottom,#000,transparent 78%)}
+.wrap{max-width:720px;margin:auto;padding:17px 15px 105px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}
+.logo{font-weight:1000;letter-spacing:.28em;font-size:20px}.logo b{color:var(--c)}.sys{font:9px monospace;color:var(--g);letter-spacing:.12em}.sys:before{content:"●";margin-right:6px}
+.idstrip{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:11px 1px;margin-bottom:17px}.id{font:800 12px monospace;letter-spacing:.13em}.role{font:9px monospace;color:var(--dim)}
+.corezone{position:relative;min-height:405px;display:grid;place-items:center;overflow:hidden}
+.corezone:before,.corezone:after{content:"";position:absolute;border:1px solid #164a53;border-radius:50%}.corezone:before{width:350px;height:350px;opacity:.5}.corezone:after{width:290px;height:290px;opacity:.7;box-shadow:0 0 80px #14cfe51a inset}
+.tick{position:absolute;width:330px;height:330px;border-radius:50%;background:repeating-conic-gradient(from 0deg,#43efff55 0deg 1deg,transparent 1deg 7deg);mask:radial-gradient(transparent 0 47%,#000 48% 49%,transparent 50%);animation:rot 45s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}.artifact{z-index:2;width:225px;height:270px;position:relative;display:grid;place-items:center;filter:drop-shadow(0 0 28px #20e7ff22)}
+.hex{position:absolute;inset:12px 0;background:linear-gradient(145deg,#10232a,#071116);clip-path:polygon(25% 0,75% 0,100% 22%,100% 78%,75% 100%,25% 100%,0 78%,0 22%);border:1px solid var(--c)}
+.hex:before{content:"";position:absolute;inset:4px;background:#061015;clip-path:inherit}
+.coredata{z-index:3;text-align:center}.tiny{font:9px monospace;color:var(--c);letter-spacing:.16em}.cid{font:900 19px monospace;margin:7px 0 17px}.energy{font-size:66px;font-weight:1000;letter-spacing:-.07em;line-height:.85;text-shadow:0 0 25px #43efff35}.unit{font:800 11px monospace;color:var(--c);letter-spacing:.18em;margin-top:8px}.state{font:9px monospace;color:var(--g);margin-top:20px}
+.side{position:absolute;z-index:4;font:8px monospace;color:#52747a;line-height:1.7}.s1{left:0;top:80px}.s2{right:0;bottom:72px;text-align:right}
+.owner{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);z-index:5;white-space:nowrap;font:9px monospace;color:#89a0a4}.owner b{color:var(--c)}
+.sectionhead{display:flex;align-items:center;gap:10px;margin:20px 0 10px;font:800 10px monospace;letter-spacing:.16em}.sectionhead:after{content:"";height:1px;background:var(--line);flex:1}
+.ops{display:grid;gap:8px}.op{position:relative;width:100%;height:72px;border:1px solid #18343a;background:#061015;color:var(--ink);text-align:left;padding:11px 15px 10px 62px;overflow:hidden}.op:before{content:attr(data-n);position:absolute;left:14px;top:18px;color:var(--c);font:900 19px monospace}.op strong{display:block;font-size:14px;letter-spacing:.05em}.op small{color:var(--dim);font:9px monospace}.op .arrow{position:absolute;right:15px;top:25px;color:var(--c);font:18px monospace}.op.ready{border-left:2px solid var(--g)}.op.ready:after{content:"READY";position:absolute;right:13px;top:8px;font:7px monospace;color:var(--g)}
+.alert{display:none;border-left:2px solid var(--a);background:#151107;padding:13px;margin-top:9px}.alert.show{display:block}.alert b{color:var(--a);font:10px monospace}.count{font-size:28px;font-weight:1000;margin-top:4px}
+.bottom{position:fixed;bottom:0;left:0;right:0;background:#03090beF;border-top:1px solid var(--line);backdrop-filter:blur(12px)}.nav{max-width:720px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);padding:8px 10px calc(8px + env(safe-area-inset-bottom))}.nav button{border:0;background:none;color:#53696d;font:8px monospace;padding:8px}.nav .on{color:var(--c)}
+.scan{display:none;position:fixed;z-index:20;inset:0;background:#020608f5;place-items:center;padding:20px}.scan.show{display:grid}.scanbox{text-align:center;width:100%;max-width:420px}.radar{width:210px;height:210px;border:1px solid #1d5e68;border-radius:50%;margin:auto;position:relative;box-shadow:0 0 70px #22e9ff18}.radar:before,.radar:after{content:"";position:absolute;border:1px solid #16424a;border-radius:50%;inset:28px}.radar:after{inset:64px;background:#0a1d22}.pulse{position:absolute;inset:0;border-radius:50%;border-top:2px solid var(--c);animation:rot 2.4s linear infinite}.scan h2{font:900 16px monospace;letter-spacing:.12em;margin-top:25px}.scan p{color:var(--dim);font:10px monospace}.cancel{margin-top:22px;background:none;border:1px solid #254047;color:#82979b;padding:10px 25px}
+</style></head>
+<body><main class="wrap">
+<header class="top"><div class="logo">NO<b>DIV</b></div><div class="sys">NETWORK VERIFIED</div></header>
+<div class="idstrip"><div class="id">P002 // PIONEER</div><div class="role">ACCESS 01 · NODE GRANTED</div></div>
+
+<section class="corezone">
+ <div class="tick"></div>
+ <div class="side s1">CORE LINK<br>UID VERIFIED<br>CHAIN VALID<br>FIELD ACTIVE</div>
+ <div class="side s2">SIG 100%<br>OWNERSHIP<br>SERVER AUTH<br>618.E</div>
+ <div class="artifact"><div class="hex"></div><div class="coredata"><div class="tiny">N-CORE // ACTIVE</div><div class="cid">NC-001</div><div class="energy">618</div><div class="unit">ENERGY</div><div class="state">● STABLE FIELD LINK</div></div></div>
+ <div class="owner">DIGITAL OWNER // <b>P002</b></div>
+</section>
+
+<div class="sectionhead">AUTHORIZED OPERATIONS</div>
+<section class="ops">
+ <button class="op ready" data-n="01" onclick="scan('START CORE')"><strong>START CORE</strong><small>Reserve issuance protocol</small><span class="arrow">›</span></button>
+ <button class="op ready" data-n="02" onclick="scan('CATCH PROTOCOL')"><strong>CATCH</strong><small>Physical capture · ownership transfer</small><span class="arrow">›</span></button>
+ <button class="op" data-n="03" onclick="scan('NODE INTERFACE')"><strong>NODE INTERFACE</strong><small>Field node interaction</small><span class="arrow">›</span></button>
+ <button class="op" data-n="04" onclick="scan('EXTRACTION')"><strong>EXTRACTION</strong><small>Secure core · reveal actual energy</small><span class="arrow">›</span></button>
+</section>
+<div id="ghost" class="alert"><b>GHOST PROTOCOL // SERVER AUTHORITY</b><div class="count">14:59</div></div>
+</main>
+<div class="bottom"><nav class="nav"><button class="on">CORE</button><button>GRID</button><button>OPS</button><button>ID</button></nav></div>
+<div id="scan" class="scan"><div class="scanbox"><div class="radar"><div class="pulse"></div></div><h2 id="scanTitle">NFC INTERFACE</h2><p>BRING AUTHORIZED NFC HARDWARE INTO FIELD</p><button class="cancel" onclick="closeScan()">ABORT</button></div></div>
+<script>
+function scan(t){document.getElementById('scanTitle').textContent=t+' // NFC';document.getElementById('scan').classList.add('show')}
+function closeScan(){document.getElementById('scan').classList.remove('show')}
+</script></body></html>
