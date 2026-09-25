@@ -1,0 +1,68 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050a11"><title>NODIV // Start Core</title>
+<style>:root{--b:#050a11;--p:#0a111b;--l:#1c3348;--x:#36b8ff;--t:#eef8ff;--m:#7790a3;--o:#70f0bd;--e:#ff657a}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:12px;background:radial-gradient(circle at 50% -10%,#12304a,#07111c 34%,var(--b) 67%);color:var(--t);font-family:system-ui}.terminal{width:min(620px,100%);border:1px solid #17344a;background:#050a11f5;border-radius:20px;overflow:hidden}.top,main{padding:22px}.brand{font-weight:900;letter-spacing:.24em;font-size:21px}.brand span{color:var(--x)}.sub,.lead{color:var(--m);font-size:12px}.status{padding:12px 22px;border-block:1px solid #102131;font:700 10px monospace;display:flex;justify-content:space-between}.step,.message,.result{border:1px solid var(--l);border-radius:16px;background:var(--p);padding:17px;margin-top:14px}.locked{opacity:.42}.ok{border-color:#286b5a}.head{font:800 11px monospace;color:#8cddff;margin-bottom:12px}.scan{width:100%;min-height:70px;border:1px solid #2676a5;border-radius:15px;color:#eaf9ff;background:linear-gradient(#10314a,#0b2031);font-weight:900}.scan:disabled{opacity:.4}.info{display:none;margin-top:10px;color:var(--o);font:800 11px monospace;word-break:break-all}.show{display:block}.message{text-align:center}.message p{color:var(--m);font-size:12px}.bad{border-color:#713140}.bad strong{color:var(--e)}.result{display:none}.result.show{display:block}.result h2{color:var(--o)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{border:1px solid #152b3d;padding:10px}.label{color:var(--m);font:700 9px monospace}.value{font-weight:800;margin-top:4px;word-break:break-word}footer{text-align:center;color:#41576a;font:9px monospace;padding:0 20px 18px}h1{text-align:center}</style></head>
+<body><section class="terminal"><header class="top"><div class="brand">NO<span>DIV</span></div><div class="sub">NODE DIVISION // START-CORE TRANSFER</div></header><div class="status"><span>● SYSTEM ONLINE</span><span id="nfc">NFC CHECKING</span></div><main><h1>START CORE</h1><p class="lead">Pioneer autorisieren. Danach den physischen N-Core scannen.</p>
+<section class="step" id="s1"><div class="head">01 // PIONEER AUTHORIZATION</div><button class="scan" id="b1">SCAN PIONEER CARD</button><div class="info" id="i1"></div></section>
+<section class="step locked" id="s2"><div class="head">02 // PHYSICAL N-CORE</div><button class="scan" id="b2" disabled>SCAN START N-CORE</button><div class="info" id="i2"></div></section>
+<div class="message" id="msg"><strong>READY</strong><p>Pioneer Access Card scannen.</p></div>
+<section class="result" id="res"><h2>✓ START CORE TRANSFERRED</h2><div class="grid"><div class="cell"><div class="label">PIONEER</div><div class="value" id="rp"></div></div><div class="cell"><div class="label">N-CORE</div><div class="value" id="rc"></div></div><div class="cell"><div class="label">FROM</div><div class="value">NODIV_RESERVE / HQ</div></div><div class="cell"><div class="label">TO</div><div class="value" id="rt"></div></div><div class="cell"><div class="label">ENERGY</div><div class="value" id="re"></div></div><div class="cell"><div class="label">TRANSACTION</div><div class="value" id="rx"></div></div></div></section></main><footer>NODIV CORE // START-CORE-1.3 // CARD-BOUND AUTHORIZATION</footer></section>
+<script>
+const API='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec',$=x=>document.getElementById(x);let scanning=false,pioneer=null,puid='';
+function api(p){return new Promise((ok,no)=>{let cb='__nodiv_start_'+Date.now()+'_'+Math.floor(Math.random()*1e5),s=document.createElement('script'),t=setTimeout(()=>done(new Error('NODIV API antwortet nicht.')),10000);function done(e,d){clearTimeout(t);try{delete window[cb]}catch(_){}s.remove();e?no(e):ok(d)}window[cb]=d=>done(null,d);s.onerror=()=>done(new Error('NODIV API nicht erreichbar.'));s.src=API+'?'+new URLSearchParams({...p,callback:cb});document.body.appendChild(s)})}
+function message(k,a,b){$('msg').className='message '+k;$('msg').innerHTML='<strong>'+a+'</strong><p>'+b+'</p>'}
+async function readUidOnce(kind){
+ if(scanning) throw Error('NFC scan läuft bereits.');
+ if(!('NDEFReader' in window)) throw Error('Android + Chrome mit Web NFC erforderlich.');
+
+ scanning=true;
+ $('nfc').textContent='NFC ARMING';
+
+ const controller=new AbortController();
+ const reader=new NDEFReader();
+ let settled=false;
+
+ return await new Promise(async(resolve,reject)=>{
+  const finish=(err,uid)=>{
+   if(settled)return;
+   settled=true;
+   scanning=false;
+   reader.onreading=null;
+   reader.onreadingerror=null;
+   try{controller.abort()}catch(_){}
+   if(err){
+    $('nfc').textContent='NFC READY';
+    reject(err);
+   }else{
+    $('nfc').textContent='NFC READ';
+    resolve(uid);
+   }
+  };
+
+  reader.onreading=event=>{
+   const uid=String(event.serialNumber||'').trim().toUpperCase();
+   if(!uid){
+    finish(Error((kind==='card'?'Access Card':'N-Core')+' erkannt, UID aber nicht verfügbar.'));
+    return;
+   }
+   finish(null,uid);
+  };
+
+  reader.onreadingerror=()=>{
+   finish(Error('NFC READ ERROR – '+(kind==='card'?'Karte':'N-Core')+' erneut an das Smartphone halten.'));
+  };
+
+  try{
+   await reader.scan({signal:controller.signal});
+   $('nfc').textContent='NFC SCANNING';
+  }catch(e){
+   if(!settled)finish(e);
+  }
+ });
+}
+
+async function scanCard(){ return readUidOnce('card'); }
+async function scanCore(){ return readUidOnce('core'); }
+
+$('b1').onclick=async()=>{try{message('','AUTHORIZATION','Pioneer-Karte an das Smartphone halten.');let uid=await scanCard(),d=await api({action:'identify',uid});if(!d?.ok||!d.authenticated)throw Error('Karte nicht aktiv oder nicht registriert.');if(String(d.role).toUpperCase()!=='PIONEER')throw Error('PIONEER-Karte erforderlich.');pioneer=d;puid=uid;$('i1').textContent='✓ '+d.identity+' // PIONEER // CAPACITY '+d.coreCapacity;$('i1').classList.add('show');$('s1').classList.add('ok');$('s2').classList.remove('locked');$('b2').disabled=false;message('ok','PIONEER AUTHORIZED','Jetzt Start N-Core scannen.')}catch(e){message('bad','AUTHORIZATION FAILED',e.message)}};
+$('b2').onclick=async()=>{try{if(!pioneer)throw Error('Pioneer zuerst autorisieren.');$('b2').disabled=true;message('','N-CORE SCAN','Start N-Core an das Smartphone halten.');let uid=await scanCore();if(uid===puid)throw Error('Das ist die Pioneer-Karte.');let l=await api({action:'uidlookup',uid});if(!l?.ok)throw Error(l?.error||'UID-Prüfung fehlgeschlagen.');let core=l.coreId||l.core||l.id||'';if(!core)throw Error('UID ist keinem N-Core zugeordnet.');$('i2').textContent='✓ '+core+' // '+uid;$('i2').classList.add('show');let d=await api({action:'startcore',pioneerUid:puid,core,uid});if(!d?.ok)throw Error(d?.error||'Transfer fehlgeschlagen.');let tr=d.transfer||{},c=tr.core||{};$('rp').textContent=d.identity||pioneer.identity;$('rc').textContent=c.coreId||core;$('rt').textContent='PIONEER / '+(d.identity||pioneer.identity);$('re').textContent=(c.visibleEnergy??'—')+' E';$('rx').textContent=tr.transactionId||c.lastTransaction||'—';$('res').classList.add('show');$('s2').classList.add('ok');message('ok','TRANSFER COMPLETE',(c.coreId||core)+' → '+pioneer.identity)}catch(e){$('b2').disabled=false;message('bad','TRANSFER FAILED',e.message)}};
+$('nfc').textContent=('NDEFReader'in window)?'NFC READY':'NFC UNAVAILABLE';
+</script></body></html>
