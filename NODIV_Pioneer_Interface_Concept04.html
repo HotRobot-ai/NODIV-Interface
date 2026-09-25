@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05090d"><title>NODIV // Pioneer Interface Concept 04</title>
+<style>
+:root{--bg:#05090d;--panel:#0a1319;--line:#1d3a43;--c:#43eaff;--g:#62ffad;--a:#ffc95f;--text:#edf7fa;--muted:#71868e}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#12323c 0,#071219 28%,var(--bg) 60%);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(#43eaff05 1px,transparent 1px),linear-gradient(90deg,#43eaff04 1px,transparent 1px);background-size:31px 31px;mask-image:linear-gradient(#000,transparent 75%)}
+.shell{max-width:720px;margin:auto;padding:17px 15px 105px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.logo{font-weight:1000;letter-spacing:.25em;font-size:20px}.logo b{color:var(--c)}.net{font:9px monospace;color:var(--g);letter-spacing:.1em}.net:before{content:"●";margin-right:6px}
+.hero{border:1px solid #22434d;border-radius:18px;padding:18px;background:linear-gradient(145deg,#0e1b22,#080f14);box-shadow:0 22px 60px #0008}.ey{font:9px monospace;color:var(--c);letter-spacing:.15em}.id{font-size:35px;font-weight:950;letter-spacing:-.04em;margin-top:5px}.role{font:11px monospace;color:#a6b9c0;letter-spacing:.11em}.rule{height:1px;background:linear-gradient(90deg,#197d8b,transparent);margin:15px 0}.stats{display:grid;grid-template-columns:repeat(3,1fr)}.lab{font:8px monospace;color:var(--muted);letter-spacing:.09em}.val{font-size:13px;font-weight:850;margin-top:4px}.green{color:var(--g)}
+.ghost{margin-top:9px;border:1px solid #6b5528;border-left:3px solid var(--a);border-radius:14px;background:linear-gradient(100deg,#191407,#0b0e0f);padding:13px 15px;display:flex;justify-content:space-between;align-items:center}.ghost .title{font:900 10px monospace;color:var(--a);letter-spacing:.11em}.ghost small{display:block;color:#927f58;font:8px monospace;margin-top:4px}.timer{font-size:29px;font-weight:950;color:var(--a);font-variant-numeric:tabular-nums}
+.head{display:flex;justify-content:space-between;align-items:end;margin:23px 2px 9px}.head h2{font-size:11px;letter-spacing:.13em;margin:0}.total{text-align:right}.total strong{font-size:17px;color:var(--c)}.total span{display:block;font:8px monospace;color:var(--muted)}
+.inv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.slot{height:145px;position:relative;border:1px solid #1c3942;border-radius:14px;background:linear-gradient(150deg,#0b171d,#070d11);padding:10px;overflow:hidden}.slot.occupied{border-color:#24717d}.sn{font:8px monospace;color:#6d858d}.orbit{position:absolute;width:75px;height:75px;left:50%;top:35px;transform:translateX(-50%);border:1px solid #21545d;border-radius:50%}.orbit:before{content:"";position:absolute;inset:7px;border:1px dashed #26717c;border-radius:50%;animation:spin 8s linear infinite}.orbit:after{content:"";position:absolute;left:50%;top:-3px;width:6px;height:6px;background:var(--c);border-radius:50%;box-shadow:0 0 12px var(--c)}@keyframes spin{to{transform:rotate(360deg)}}
+.ct{position:absolute;top:55px;left:0;right:0;text-align:center;z-index:2}.ct b{font:900 11px monospace}.ct strong{display:block;font-size:18px;margin-top:3px}.ct small{font:7px monospace;color:var(--g)}.locked{height:112px;display:grid;place-items:center;color:#41565b;font:9px monospace;letter-spacing:.1em}.capacity{text-align:center;font:8px monospace;color:#71868e;margin-top:8px}.capacity b{color:var(--c)}
+.node{border:1px solid #20414a;border-radius:17px;background:linear-gradient(145deg,#0c1920,#070e12);overflow:hidden}.nodehead{padding:15px 16px;display:flex;justify-content:space-between;border-bottom:1px solid #17343c}.nodehead b{font:900 13px monospace;letter-spacing:.08em}.nodehead span{font:8px monospace;color:var(--g)}
+.nodebody{padding:17px}.nodeidle{text-align:center;padding:8px 0 5px}.nfcsymbol{width:76px;height:76px;margin:auto;border:1px solid #28636d;border-radius:50%;display:grid;place-items:center;color:var(--c);font:900 12px monospace;box-shadow:0 0 35px #1ce5fa12}.nodeidle h3{font-size:15px;margin:13px 0 4px}.nodeidle p{font:9px monospace;color:var(--muted);margin:0 0 14px}.scanbtn{width:100%;border:1px solid #2b7a86;background:#0b2228;color:var(--text);padding:13px;border-radius:10px;font-weight:850}
+.demo{margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:8px}.demo button{border:1px solid #243d44;background:#091116;color:#71868e;padding:9px;border-radius:8px;font:8px monospace}
+.nodeinfo{display:none}.nodeinfo.show{display:block}.idlehide.hide{display:none}.nrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.nodeid{font:950 24px monospace}.available{font:9px monospace;color:var(--g)}.energybox{border:1px solid #1e3b43;padding:13px;border-radius:12px}.energybox .big{font-size:31px;font-weight:950}.energybox small{font:8px monospace;color:var(--muted)}
+.cooldown{text-align:center;padding:18px 0}.cooldown .cd{font-size:37px;font-weight:950;color:var(--a);font-variant-numeric:tabular-nums}.cooldown p{font:9px monospace;color:var(--muted)}.lockedcode{font:8px monospace;color:#876f43;border-top:1px solid #3b301b;padding-top:11px}
+.swap{margin-top:14px}.swap label{font:9px monospace;color:var(--muted)}.choices{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px}.choices button{border:1px solid #28505a;background:#09161b;color:var(--text);padding:12px;font-size:17px;font-weight:900;border-radius:9px}.choices button:disabled{opacity:.25}
+.bottom{position:fixed;bottom:0;left:0;right:0;background:#061015ed;border-top:1px solid #19333c;backdrop-filter:blur(14px)}.nav{max-width:720px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);padding:8px 10px calc(8px + env(safe-area-inset-bottom))}.nav button{border:0;background:none;color:#5f747c;font:8px monospace;padding:8px}.nav .on{color:var(--c)}
+</style></head>
+<body><main class="shell">
+<header class="top"><div class="logo">NO<b>DIV</b></div><div class="net">NETWORK ONLINE</div></header>
+<section class="hero"><div class="ey">IDENTITY // VERIFIED</div><div class="id">P002</div><div class="role">PIONEER // FIELD OPERATIVE</div><div class="rule"></div><div class="stats"><div><div class="lab">STATUS</div><div class="val green">ACTIVE</div></div><div><div class="lab">CORE SLOTS</div><div class="val">01 / 03</div></div><div><div class="lab">NODE ACCESS</div><div class="val">GRANTED</div></div></div></section>
+
+<section class="ghost"><div><div class="title">GHOST PROTOCOL ACTIVE</div><small>NODE INTERACTION TEMPORARILY RESTRICTED</small></div><div class="timer" id="gt">08:42</div></section>
+
+<div class="head"><h2>N-CORE INVENTORY</h2><div class="total"><strong>618 E</strong><span>TOTAL VISIBLE ENERGY</span></div></div>
+<section class="inv"><div class="slot occupied"><div class="sn">SLOT 01</div><div class="orbit"></div><div class="ct"><b>NC-001</b><strong>618 E</strong><small>FIELD</small></div></div><div class="slot"><div class="sn">SLOT 02</div><div class="locked">◇<br>LOCKED</div></div><div class="slot"><div class="sn">SLOT 03</div><div class="locked">◇<br>LOCKED</div></div></section>
+<div class="capacity"><b>1</b> SLOT UNLOCKED // 1 CORE STORED</div>
+
+<div class="head"><h2>NODE ACCESS</h2><div class="total"><span>SERVER AUTHORIZED</span></div></div>
+<section class="node">
+<div class="nodehead"><b>FIELD NODE INTERFACE</b><span id="nst">READY FOR SCAN</span></div>
+<div class="nodebody">
+ <div class="idlehide" id="idle"><div class="nodeidle"><div class="nfcsymbol">NFC</div><h3>SCAN NODE</h3><p>NODE-ID IS VERIFIED AGAINST LIVE SERVER STATE</p><button class="scanbtn" onclick="showAvailable()">SIMULATE NODE SCAN</button></div></div>
+ <div class="nodeinfo" id="avail"><div class="nrow"><div><div class="lab">NODE</div><div class="nodeid">NODE-007</div></div><div class="available">● AVAILABLE</div></div><div class="energybox"><small>VISIBLE NODE ENERGY</small><div class="big">1,860 E</div><small>3 N-CORES // INDIVIDUAL VALUES HIDDEN</small></div><div class="swap"><label>SELECT SWAP COMMITMENT</label><div class="choices"><button>1</button><button disabled>2</button><button disabled>3</button></div></div></div>
+ <div class="nodeinfo" id="cool"><div class="nrow"><div><div class="lab">NODE</div><div class="nodeid">NODE-007</div></div><div style="font:9px monospace;color:var(--a)">● COOLDOWN</div></div><div class="energybox"><small>VISIBLE NODE ENERGY</small><div class="big">1,860 E</div></div><div class="cooldown"><div class="lab">AVAILABLE IN</div><div class="cd">00:37:42</div><p>NODE ACCESS CODE REMAINS LOCKED</p></div><div class="lockedcode">ACCESS // DENIED UNTIL SERVER RELEASE</div></div>
+ <div class="demo"><button onclick="showIdle()">RESET</button><button onclick="showCooldown()">DEMO COOLDOWN</button></div>
+</div></section>
+</main>
+<div class="bottom"><nav class="nav"><button class="on">PIONEER</button><button>N-CORES</button><button>IDENTITY</button></nav></div>
+<script>
+let s=522;
+setInterval(()=>{if(s>0){s--;let m=Math.floor(s/60),q=s%60;document.getElementById('gt').textContent=String(m).padStart(2,'0')+':'+String(q).padStart(2,'0')}},1000);
+function clearViews(){document.getElementById('idle').classList.add('hide');document.getElementById('avail').classList.remove('show');document.getElementById('cool').classList.remove('show')}
+function showAvailable(){clearViews();document.getElementById('avail').classList.add('show');document.getElementById('nst').textContent='NODE VERIFIED'}
+function showCooldown(){clearViews();document.getElementById('cool').classList.add('show');document.getElementById('nst').textContent='COOLDOWN ACTIVE'}
+function showIdle(){document.getElementById('avail').classList.remove('show');document.getElementById('cool').classList.remove('show');document.getElementById('idle').classList.remove('hide');document.getElementById('nst').textContent='READY FOR SCAN'}
+</script></body></html>
