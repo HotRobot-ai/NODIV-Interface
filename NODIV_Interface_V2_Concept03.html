@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05090d"><title>NODIV // Interface V2 Concept 03</title>
+<style>
+:root{--bg:#05090d;--panel:#0a1218;--line:#1d3943;--cyan:#43eaff;--green:#61ffad;--amber:#ffc85c;--text:#edf7fa;--muted:#6e838d}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#12313b 0,#071219 27%,var(--bg) 58%);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(#43eaff05 1px,transparent 1px),linear-gradient(90deg,#43eaff04 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(#000,transparent 72%)}
+.shell{max-width:720px;margin:auto;padding:17px 15px 105px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.logo{font-weight:1000;letter-spacing:.25em;font-size:20px}.logo b{color:var(--cyan)}.online{font:9px ui-monospace,monospace;color:var(--green);letter-spacing:.1em}.online:before{content:"●";margin-right:6px}
+.hero{border:1px solid #22424c;border-radius:18px;padding:19px;background:linear-gradient(145deg,#0d1a21,#080f14);box-shadow:0 22px 60px #0008}.eyebrow{font:9px ui-monospace,monospace;color:var(--cyan);letter-spacing:.15em}.identity{font-size:36px;font-weight:950;letter-spacing:-.04em;margin:5px 0 0}.role{font:11px ui-monospace,monospace;color:#a7bac1;letter-spacing:.12em}.line{height:1px;background:linear-gradient(90deg,#197c8b,transparent);margin:16px 0}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lab{font:8px ui-monospace,monospace;color:var(--muted);letter-spacing:.1em}.val{font-weight:850;font-size:13px;margin-top:4px}.ok{color:var(--green)}
+.head{display:flex;justify-content:space-between;align-items:end;margin:24px 2px 10px}.head h2{font-size:11px;letter-spacing:.14em;margin:0}.total{text-align:right}.total strong{font-size:17px;color:var(--cyan)}.total span{font:8px ui-monospace,monospace;color:var(--muted);display:block}
+.inventory{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.slot{height:154px;position:relative;border:1px solid #1c3942;border-radius:14px;background:linear-gradient(150deg,#0b171d,#070d11);padding:11px;overflow:hidden}
+.slotnum{font:8px ui-monospace,monospace;color:#6d858d;letter-spacing:.1em}.slot.occupied{border-color:#24717d;box-shadow:0 0 25px #19d8ee0b inset}
+.orbit{position:absolute;width:84px;height:84px;left:50%;top:36px;transform:translateX(-50%);border:1px solid #21545d;border-radius:50%}.orbit:before{content:"";position:absolute;inset:8px;border:1px dashed #26717c;border-radius:50%;animation:spin 8s linear infinite}.orbit:after{content:"";position:absolute;left:50%;top:-3px;width:6px;height:6px;background:var(--cyan);border-radius:50%;box-shadow:0 0 12px var(--cyan)}
+@keyframes spin{to{transform:rotate(360deg)}}.coretxt{position:absolute;z-index:2;top:59px;left:0;right:0;text-align:center}.coretxt b{font:900 12px ui-monospace,monospace}.coretxt strong{display:block;font-size:21px;margin-top:3px}.coretxt small{display:block;font:7px ui-monospace,monospace;color:var(--green);margin-top:4px}
+.lock{display:grid;place-items:center;height:115px;color:#41545a}.lockicon{font-size:24px;opacity:.55}.locktxt{font:8px ui-monospace,monospace;letter-spacing:.12em;margin-top:-28px}.capacity{text-align:center;font:8px ui-monospace,monospace;color:#738890;margin-top:8px}.capacity b{color:var(--cyan)}
+.ops{display:grid;grid-template-columns:1fr 1fr;gap:9px}.op{min-height:112px;text-align:left;position:relative;padding:14px;border:1px solid #203a43;border-radius:14px;background:linear-gradient(145deg,#0c171d,#070d11);color:var(--text)}.op .n{font:9px ui-monospace,monospace;color:var(--cyan)}.op strong{display:block;margin-top:23px;font-size:14px}.op small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.op.ready:after{content:"READY";position:absolute;right:10px;top:10px;font:7px ui-monospace,monospace;color:var(--green)}
+.bottom{position:fixed;bottom:0;left:0;right:0;background:#061015ed;border-top:1px solid #19333c;backdrop-filter:blur(14px)}.nav{max-width:720px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);padding:8px 10px calc(8px + env(safe-area-inset-bottom))}.nav button{border:0;background:none;color:#5f747c;font:8px ui-monospace,monospace;padding:8px}.nav .on{color:var(--cyan)}
+.scan{display:none;position:fixed;z-index:30;inset:0;background:#020608f3;place-items:center;padding:22px}.scan.show{display:grid}.scanbox{text-align:center}.radar{width:205px;height:205px;border:1px solid #22616b;border-radius:50%;position:relative;margin:auto;box-shadow:0 0 60px #21e9ff1d}.radar:before{content:"";position:absolute;inset:28px;border:1px solid #1c4850;border-radius:50%}.sweep{position:absolute;inset:0;border-radius:50%;border-top:2px solid var(--cyan);animation:spin 2.3s linear infinite}.scan h3{font:900 16px ui-monospace,monospace;letter-spacing:.1em;margin:24px 0 6px}.scan p{font:9px ui-monospace,monospace;color:var(--muted)}.cancel{margin-top:20px;background:none;border:1px solid #29434a;color:#92a5aa;padding:10px 24px;border-radius:8px}
+@media(max-width:390px){.slot{height:145px;padding:8px}.orbit{width:75px;height:75px}.coretxt{top:56px}.coretxt strong{font-size:18px}}
+</style></head>
+<body>
+<main class="shell">
+<header class="top"><div class="logo">NO<b>DIV</b></div><div class="online">CORE NETWORK ONLINE</div></header>
+<section class="hero">
+<div class="eyebrow">IDENTITY // VERIFIED</div><div class="identity">P002</div><div class="role">PIONEER // FIELD OPERATIVE</div><div class="line"></div>
+<div class="stats"><div><div class="lab">STATUS</div><div class="val ok">ACTIVE</div></div><div><div class="lab">CORE CAPACITY</div><div class="val">01 / 03</div></div><div><div class="lab">NODE ACCESS</div><div class="val">GRANTED</div></div></div>
+</section>
+
+<div class="head"><h2>N-CORE INVENTORY</h2><div class="total"><strong>618 E</strong><span>TOTAL VISIBLE ENERGY</span></div></div>
+<section class="inventory">
+<div class="slot occupied"><div class="slotnum">SLOT 01</div><div class="orbit"></div><div class="coretxt"><b>NC-001</b><strong>618 E</strong><small>FIELD</small></div></div>
+<div class="slot"><div class="slotnum">SLOT 02</div><div class="lock"><div class="lockicon">◇</div></div><div class="locktxt">LOCKED</div></div>
+<div class="slot"><div class="slotnum">SLOT 03</div><div class="lock"><div class="lockicon">◇</div></div><div class="locktxt">LOCKED</div></div>
+</section>
+<div class="capacity"><b>1</b> SLOT UNLOCKED // 1 CORE STORED</div>
+
+<div class="head"><h2>FIELD OPERATIONS</h2><div class="total"><span>SERVER AUTHORIZED</span></div></div>
+<section class="ops">
+<button class="op ready" onclick="scan('START CORE')"><span class="n">01 //</span><strong>Start Core</strong><small>Reserve issuance</small></button>
+<button class="op ready" onclick="scan('CATCH')"><span class="n">02 //</span><strong>Catch</strong><small>Capture transfer</small></button>
+<button class="op" onclick="scan('NODE')"><span class="n">03 //</span><strong>Node</strong><small>Field interface</small></button>
+<button class="op" onclick="scan('EXTRACTION')"><span class="n">04 //</span><strong>Extraction</strong><small>Secure energy</small></button>
+</section>
+</main>
+<div class="bottom"><nav class="nav"><button class="on">CORE</button><button>GRID</button><button>OPS</button><button>IDENTITY</button></nav></div>
+<div id="scan" class="scan"><div class="scanbox"><div class="radar"><div class="sweep"></div></div><h3 id="st">NFC</h3><p>HOLD AUTHORIZED HARDWARE NEAR DEVICE</p><button class="cancel" onclick="closeScan()">ABORT</button></div></div>
+<script>
+function scan(t){document.getElementById('st').textContent=t+' // NFC';document.getElementById('scan').classList.add('show')}
+function closeScan(){document.getElementById('scan').classList.remove('show')}
+</script>
+</body></html>
