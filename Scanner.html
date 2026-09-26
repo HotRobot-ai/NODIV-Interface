@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      background: #050b14;
+      color: #eaf6ff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: auto;
+      padding: 35px 22px;
+    }
+
+    .brand {
+      font-size: 26px;
+      font-weight: bold;
+      letter-spacing: 3px;
+    }
+
+    .subbrand {
+      color: #5bc7ff;
+      letter-spacing: 4px;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .line {
+      height: 2px;
+      background: #168bd2;
+      margin: 25px 0 35px;
+    }
+
+    .mode {
+      color: #5bc7ff;
+      font-size: 13px;
+      letter-spacing: 2px;
+      margin-bottom: 25px;
+    }
+
+    input {
+      width: 90%;
+      padding: 15px;
+      margin: 7px 0;
+      background: #0a1522;
+      border: 1px solid #24465e;
+      color: white;
+      font-size: 18px;
+      text-align: center;
+      border-radius: 5px;
+    }
+
+    button {
+      width: 95%;
+      padding: 20px;
+      margin-top: 25px;
+      background: #087fc1;
+      border: none;
+      color: white;
+      font-size: 17px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      border-radius: 5px;
+    }
+
+    button:active {
+      background: #0aa7ff;
+    }
+
+    #status {
+      margin-top: 30px;
+      padding: 20px;
+      min-height: 70px;
+      border: 1px solid #17374c;
+      background: #07111c;
+      white-space: pre-line;
+      line-height: 1.6;
+    }
+
+    .success {
+      color: #62e6a7;
+    }
+
+    .error {
+      color: #ff7373;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="brand">NEXORA</div>
+  <div class="subbrand">ENERGY SYSTEMS</div>
+
+  <div class="line"></div>
+
+  <div class="mode">
+    N-CORE // REGISTRATION TERMINAL
+  </div>
+
+  <input
+    id="core"
+    type="text"
+    value="NC-001"
+    placeholder="N-CORE ID">
+
+  <input
+    id="energy"
+    type="number"
+    value="618"
+    placeholder="ENERGY">
+
+  <button onclick="scanNFC()">
+    SCAN N-CORE
+  </button>
+
+  <div id="status">
+    SYSTEM READY
+  </div>
+
+</div>
+
+
+<script>
+
+const API =
+"https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec";
+
+
+async function scanNFC() {
+
+  const status = document.getElementById("status");
+
+  if (!("NDEFReader" in window)) {
+    status.className = "error";
+    status.innerText =
+      "NFC INTERFACE NOT AVAILABLE\n\nBitte Chrome auf einem NFC-fähigen Android-Gerät verwenden.";
+    return;
+  }
+
+  const core =
+    document.getElementById("core").value.trim().toUpperCase();
+
+  const energy =
+    document.getElementById("energy").value.trim();
+
+  if (!core || !energy) {
+    status.className = "error";
+    status.innerText =
+      "CORE DATA INCOMPLETE";
+    return;
+  }
+
+
+  try {
+
+    status.className = "";
+    status.innerText =
+      "NFC INTERFACE ACTIVE\n\nPRESENT N-CORE";
+
+
+    const reader = new NDEFReader();
+
+    await reader.scan();
+
+
+    reader.onreading = async event => {
+
+      const uid = event.serialNumber;
+
+      if (!uid) {
+        status.className = "error";
+        status.innerText =
+          "N-CORE DETECTED\nUID NOT AVAILABLE";
+        return;
+      }
+
+
+      status.innerText =
+        "N-CORE DETECTED\n\nUID // " +
+        uid +
+        "\n\nREGISTERING...";
+
+
+      const url =
+        API +
+        "?action=register" +
+        "&core=" + encodeURIComponent(core) +
+        "&energy=" + encodeURIComponent(energy) +
+        "&uid=" + encodeURIComponent(uid);
+
+
+      try {
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+
+        if (result.ok) {
+
+          status.className = "success";
+
+          status.innerText =
+            "CORE REGISTERED\n\n" +
+            result.core +
+            "\n" +
+            "ENERGY // " + result.energy +
+            "\n" +
+            "UID // " + result.uid +
+            "\n\n" +
+            "CHIP STATUS // ERFASST";
+
+        } else {
+
+          throw new Error(
+            result.error || "Registration failed"
+          );
+        }
+
+      } catch (error) {
+
+        status.className = "error";
+
+        status.innerText =
+          "DATABASE ERROR\n\n" +
+          error.message;
+      }
+
+    };
+
+
+    reader.onreadingerror = () => {
+
+      status.className = "error";
+
+      status.innerText =
+        "NFC READ ERROR\n\nN-Core erneut an das Gerät halten.";
+    };
+
+
+  } catch (error) {
+
+    status.className = "error";
+
+    status.innerText =
+      "NFC ERROR\n\n" +
+      error.message;
+  }
+
+}
+
+</script>
+
+</body>
+</html>
