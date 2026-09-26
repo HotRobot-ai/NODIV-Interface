@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#02070d">
+<title>NODIV // Pioneer Field HUD // Concept10</title>
+<style>
+:root{--bg:#02070d;--panel:rgba(4,16,27,.82);--line:rgba(54,196,255,.24);--c:#35caff;--c2:#9cecff;--g:#5af0b2;--a:#ffc75d;--r:#ff5b70;--txt:#f2fbff;--mut:#7194a5}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--txt);font-family:Inter,"Segoe UI",system-ui,sans-serif}button{font:inherit}
+body{background:radial-gradient(circle at 50% -10%,#0b3047 0,#03111c 35%,#02070d 68%)}
+.shell{max-width:720px;margin:auto;min-height:100svh;padding-bottom:92px;position:relative;overflow:hidden}
+.ci{height:210px;position:relative;background:
+linear-gradient(180deg,rgba(1,7,13,.10),rgba(2,7,13,.52) 55%,#02070d 100%),
+url("f6072312-e4b9-448b-84ee-3283e200b198.png") center 55%/cover no-repeat}
+.ci:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.22),transparent 45%,rgba(0,0,0,.18));pointer-events:none}
+.top{position:absolute;z-index:3;left:15px;right:15px;top:14px;display:flex;align-items:center;justify-content:space-between}
+.brand{font-weight:950;letter-spacing:.25em;font-size:19px;text-shadow:0 0 18px #27bfff88}.brand b{color:var(--c)}.network{font:8px ui-monospace,monospace;letter-spacing:.08em;color:var(--g);padding:6px 8px;border:1px solid rgba(90,240,178,.25);background:#021019aa}
+.citymark{position:absolute;z-index:3;left:15px;bottom:30px}.citymark small{display:block;color:var(--c2);font:7px ui-monospace,monospace;letter-spacing:.24em}.citymark strong{display:block;margin-top:3px;font-size:19px;letter-spacing:.16em}
+.coord{position:absolute;z-index:3;right:15px;bottom:31px;text-align:right;color:#8fdaff;font:7px ui-monospace,monospace;line-height:1.7;letter-spacing:.15em}
+.main{padding:0 12px}.identity{margin-top:-17px;position:relative;z-index:4;border:1px solid var(--line);background:linear-gradient(135deg,rgba(8,28,42,.96),rgba(3,12,20,.93));backdrop-filter:blur(12px);padding:13px 14px 12px;box-shadow:0 12px 35px #0008}
+.idrow{display:flex;align-items:end;justify-content:space-between}.ey{font:7px ui-monospace,monospace;letter-spacing:.16em;color:var(--c)}.pid{font-size:29px;line-height:1;font-weight:950;letter-spacing:.02em}.role{font:8px ui-monospace,monospace;color:#91aab5;margin-top:4px}.state{text-align:right}.state small{display:block;font:6px ui-monospace,monospace;color:var(--mut);letter-spacing:.12em}.state b{font:10px ui-monospace,monospace;color:var(--g)}
+.now{margin-top:9px;position:relative;overflow:hidden;border:1px solid rgba(53,202,255,.35);background:linear-gradient(135deg,#071923,#041018);padding:14px 14px 13px;box-shadow:inset 3px 0 0 var(--c),0 0 30px #1ebfff0b}
+.now:after{content:"";position:absolute;width:150px;height:150px;border:1px solid #36caff16;border-radius:50%;right:-62px;top:-73px;box-shadow:0 0 0 20px #36caff08,0 0 0 43px #36caff05}
+.nowtop{font:7px ui-monospace,monospace;color:var(--c);letter-spacing:.18em}.now h1{font-size:23px;line-height:1.05;margin:5px 0 4px;letter-spacing:.04em}.now p{margin:0;color:#829ca8;font:8px ui-monospace,monospace}.quick{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:9px}.q{min-width:0;border:1px solid var(--line);background:#06131dcc;padding:9px 7px}.q small{display:block;font:6px ui-monospace,monospace;color:var(--mut);letter-spacing:.08em}.q b{display:block;margin-top:3px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.q.energy b{color:var(--c2)}
+.section{margin-top:15px}.sh{display:flex;justify-content:space-between;align-items:center;margin:0 2px 7px}.sh b{font:8px ui-monospace,monospace;letter-spacing:.15em}.sh span{font:6px ui-monospace,monospace;color:var(--mut)}
+.cores{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.core{height:72px;border:1px solid var(--line);background:linear-gradient(160deg,#071822,#040d13);padding:8px;position:relative;overflow:hidden}.core.active:after{content:"";position:absolute;width:58px;height:58px;border:1px solid #35caff55;border-radius:50%;right:-18px;bottom:-25px;box-shadow:0 0 18px #35caff22}.core small{font:6px ui-monospace,monospace;color:var(--mut)}.core strong{display:block;font:9px ui-monospace,monospace;margin-top:5px}.core em{display:block;font-style:normal;font-size:14px;font-weight:900;color:var(--c2);margin-top:2px}.empty{display:grid;place-items:center;color:#405863;font:7px ui-monospace,monospace}
+.board{border:1px solid var(--line);background:#05131c;overflow:hidden}.boardhead{display:flex;justify-content:space-between;align-items:center;padding:10px 11px}.boardhead b{font:8px ui-monospace,monospace;letter-spacing:.12em}.badge{font:7px ui-monospace,monospace;color:var(--a)}.mission{border-top:1px solid var(--line);padding:11px}.mission small{font:7px ui-monospace,monospace;color:var(--a);letter-spacing:.1em}.mission strong{display:block;font-size:13px;margin-top:3px}.mission p{font:8px ui-monospace,monospace;color:var(--mut);margin:3px 0 9px}.btn{width:100%;border:1px solid #2d8194;background:linear-gradient(180deg,#0b2b35,#071b23);color:#eefdff;padding:11px;font-weight:900;font-size:10px;letter-spacing:.08em}.btn.primary{box-shadow:0 0 22px #24c8ff13}
+.scan{margin-top:9px;border:1px solid rgba(53,202,255,.38);background:linear-gradient(145deg,#071a25,#030d14);padding:14px;display:flex;align-items:center;gap:13px;cursor:pointer}.scanicon{width:48px;height:48px;flex:0 0 48px;border:1px solid #36caff77;border-radius:50%;display:grid;place-items:center;color:var(--c);font:800 8px ui-monospace,monospace;box-shadow:0 0 22px #35caff18}.scantext small{font:6px ui-monospace,monospace;color:var(--c);letter-spacing:.14em}.scantext strong{display:block;font-size:15px;margin-top:2px}.scantext span{display:block;font:7px ui-monospace,monospace;color:var(--mut);margin-top:2px}
+.drawer{margin-top:9px;border:1px solid #183944;background:#040f16}.drawer summary{list-style:none;cursor:pointer;padding:11px;display:flex;justify-content:space-between;font:7px ui-monospace,monospace;letter-spacing:.12em;color:#809aa5}.drawer summary::-webkit-details-marker{display:none}.drawer summary:after{content:"＋";color:var(--c)}.drawer[open] summary:after{content:"－"}.drawerbody{border-top:1px solid #183944;padding:11px;color:#78919b;font:8px ui-monospace,monospace;line-height:1.7}
+.ticker{display:none;margin-top:9px;height:34px;overflow:hidden;border-block:1px solid #7b5a22;background:#171105;color:#e7c36d;white-space:nowrap;font:8px ui-monospace,monospace;line-height:32px}.ticker.on{display:block}.track{display:inline-block;padding-left:100%;animation:tick 20s linear infinite}@keyframes tick{to{transform:translateX(-100%)}}
+.navwrap{position:fixed;left:0;right:0;bottom:0;background:#031018ed;border-top:1px solid #153945;backdrop-filter:blur(15px);z-index:20}.nav{max-width:720px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);padding:7px 10px calc(7px + env(safe-area-inset-bottom))}.nav button{border:0;background:none;color:#5f7b86;font:7px ui-monospace,monospace;padding:8px}.nav .on{color:var(--c)}
+@media(max-width:380px){.ci{height:190px}.pid{font-size:25px}.now h1{font-size:20px}.q b{font-size:9px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<section class="ci">
+<header class="top"><div class="brand">NO<b>DIV</b></div><div class="network">● NETWORK ONLINE</div></header>
+<div class="citymark"><small>FIELD SECTOR</small><strong>WÜRZBURG</strong></div>
+<div class="coord">49.7913° N<br>9.9534° E</div>
+</section>
+<main class="main">
+<section class="identity">
+<div class="idrow"><div><div class="ey">IDENTITY // VERIFIED</div><div class="pid">P002</div><div class="role">PIONEER // FIELD OPERATIVE</div></div><div class="state"><small>FIELD STATUS</small><b>ACTIVE</b></div></div>
+</section>
+<div class="ticker on"><div class="track">// NODIV FIELD FEED // &nbsp; NEW MISSION AVAILABLE &nbsp;·&nbsp; NODE-007 // INSPECTION REQUIRED &nbsp;·&nbsp;</div></div>
+<section class="now"><div class="nowtop">CURRENT PRIORITY</div><h1>MISSION AVAILABLE</h1><p>NODE-007 // Inventory verification required.</p></section>
+<div class="quick"><div class="q"><small>GHOST</small><b>CLEAR</b></div><div class="q energy"><small>ENERGY</small><b>618 E</b></div><div class="q"><small>NODE ACCESS</small><b>GRANTED</b></div></div>
+
+<section class="section"><div class="sh"><b>N-CORE LOADOUT</b><span>1 / 3 ACTIVE</span></div>
+<div class="cores"><div class="core active"><small>SLOT 01</small><strong>NC-001</strong><em>618 E</em></div><div class="core empty">SLOT 02<br>EMPTY</div><div class="core empty">SLOT 03<br>EMPTY</div></div></section>
+
+<section class="section"><div class="sh"><b>MISSION BOARD</b><span>1 NEW ORDER</span></div>
+<div class="board"><div class="boardhead"><b>M-017 // INSPECTION</b><span class="badge">AVAILABLE</span></div><div class="mission"><small>FIELD ORDER</small><strong>VERIFY NODE-007</strong><p>Inspect physical N-Core inventory and report status.</p><button class="btn primary" onclick="acceptMission(this)">ACCEPT MISSION</button></div></div></section>
+
+<section class="section"><div class="sh"><b>FIELD NODE</b><span>READY</span></div>
+<div class="scan" onclick="demoScan(this)"><div class="scanicon">NFC</div><div class="scantext"><small>PRIMARY ACTION</small><strong>SCAN FIELD NODE</strong><span>Tap to request Node status & access</span></div></div>
+<details class="drawer"><summary>IDENTITY & SYSTEM DETAILS</summary><div class="drawerbody">P002 // PIONEER<br>NETWORK // ONLINE<br>ACCESS // VERIFIED<br>CORE CAPACITY // 3<br><br>Secondary information remains hidden during field movement.</div></details></section>
+</main>
+</div>
+<div class="navwrap"><nav class="nav"><button class="on">FIELD</button><button>MISSIONS</button><button>IDENTITY</button></nav></div>
+<script>
+function acceptMission(btn){btn.textContent='MISSION ACCEPTED // P002';btn.disabled=true;document.querySelector('.badge').textContent='ASSIGNED';document.querySelector('.now h1').textContent='MISSION ACTIVE';document.querySelector('.now p').textContent='Proceed to NODE-007 // Inspection order assigned to P002.';document.querySelector('.ticker').classList.remove('on')}
+function demoScan(el){el.querySelector('.scanicon').textContent='...';el.querySelector('.scantext strong').textContent='NODE SCAN ACTIVE';setTimeout(()=>{el.querySelector('.scanicon').textContent='NFC';el.querySelector('.scantext strong').textContent='SCAN FIELD NODE'},1300)}
+</script>
+</body></html>
