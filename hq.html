@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NODIV // CENTRAL OPERATIONS WÜRZBURG</title>
+<script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+<style>
+html,body{margin:0;background:#02070c;font-family:Arial,sans-serif}
+#boot{position:fixed;z-index:10;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#70eaff;letter-spacing:.22em;text-align:center;text-shadow:0 0 18px #00bde8;background:radial-gradient(circle at center,#06202a 0,#02070c 55%,#000 100%);animation:boot 3.2s forwards}
+#boot b{font-size:clamp(28px,7vw,70px);display:block}.sub{font-size:12px;margin-top:14px;opacity:.75}
+@keyframes boot{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}
+</style>
+</head>
+<body>
+<div id="boot"><div><b>NODIV</b><div class="sub">CENTRAL OPERATIONS // WÜRZBURG<br>SYSTEM INITIALIZING</div></div></div>
+<a-scene background="color:#010509" fog="type: exponential; color:#020b10; density:0.025" renderer="antialias:true; colorManagement:true">
+<a-assets>
+<a-mixin id="panel" geometry="primitive:plane;width:3.1;height:1.65" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:.92;transparent:true;side:double"></a-mixin>
+</a-assets>
+
+<!-- floor / room -->
+<a-plane rotation="-90 0 0" width="24" height="24" material="color:#050a0d;metalness:.65;roughness:.42"></a-plane>
+<a-ring rotation="-90 0 0" radius-inner="3.1" radius-outer="3.14" material="color:#00d9ff;emissive:#00a8d0;emissiveIntensity:1"></a-ring>
+<a-ring rotation="-90 0 0" radius-inner="6.3" radius-outer="6.33" material="color:#12313a;emissive:#063b48;emissiveIntensity:.4"></a-ring>
+<a-cylinder position="0 1.15 -2.8" radius="1.75" height=".12" material="color:#071116;metalness:.8;roughness:.25"></a-cylinder>
+<a-cylinder position="0 .62 -2.8" radius=".52" height="1.1" material="color:#061015;metalness:.8;roughness:.3"></a-cylinder>
+
+<!-- holographic Würzburg-ish city abstraction -->
+<a-entity position="0 1.35 -2.8">
+  <a-cylinder radius="1.45" height=".025" material="color:#00bfe8;opacity:.12;transparent:true;emissive:#00dfff;emissiveIntensity:.7"></a-cylinder>
+  <a-entity animation="property:rotation;to:0 360 0;loop:true;dur:90000;easing:linear">
+    <a-box position="-.55 .18 -.15" width=".34" height=".36" depth=".34" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
+    <a-box position=".18 .28 .1" width=".5" height=".56" depth=".4" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
+    <a-box position=".65 .14 -.35" width=".28" height=".28" depth=".45" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
+    <a-box position="-.15 .12 .58" width=".75" height=".24" depth=".3" material="color:#36dcff;opacity:.5;transparent:true;wireframe:true"></a-box>
+    <a-cone position="-.75 .38 -.58" radius-bottom=".32" radius-top=".05" height=".75" material="color:#57e8ff;opacity:.42;transparent:true;wireframe:true"></a-cone>
+  </a-entity>
+  <a-torus radius="1.2" radius-tubular=".008" rotation="90 0 0" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:90 360 0;loop:true;dur:12000;easing:linear"></a-torus>
+  <a-text value="WÜRZBURG // LIVE GRID" align="center" width="2.7" position="0 .85 0" color="#67eaff"></a-text>
+</a-entity>
+
+<!-- front wall -->
+<a-plane position="0 3.15 -7.2" width="15" height="6.4" material="color:#03090d;metalness:.55;roughness:.55"></a-plane>
+<a-text value="NODIV" position="0 5.25 -7.05" align="center" width="8" color="#9af2ff" material="emissive:#00bfe8;emissiveIntensity:.8"></a-text>
+<a-text value="CENTRAL OPERATIONS // WÜRZBURG" position="0 4.72 -7.04" align="center" width="4.5" color="#2bbbd3"></a-text>
+
+<!-- screens -->
+<a-entity position="-3.55 3.05 -6.95" rotation="0 10 0">
+<a-plane mixin="panel"></a-plane>
+<a-text value="MISSION CONTROL" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
+<a-text value="SYSTEM // NOMINAL\nACTIVE MISSIONS // 01\nFIELD STATUS // ONLINE" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:0 0 360;loop:true;dur:5000;easing:linear"></a-ring>
+</a-entity>
+
+<a-entity position="0 3.05 -7.05">
+<a-plane mixin="panel"></a-plane>
+<a-text value="NODE NETWORK" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
+<a-text value="NETWORK // STANDBY\nNODES // 15\nLINK // SECURE" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".34" radius-outer=".36" position=".82 -.33 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+</a-entity>
+
+<a-entity position="3.55 3.05 -6.95" rotation="0 -10 0">
+<a-plane mixin="panel"></a-plane>
+<a-text value="PIONEER STATUS" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
+<a-text value="FIELD UNITS // READY\nSESSION // AWAITING\nACCESS // CONTROLLED" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+</a-entity>
+
+<!-- side architecture / lights -->
+<a-box position="-7 2.1 -1" width=".12" height="4.2" depth="11" material="color:#050b0f;metalness:.7"></a-box>
+<a-box position="7 2.1 -1" width=".12" height="4.2" depth="11" material="color:#050b0f;metalness:.7"></a-box>
+<a-box position="-6.92 2.4 -2" width=".03" height=".08" depth="7" material="color:#00aeca;emissive:#00c9ed;emissiveIntensity:1"></a-box>
+<a-box position="6.92 2.4 -2" width=".03" height=".08" depth="7" material="color:#00aeca;emissive:#00c9ed;emissiveIntensity:1"></a-box>
+<a-sky color="#010407"></a-sky>
+<a-light type="ambient" color="#58b8cc" intensity=".2"></a-light>
+<a-light type="point" position="0 3 -2.8" color="#00d9ff" intensity="1.3" distance="8"></a-light>
+
+<!-- player rig: desktop WASD + Quest controllers -->
+<a-entity id="rig" position="0 0 2.7">
+  <a-camera position="0 1.65 0" wasd-controls="acceleration:18" look-controls>
+    <a-cursor color="#58e8ff" fuse="false"></a-cursor>
+  </a-camera>
+  <a-entity laser-controls="hand:left" raycaster="objects:.clickable"></a-entity>
+  <a-entity laser-controls="hand:right" raycaster="objects:.clickable"></a-entity>
+</a-entity>
+</a-scene>
+</body>
+</html>
