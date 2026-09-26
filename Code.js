@@ -3585,6 +3585,30 @@ function getUidLookup(e) {
 
 
 
+function getPublicScanDisplay(hit) {
+  if (!hit || !hit.found) return { label: 'UNKNOWN', status: 'UNVERIFIED' };
+  if (hit.type === 'N_CORE') {
+    const core = readCoreState(hit.id);
+    return { label: 'N-CORE', energy: core.actualEnergy === '' ? core.visibleEnergy : core.actualEnergy, status: core.status || 'UNDEFINED' };
+  }
+  if (hit.type === 'ACCESS_CARD') {
+    const player = findIdentityById(hit.identity || '');
+    if (!player) return { label: 'PLAYER ID', verified: false, status: 'UNVERIFIED' };
+    let publicStatus = player.status === 'ACTIVE' ? 'ACTIVE' : 'NOT ACTIVE';
+    if (player.ghostUntil) {
+      const until = new Date(player.ghostUntil);
+      if (!isNaN(until.getTime()) && until.getTime() > Date.now()) publicStatus = 'GHOST';
+    }
+    return { label: 'PLAYER ID', verified: player.status === 'ACTIVE', status: publicStatus };
+  }
+  if (hit.type === 'NODE') {
+    const sheet = getNodeRegisterSheet(), rows = sheet.getRange(2, 1, 15, 3).getValues();
+    for (let i=0;i<rows.length;i++) if (String(rows[i][0]||'').trim().toUpperCase()===hit.id) return { label:'NODIV NODE', status:String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED' };
+    return { label:'NODIV NODE', status:'UNDEFINED' };
+  }
+  return { label:'NODIV OBJECT', status:'VERIFIED' };
+}
+
 function lookupUidGlobally(uid) {
 
   const normalizedUid = normalizeUid(uid);
