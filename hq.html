@@ -16,7 +16,7 @@ html,body{margin:0;background:#02070c;font-family:Arial,sans-serif}
 <div id="boot"><div><b>NODIV</b><div class="sub">CENTRAL OPERATIONS // WÜRZBURG<br>SYSTEM INITIALIZING</div></div></div>
 <a-scene background="color:#010509" fog="type: exponential; color:#020b10; density:0.025" renderer="antialias:true; colorManagement:true">
 <a-assets>
-<a-mixin id="panel" geometry="primitive:plane;width:3.1;height:1.65" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:.92;transparent:true;side:double"></a-mixin>
+<a-mixin id="panel" geometry="primitive:plane;width:3.7;height:2.05" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:.92;transparent:true;side:double"></a-mixin>
 </a-assets>
 
 <!-- floor / room -->
@@ -29,7 +29,7 @@ html,body{margin:0;background:#02070c;font-family:Arial,sans-serif}
 <!-- holographic Würzburg-ish city abstraction -->
 <a-entity position="0 1.35 -2.8">
   <a-cylinder radius="1.45" height=".025" material="color:#00bfe8;opacity:.12;transparent:true;emissive:#00dfff;emissiveIntensity:.7"></a-cylinder>
-  <a-entity animation="property:rotation;to:0 360 0;loop:true;dur:90000;easing:linear">
+  <a-entity>
     <a-box position="-.55 .18 -.15" width=".34" height=".36" depth=".34" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
     <a-box position=".18 .28 .1" width=".5" height=".56" depth=".4" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
     <a-box position=".65 .14 -.35" width=".28" height=".28" depth=".45" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
@@ -48,22 +48,22 @@ html,body{margin:0;background:#02070c;font-family:Arial,sans-serif}
 <!-- screens -->
 <a-entity position="-3.55 3.05 -6.95" rotation="0 10 0">
 <a-plane mixin="panel"></a-plane>
-<a-text value="MISSION CONTROL" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
-<a-text value="SYSTEM // NOMINAL\nACTIVE MISSIONS // 01\nFIELD STATUS // ONLINE" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-text value="MISSION CONTROL" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text value="SYSTEM  //  NOMINAL\nMISSIONS  //  01\nFIELD  //  ONLINE" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:0 0 360;loop:true;dur:5000;easing:linear"></a-ring>
 </a-entity>
 
 <a-entity position="0 3.05 -7.05">
 <a-plane mixin="panel"></a-plane>
-<a-text value="NODE NETWORK" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
-<a-text value="NETWORK // STANDBY\nNODES // 15\nLINK // SECURE" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-text value="NODE NETWORK" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text value="NETWORK  //  STANDBY\nNODES  //  15\nLINK  //  SECURE" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".34" radius-outer=".36" position=".82 -.33 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
 </a-entity>
 
 <a-entity position="3.55 3.05 -6.95" rotation="0 -10 0">
 <a-plane mixin="panel"></a-plane>
-<a-text value="PIONEER STATUS" align="center" width="2.5" position="0 .53 .02" color="#63eaff"></a-text>
-<a-text value="FIELD UNITS // READY\nSESSION // AWAITING\nACCESS // CONTROLLED" width="2.35" position="-1.05 .15 .025" color="#a9dce5"></a-text>
+<a-text value="PIONEER STATUS" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text value="FIELD UNITS  //  READY\nSESSION  //  AWAITING\nACCESS  //  CONTROLLED" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
 </a-entity>
 
