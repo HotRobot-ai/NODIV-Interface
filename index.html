@@ -30,7 +30,8 @@ body.critical .scanbox{border-width:2px}
 <div class="head normalops"><h2>MISSION BOARD</h2><span id="mcount">1 OPEN MISSION</span></div><section class="board normalops"><div class="bar"><b>MISSION M-017</b><span>AVAILABLE</span></div><div class="mission"><strong>NODE-007 // INSPECTION</strong><p>Inventory verification required.</p><button class="btn">OPEN MISSION</button></div></section>
 <div class="head"><h2>FIELD INTERACTION</h2><span>UNIVERSAL NFC</span></div><section class="scanbox" id="scanBox"><div class="nfc" id="scanIcon">NFC</div><h2 id="scanTitle">JETZT SCANNEN</h2><p id="scanText">Antippen. Smartphone an ein NODIV-Objekt halten.<br>NODIV erkennt Objekt und nächsten Schritt automatisch.</p><button class="btn" id="scanButton" onclick="startScan()">NFC · JETZT SCANNEN</button></section>
 <div class="controls"><button onclick="setState('normal')">NORMAL</button><button onclick="setState('mission')">MISSION</button><button onclick="setState('ghost')">GHOST</button><button onclick="setState('critical')">CRITICAL</button></div></main>
-<div class="bottom"><nav class="nav"><button class="on">PIONEER</button><button>MISSIONS</button><button>IDENTITY</button></nav></div>
+<div class="bottom"><nav class="nav"><button class="on">PIONEER</button><button>MISSIONS</button><button onclick="openIdentityPanel()">IDENTITY</button></nav></div>
+<div class="sessiongate off" id="identityPanel"><div class="sessioncard"><div class="sessionbrand">NODIV // IDENTITY</div><h1>AKTIVE SESSION</h1><p><strong id="identityPanelId">—</strong><br><span id="identityPanelRole">—</span></p><button class="btn flowbtn" id="checkoutButton" onclick="endPlayerSession()">SESSION BEENDEN / CHECK-OUT</button><button class="btn flowbtn" style="opacity:.55" onclick="closeIdentityPanel()">ZURÜCK</button><div class="sessionstatus" id="checkoutStatus">SESSION ACTIVE</div></div></div>
 <div class="sessiongate" id="sessionGate"><div class="sessioncard"><div class="sessionbrand">NODIV // ACCESS</div><h1 id="sessionTitle">IDENTIFIZIEREN</h1><p id="sessionText">Scanne einmal deine NODIV Access Card.<br>Danach bleibt deine Spieler-Session aktiv.</p><button class="btn flowbtn" id="sessionButton" onclick="startSessionScan()">ACCESS CARD SCANNEN</button><div class="sessionstatus" id="sessionStatus">NO ACTIVE SESSION</div></div></div>
 <div class="overlay" id="overlay"><div class="scanflow"><div style="font:900 10px monospace;letter-spacing:.18em;color:#6f8992;margin-bottom:10px">CENTRAL OPERATIONS // WÜRZBURG</div><div class="brand" id="flowBrand">NODIV // SCAN</div><div class="waiting" id="waiting"><div class="scanring"><b>NFC</b></div><h1>BEREIT ZUM SCANNEN</h1><p>Halte dein Smartphone an ein NODIV-Objekt.<br>Die Software erkennt automatisch, was zu tun ist.</p><button class="btn flowbtn" onclick="demoDetected()">DEMO · NFC ERKANNT</button><button class="btn flowbtn" style="opacity:.55" onclick="closeScan()">ABBRECHEN</button></div><div class="result" id="result"><div class="scanring"><b id="resultIcon">✓</b></div><h1 id="resultTitle">OBJEKT ERKANNT</h1><div class="object"><small id="resultType">VERIFIED NODIV OBJECT</small><strong id="resultId">—</strong></div><p id="resultText">UID wird geprüft.</p><button class="btn flowbtn" id="resultButton" onclick="closeScan()">ZURÜCK ZUM FIELD HUD</button></div></div></div>
 <script>
@@ -66,6 +67,28 @@ function clearPlayerSession(status){
   document.getElementById('miniState').textContent='—';
   document.getElementById('sessionStatus').textContent=status||'NO ACTIVE SESSION';
   document.getElementById('sessionGate').classList.remove('off');
+}
+function openIdentityPanel(){
+  if(!activeSessionToken){document.getElementById('sessionGate').classList.remove('off');return}
+  document.getElementById('identityPanelId').textContent=document.getElementById('playerId').textContent||'—';
+  document.getElementById('identityPanelRole').textContent=document.getElementById('playerRole').textContent||'—';
+  document.getElementById('checkoutStatus').textContent='SESSION ACTIVE';
+  document.getElementById('identityPanel').classList.remove('off');
+}
+function closeIdentityPanel(){document.getElementById('identityPanel').classList.add('off')}
+async function endPlayerSession(){
+  const token=activeSessionToken,button=document.getElementById('checkoutButton'),status=document.getElementById('checkoutStatus');
+  if(!token){closeIdentityPanel();clearPlayerSession('NO ACTIVE SESSION');return}
+  button.disabled=true;status.textContent='SESSION WIRD BEENDET …';
+  try{
+    const data=await apiRequest({action:'sessionend',token});
+    if(!data||!data.ok)throw new Error((data&&data.error)||'SESSION END FAILED');
+    closeIdentityPanel();
+    clearPlayerSession((data&&data.status)||'SESSION ENDED');
+  }catch(err){
+    status.textContent=err.message||'SESSION END FAILED';
+    button.disabled=false;
+  }
 }
 async function restorePlayerSession(){
   const token=localStorage.getItem(SESSION_KEY)||'';
