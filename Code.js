@@ -2385,7 +2385,20 @@ function getGameplayRoute(e) {
   }
 
   if (hit.type === 'NODE') {
-    const status=getNodeGameplayStatus(hit.id), allowed=Boolean(player.nodeAccess);
+    const status=getNodeGameplayStatus(hit.id);
+    const cargo=findActiveDeploymentForCarrier(player.identity,player.role);
+    if(cargo){
+      const isTarget=cargo.targetNode===String(hit.id||'').trim().toUpperCase();
+      return gameplayDecision(
+        player,
+        {found:true,type:'NODE',id:hit.id||'',status:status,deploymentId:cargo.deploymentId,cargoEnergy:getDeploymentCoreEnergy(cargo.coreId)},
+        isTarget?'DEPLOY_MISSION_CARGO':'NO_ACTION',
+        isTarget,
+        isTarget?'MISSION_CARGO_TARGET':'MISSION_CARGO_WRONG_NODE',
+        isTarget?'Ziel-Node erkannt. Mission Cargo kann eingesetzt werden.':'Mission Cargo ist an einen anderen Ziel-Node gebunden.'
+      );
+    }
+    const allowed=Boolean(player.nodeAccess);
     return gameplayDecision(player,{found:true,type:'NODE',id:hit.id||'',status:status},allowed?'NODE_INTERACTION':'NO_ACTION',allowed,allowed?'NODE_ACCESS_GRANTED':'NODE_ACCESS_DENIED',allowed?'Node erkannt. Node-Interaktion ist für diese Rolle zulässig.':'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.');
   }
 
@@ -2685,6 +2698,86 @@ function acceptCoreDeployment(e) {
       carrier:{identity:player.identity,role:player.role}
     };
   } finally { try { lock.releaseLock(); } catch (error) {} }
+}
+
+function findActiveDeploymentForCarrier(identity, role) {
+  const wantedId=String(identity||'').trim().toUpperCase();
+  const wantedRole=String(role||'').trim().toUpperCase();
+  const sheet=getDeploymentRegisterSheet(), lastRow=Math.max(sheet.getLastRow(),2);
+  const rows=sheet.getRange(2,1,lastRow-1,11).getValues();
+  for(let i=0;i<rows.length;i++){
+    if(String(rows[i][2]||'').trim().toUpperCase()===wantedId &&
+       String(rows[i][3]||'').trim().toUpperCase()===wantedRole &&
+       String(rows[i][6]||'').trim().toUpperCase()==='IN_TRANSIT'){
+      return {
+        row:i+2,deploymentId:String(rows[i][0]||'').trim().toUpperCase(),
+        coreId:String(rows[i][1]||'').trim().toUpperCase(),
+        carrierId:wantedId,carrierRole:wantedRole,
+        targetNode:String(rows[i][4]||'').trim().toUpperCase(),
+        purpose:String(rows[i][5]||'').trim().toUpperCase(),
+        status:'IN_TRANSIT',createdAt:rows[i][7]||null,acceptedAt:rows[i][8]||null
+      };
+    }
+  }
+  return null;
+}
+
+function getDeploymentCoreEnergy(coreId) {
+  const core=readCoreState(coreId);
+  return core.actualEnergy===''?core.visibleEnergy:core.actualEnergy;
+}
+
+function deliverCoreDeployment(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const player=session.player;
+    const uid=normalizeUid(e.parameter.uid||'');
+    if(!uid)throw new Error('Node NFC UID fehlt.');
+
+    const hit=lookupUidGlobally(uid);
+    if(!hit.found||hit.type!=='NODE'||!hit.id)
+      return gameplayActionDenied(player,'NODE_NOT_FOUND','Gescannter NFC Tag ist kein registrierter Node.');
+
+    const nodeId=String(hit.id).trim().toUpperCase();
+    const deployment=findActiveDeploymentForCarrier(player.identity,player.role);
+    if(!deployment)
+      return gameplayActionDenied(player,'NO_MISSION_CARGO','Kein aktives Mission Cargo für diese Identität.');
+
+    if(deployment.targetNode!==nodeId)
+      return gameplayActionDenied(player,'MISSION_CARGO_WRONG_NODE','Mission Cargo ist an '+deployment.targetNode+' gebunden.');
+
+    const core=readCoreState(deployment.coreId);
+    if(core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='IN_TRANSIT')
+      return gameplayActionDenied(player,'CARGO_STATE_MISMATCH','Mission Cargo befindet sich nicht mehr im erwarteten Transportzustand.');
+
+    const result=transferCoreOwnership({
+      coreId:core.coreId,
+      expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',
+      toType:'NODE',toId:nodeId,
+      eventType:'DEPLOYMENT_DELIVERED',
+      actorId:player.identity,actorRole:player.role,
+      nodeId:nodeId,newStatus:'DEPLOYED',
+      details:'MISSION CARGO delivered // carrier '+player.identity+' // target '+nodeId
+    });
+
+    const depSheet=getDeploymentRegisterSheet();
+    depSheet.getRange(deployment.row,7).setValue('DELIVERED');
+    depSheet.getRange(deployment.row,10).setValue(new Date());
+    depSheet.getRange(deployment.row,11).setValue(result.transactionId);
+    SpreadsheetApp.flush();
+
+    return {
+      ok:true,authenticated:true,session:true,action:true,status:'MISSION_CARGO_DELIVERED',
+      message:'Mission Cargo wurde am Ziel-Node eingesetzt.',
+      transactionId:result.transactionId,
+      deployment:{deploymentId:deployment.deploymentId,targetNode:nodeId,status:'DELIVERED'},
+      cargo:{energy:result.core.actualEnergy===''?result.core.visibleEnergy:result.core.actualEnergy,status:result.core.status},
+      ownership:result.to
+    };
+  }finally{try{lock.releaseLock()}catch(error){}}
 }
 
 function gameplayActionDenied(player, status, message) {
