@@ -201,6 +201,32 @@ function showGameplayResult(data,uid){
     button.textContent='MISSION CARGO AUSGEBEN';
     button.onclick=()=>openDeploymentIssue(uid,o);
   }
+  if(d.allowed&&d.action==='PROVISION_NODE'&&uid){
+    button.textContent='ALS NÄCHSTEN NODE PROVISIONIEREN';
+    button.onclick=()=>provisionNode(uid);
+  }
+}
+async function provisionNode(uid){
+  const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
+  button.disabled=true;button.textContent='NODE WIRD PROVISIONIERT …';
+  txt.innerText='NODIV prüft UID, Berechtigung und nächsten freien Node.';
+  try{
+    const data=await apiRequest({action:'provisionnode',token:activeSessionToken,uid});
+    if(!data.ok)throw new Error(data.error||'NODE PROVISIONING FAILED');
+    if(!data.authenticated||!data.session){clearPlayerSession(data.status||'SESSION REQUIRED');closeScan();return}
+    if(!data.action)throw new Error(data.message||data.status||'NODE PROVISIONING DENIED');
+    const node=data.node||{};
+    document.getElementById('resultIcon').textContent='✓';
+    document.getElementById('resultTitle').textContent='NODE PROVISIONIERT';
+    document.getElementById('resultType').textContent='NODIV // VERIFIED NODE';
+    document.getElementById('resultId').textContent=node.id||'NODE';
+    txt.innerText='Physischer Node erfolgreich registriert.\n\nSTATUS // '+(node.status||'AVAILABLE')+'\nNEXT // '+(data.nextFreeNode||'SERIES COMPLETE');
+    txt.style.color='var(--g)';
+    button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+  }catch(err){
+    txt.innerText=err.message||'NODE PROVISIONING FAILED';txt.style.color='var(--a)';
+    button.disabled=false;button.textContent='ERNEUT VERSUCHEN';button.onclick=()=>provisionNode(uid);
+  }
 }
 function openDeploymentIssue(uid,core){
   const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
