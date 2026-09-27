@@ -269,6 +269,10 @@ function doGet(e) {
 
       result = acceptCoreDeployment(e);
 
+    } else if (action === 'deploymentpending') {
+
+      result = getPendingPlayerDeployments(e);
+
     } else {
 
 
@@ -2605,6 +2609,37 @@ function assignCoreDeployment(e) {
       core:{energy:core.actualEnergy === '' ? core.visibleEnergy : core.actualEnergy, status:core.status}
     };
   } finally { try { lock.releaseLock(); } catch (error) {} }
+}
+
+function getPendingPlayerDeployments(e) {
+  const session = resolvePlayerSession(e.parameter.token || '');
+  if (!session.ok) return session.response;
+  const player = session.player;
+  const sheet = getDeploymentRegisterSheet();
+  const lastRow = Math.max(sheet.getLastRow(), 2);
+  const rows = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  const deployments = [];
+
+  rows.forEach(row => {
+    const carrierId = String(row[2] || '').trim().toUpperCase();
+    const carrierRole = String(row[3] || '').trim().toUpperCase();
+    const status = String(row[6] || '').trim().toUpperCase();
+    if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
+    const core = readCoreState(String(row[1] || '').trim().toUpperCase());
+    deployments.push({
+      deploymentId:String(row[0] || '').trim().toUpperCase(),
+      targetNode:String(row[4] || '').trim().toUpperCase(),
+      purpose:String(row[5] || '').trim().toUpperCase(),
+      status:status,
+      energy:core.actualEnergy === '' ? core.visibleEnergy : core.actualEnergy
+    });
+  });
+
+  return {
+    ok:true, authenticated:true, session:true,
+    status:deployments.length ? 'DEPLOYMENTS_AVAILABLE' : 'NO_DEPLOYMENTS',
+    deployments:deployments
+  };
 }
 
 function acceptCoreDeployment(e) {
