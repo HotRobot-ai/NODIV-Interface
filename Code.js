@@ -1621,6 +1621,79 @@ function registerNode(e) {
 
 
 
+/*
+ * SESSION-AUTHORIZED NODE PROVISIONING
+ * Unknown physical NFC tag -> next free NODE-001..NODE-015.
+ * The client never chooses the Node ID; the backend resolves it under lock.
+ */
+function provisionNodeFromSession(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    const session = resolvePlayerSession(e.parameter.token || '');
+    if (!session.ok) return session.response;
+
+    const actor = session.player;
+    if (!['FOUNDER','FOP'].includes(actor.role)) {
+      return gameplayActionDenied(actor, 'ROLE_DENIED', 'Keine Berechtigung zur Node-Provisionierung.');
+    }
+
+    const uid = normalizeUid(e.parameter.uid || '');
+    if (!uid) throw new Error('NFC UID fehlt.');
+
+    const existing = lookupUidGlobally(uid);
+    if (existing.found) {
+      return gameplayActionDenied(actor, 'UID_ALREADY_REGISTERED', 'Dieser NFC-Tag ist bereits im NODIV-System registriert.');
+    }
+
+    const sheet = getNodeRegisterSheet();
+    const nodeId = findNextFreeNode(sheet, 0);
+    if (!nodeId) {
+      return gameplayActionDenied(actor, 'NODE_SERIES_COMPLETE', 'Alle NODE-001 bis NODE-015 sind bereits provisioniert.');
+    }
+
+    assertUidAvailable(uid, 'NODE', nodeId);
+
+    const nodeNumber = parseInt(nodeId.substring(5), 10);
+    const row = nodeNumber + 1;
+    const existingUid = normalizeUid(sheet.getRange(row, 2).getDisplayValue());
+    if (existingUid) {
+      throw new Error(nodeId + ' wurde während der Provisionierung bereits belegt.');
+    }
+
+    sheet.getRange(row, 2).setValue(uid);
+    sheet.getRange(row, 3).setValue('AVAILABLE');
+    sheet.getRange(row, 5).setValue(actor.identity);
+    sheet.getRange(row, 6).setValue(new Date());
+
+    appendTransactionLog({
+      eventType: 'NODE_PROVISIONED',
+      actorId: actor.identity,
+      actorRole: actor.role,
+      nodeId: nodeId,
+      result: 'SUCCESS',
+      details: 'Physical Node provisioned // ' + nodeId + ' // NFC UID registered'
+    });
+
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      authenticated: true,
+      session: true,
+      action: true,
+      status: 'NODE_PROVISIONED',
+      message: nodeId + ' wurde erfolgreich provisioniert.',
+      node: { id: nodeId, uid: uid, status: 'AVAILABLE' },
+      nextFreeNode: findNextFreeNode(sheet, nodeNumber)
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (error) {}
+  }
+}
+
+
 function getNextFreeNode(e) {
 
 
@@ -2377,7 +2450,17 @@ function getGameplayRoute(e) {
   if (!uid) throw new Error('Scan UID fehlt.');
   const player = session.player, hit = lookupUidGlobally(uid);
 
-  if (!hit.found) return gameplayDecision(player,{found:false,type:'UNKNOWN',id:'',uid:uid},'NO_ACTION',false,'UNREGISTERED_OBJECT','Objekt ist nicht im NODIV-System registriert.');
+  if (!hit.found) {
+    const canProvisionNode = ['FOUNDER','FOP'].includes(player.role);
+    return gameplayDecision(
+      player,
+      {found:false,type:'UNKNOWN',id:'',uid:uid},
+      canProvisionNode ? 'PROVISION_NODE' : 'NO_ACTION',
+      canProvisionNode,
+      canProvisionNode ? 'UNREGISTERED_OBJECT_PROVISIONABLE' : 'UNREGISTERED_OBJECT',
+      canProvisionNode ? 'Unregistrierter NFC-Tag erkannt. Als nächsten freien Node provisionieren?' : 'Objekt ist nicht im NODIV-System registriert.'
+    );
+  }
 
   if (hit.type === 'ACCESS_CARD') {
     const target=findIdentityById(hit.identity||'');
