@@ -240,7 +240,19 @@ function doGet(e) {
 
 
 
-    } else {
+    } else if (action === 'sessionstart') {
+
+      result = startPlayerSession(e);
+
+    } else if (action === 'sessioncheck') {
+
+      result = checkPlayerSession(e);
+
+    } else if (action === 'sessionend') {
+
+      result = endPlayerSession(e);
+
+    } else {
 
 
 
@@ -2143,6 +2155,172 @@ function getClearanceForRole(role) {
 
 
 
+
+
+
+/*
+ * ============================================================
+ * PLAYER SESSION V0.1
+ * ============================================================
+ * Access Card UID starts a session. Gameplay requests use an
+ * opaque server-issued token. The current Access Card record is
+ * revalidated whenever the session is checked.
+ */
+
+const PLAYER_SESSION_TTL_SECONDS = 4 * 60 * 60;
+const PLAYER_SESSION_PREFIX = 'NODIV_SESSION_';
+
+function startPlayerSession(e) {
+  const uid = normalizeUid(e.parameter.uid || '');
+  if (!uid) throw new Error('Access Card UID fehlt.');
+
+  const player = findAccessCardByUid(uid);
+
+  if (!player) {
+    return { ok: true, authenticated: false, session: false, status: 'UNKNOWN_CARD' };
+  }
+
+  if (player.status !== 'ACTIVE') {
+    return {
+      ok: true, authenticated: false, session: false,
+      identity: player.identity, role: player.role,
+      status: player.status || 'NOT_ACTIVE'
+    };
+  }
+
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + PLAYER_SESSION_TTL_SECONDS * 1000);
+
+  const sessionData = {
+    identity: player.identity,
+    role: player.role,
+    cardId: player.cardId,
+    issuedAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString()
+  };
+
+  CacheService.getScriptCache().put(
+    PLAYER_SESSION_PREFIX + token,
+    JSON.stringify(sessionData),
+    PLAYER_SESSION_TTL_SECONDS
+  );
+
+  appendTransactionLog({
+    eventType: 'SESSION_START',
+    actorId: player.identity,
+    actorRole: player.role,
+    result: 'SUCCESS',
+    details: 'Player session started // ' + player.cardId
+  });
+
+  return {
+    ok: true,
+    authenticated: true,
+    session: true,
+    token: token,
+    expiresAt: expiresAt.toISOString(),
+    player: getSessionPlayerDisplay(player)
+  };
+}
+
+function checkPlayerSession(e) {
+  const token = normalizeSessionToken(e.parameter.token || '');
+
+  if (!token) {
+    return { ok: true, authenticated: false, session: false, status: 'NO_SESSION' };
+  }
+
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get(PLAYER_SESSION_PREFIX + token);
+
+  if (!raw) {
+    return { ok: true, authenticated: false, session: false, status: 'SESSION_EXPIRED' };
+  }
+
+  let session;
+  try {
+    session = JSON.parse(raw);
+  } catch (error) {
+    cache.remove(PLAYER_SESSION_PREFIX + token);
+    throw new Error('Session-Datensatz ist ungültig.');
+  }
+
+  const player = findIdentityById(session.identity || '');
+
+  if (!player || player.status !== 'ACTIVE' ||
+      player.cardId !== session.cardId || player.role !== session.role) {
+    cache.remove(PLAYER_SESSION_PREFIX + token);
+    return { ok: true, authenticated: false, session: false, status: 'SESSION_REVOKED' };
+  }
+
+  return {
+    ok: true,
+    authenticated: true,
+    session: true,
+    expiresAt: session.expiresAt || null,
+    player: getSessionPlayerDisplay(player)
+  };
+}
+
+function endPlayerSession(e) {
+  const token = normalizeSessionToken(e.parameter.token || '');
+
+  if (!token) return { ok: true, ended: false, status: 'NO_SESSION' };
+
+  const cache = CacheService.getScriptCache();
+  const key = PLAYER_SESSION_PREFIX + token;
+  const raw = cache.get(key);
+  let session = null;
+
+  if (raw) {
+    try { session = JSON.parse(raw); } catch (error) {}
+  }
+
+  cache.remove(key);
+
+  if (session && session.identity) {
+    appendTransactionLog({
+      eventType: 'SESSION_END',
+      actorId: session.identity,
+      actorRole: session.role || '',
+      result: 'SUCCESS',
+      details: 'Player session ended'
+    });
+  }
+
+  return {
+    ok: true,
+    ended: Boolean(raw),
+    status: raw ? 'SESSION_ENDED' : 'SESSION_NOT_FOUND'
+  };
+}
+
+function normalizeSessionToken(value) {
+  const token = String(value || '').trim();
+  return /^[0-9a-fA-F-]{72}$/.test(token) ? token : '';
+}
+
+function getSessionPlayerDisplay(player) {
+  let gameplayStatus = player.status === 'ACTIVE' ? 'ACTIVE' : 'NOT ACTIVE';
+
+  if (player.ghostUntil) {
+    const until = new Date(player.ghostUntil);
+    if (!isNaN(until.getTime()) && until.getTime() > Date.now()) gameplayStatus = 'GHOST';
+  }
+
+  return {
+    identity: player.identity,
+    role: player.role,
+    displayName: player.displayName || player.identity,
+    clearance: getClearanceForRole(player.role),
+    status: gameplayStatus,
+    coreCapacity: player.coreCapacity,
+    nodeAccess: player.nodeAccess,
+    catchAccess: player.catchAccess,
+    ghostUntil: player.ghostUntil || null
+  };
+}
 
 
 
