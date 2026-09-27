@@ -3566,7 +3566,7 @@ const CORE_COL = {
 
   UID: 3,
 
-  STATUS: 4,
+  STATUS: 5,
 
   HIDDEN_ENERGY: 13,
 
