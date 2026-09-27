@@ -184,8 +184,16 @@ function openDeploymentIssue(uid,core){
       document.getElementById('resultId').textContent=(core&&core.energy!==undefined?core.energy+' E':'N-CORE');
       txt.innerText='Transportauftrag angelegt.\n\nCARRIER // '+(dep.carrierId||carrier.toUpperCase())+'\nTARGET // '+(dep.targetNode||target.toUpperCase())+'\nSTATUS // '+(dep.status||'ASSIGNED');
       txt.style.color='var(--g)';
-      button.disabled=false;button.textContent='MISSION CARGO ÜBERNEHMEN';
-      button.onclick=()=>acceptDeployment(dep.deploymentId);
+      button.disabled=false;
+      const activeIdentity=(document.getElementById('playerId').textContent||'').trim().toUpperCase();
+      if(activeIdentity===(dep.carrierId||'').trim().toUpperCase()){
+        button.textContent='MISSION CARGO ÜBERNEHMEN';
+        button.onclick=()=>acceptDeployment(dep.deploymentId);
+      }else{
+        button.textContent='AUFTRAG BEREIT';
+        button.onclick=closeScan;
+        txt.innerText+='\n\nDer zugewiesene Carrier übernimmt Mission Cargo mit seiner eigenen aktiven Session.';
+      }
     })
     .catch(err=>{
       txt.innerText=err.message||'DEPLOYMENT FAILED';txt.style.color='var(--a)';
