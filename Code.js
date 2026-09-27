@@ -252,6 +252,10 @@ function doGet(e) {
 
       result = endPlayerSession(e);
 
+    } else if (action === 'gameplayroute') {
+
+      result = getGameplayRoute(e);
+
     } else {
 
 
@@ -2342,6 +2346,83 @@ function getSessionPlayerDisplay(player) {
 
  */
 
+
+
+
+/*
+ * GAMEPLAY ROUTER V0.1 // READ-ONLY DECISION LAYER
+ * No ownership mutation. No transaction booking.
+ */
+function getGameplayRoute(e) {
+  const session = resolvePlayerSession(e.parameter.token || '');
+  if (!session.ok) return session.response;
+  const uid = normalizeUid(e.parameter.uid || '');
+  if (!uid) throw new Error('Scan UID fehlt.');
+  const player = session.player, hit = lookupUidGlobally(uid);
+
+  if (!hit.found) return gameplayDecision(player,{found:false,type:'UNKNOWN',id:'',uid:uid},'NO_ACTION',false,'UNREGISTERED_OBJECT','Objekt ist nicht im NODIV-System registriert.');
+
+  if (hit.type === 'ACCESS_CARD') {
+    const target=findIdentityById(hit.identity||'');
+    return gameplayDecision(player,{found:true,type:'ACCESS_CARD',id:hit.id||'',identity:hit.identity||'',status:target?getSessionPlayerDisplay(target).status:'UNVERIFIED'},'IDENTITY_INFO',true,'PLAYER_IDENTIFIED','NODIV Identität erkannt.');
+  }
+
+  if (hit.type === 'NODE') {
+    const status=getNodeGameplayStatus(hit.id), allowed=Boolean(player.nodeAccess);
+    return gameplayDecision(player,{found:true,type:'NODE',id:hit.id||'',status:status},allowed?'NODE_INTERACTION':'NO_ACTION',allowed,allowed?'NODE_ACCESS_GRANTED':'NODE_ACCESS_DENIED',allowed?'Node erkannt. Node-Interaktion ist für diese Rolle zulässig.':'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.');
+  }
+
+  if (hit.type === 'N_CORE') return routeCoreGameplay(player,readCoreState(hit.id));
+
+  return gameplayDecision(player,{found:true,type:hit.type||'UNKNOWN',id:hit.id||''},'NO_ACTION',false,'UNSUPPORTED_OBJECT','Für diesen Objekttyp ist noch keine Gameplay-Regel definiert.');
+}
+
+function resolvePlayerSession(tokenValue) {
+  const token=normalizeSessionToken(tokenValue);
+  if(!token) return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'NO_SESSION'}};
+  const cache=CacheService.getScriptCache(), raw=cache.get(PLAYER_SESSION_PREFIX+token);
+  if(!raw) return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_EXPIRED'}};
+  let stored;
+  try{stored=JSON.parse(raw)}catch(error){cache.remove(PLAYER_SESSION_PREFIX+token);return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_REVOKED'}}}
+  const player=findIdentityById(stored.identity||'');
+  if(!player||player.status!=='ACTIVE'||player.cardId!==stored.cardId||player.role!==stored.role){
+    cache.remove(PLAYER_SESSION_PREFIX+token);
+    return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_REVOKED'}};
+  }
+  return {ok:true,player:player,session:stored};
+}
+
+function routeCoreGameplay(player,core) {
+  const object={found:true,type:'N_CORE',id:core.coreId,status:core.status||'UNDEFINED',energy:core.actualEnergy===''?core.visibleEnergy:core.actualEnergy,ownerType:core.ownerType||'',ownerId:core.ownerId||''};
+
+  if(!core.ownerType||!core.ownerId) return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_UNDEFINED','N-Core erkannt. Ownership ist nicht vollständig definiert.');
+
+  if(core.ownerId===player.identity) return gameplayDecision(player,object,'CORE_OWNED',true,'OWN_CORE','N-Core gehört der aktiven Identität. Zulässige Folgeaktion wird im nächsten Router-Schritt angebunden.');
+
+  if(core.ownerType==='NODE') {
+    if(player.nodeAccess) return gameplayDecision(player,object,'CORE_AT_NODE',true,'NODE_CORE_ACCESS','N-Core ist einem Node zugeordnet. Node-bezogene Folgeaktion ist grundsätzlich zulässig.');
+    return gameplayDecision(player,object,'NO_ACTION',false,'NODE_ACCESS_DENIED','N-Core gehört zu einem Node. Diese Rolle besitzt keinen Node-Zugriff.');
+  }
+
+  if(core.ownerType==='UNBOUND'&&player.catchAccess) return gameplayDecision(player,object,'CATCH_AVAILABLE',true,'CATCH_ELIGIBLE','UNBOUND N-Core erkannt. Catch ist für diese Rolle grundsätzlich zulässig.');
+
+  if(core.ownerType==='NODIV_RESERVE') {
+    const privileged=player.role==='FOUNDER'||player.role==='FOP';
+    return gameplayDecision(player,object,privileged?'RESERVE_CORE':'NO_ACTION',privileged,privileged?'RESERVE_ACCESS':'RESERVE_PROTECTED',privileged?'NODIV Reserve erkannt.':'NODIV Reserve erkannt. Keine Feldaktion zulässig.');
+  }
+
+  return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_MISMATCH','N-Core gehört einer anderen Identität oder Rolle. Keine automatische Umbuchung.');
+}
+
+function gameplayDecision(player,object,action,allowed,reason,message) {
+  return {ok:true,authenticated:true,session:true,route:true,player:{identity:player.identity,role:player.role,status:getSessionPlayerDisplay(player).status},object:object,decision:{action:action,allowed:Boolean(allowed),reason:reason,message:message},readOnly:true};
+}
+
+function getNodeGameplayStatus(nodeId) {
+  const wanted=String(nodeId||'').trim().toUpperCase(), sheet=getNodeRegisterSheet(), rows=sheet.getRange(2,1,15,3).getValues();
+  for(let i=0;i<rows.length;i++) if(String(rows[i][0]||'').trim().toUpperCase()===wanted) return String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED';
+  return 'UNDEFINED';
+}
 
 
 function registerAccessCard(e) {
