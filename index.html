@@ -20,16 +20,18 @@ body.critical .priority{border-left-width:5px}
 body.critical .scanbox{border-width:2px}
 @media(max-width:430px){.poster{height:300px;background-position:center 40%}.sector strong{font-size:26px}.id{font-size:36px}.hero{padding:17px}.priority{padding:16px}.priority h2{font-size:24px}.scanbox h2{font-size:21px}.btn{font-size:13px;padding:15px}.nav button{font-size:10px}.feed{margin-left:-14px;margin-right:-14px;padding-left:14px;padding-right:14px}}
 .overlay{position:fixed;z-index:100;inset:0;background:radial-gradient(circle at 50% 30%,#0b2a35,#03080c 58%);display:none;align-items:center;justify-content:center;padding:22px}.overlay.on{display:flex}.scanflow{width:min(520px,100%);text-align:center}.scanflow .brand{font:1000 18px monospace;letter-spacing:.18em;color:var(--c)}.scanring{width:160px;height:160px;margin:32px auto 22px;border:1px solid var(--c);border-radius:50%;display:grid;place-items:center;box-shadow:0 0 55px var(--glow);position:relative}.scanring:before{content:"";position:absolute;inset:12px;border:1px dashed var(--c);border-radius:50%;animation:scanSpin 4s linear infinite}.scanring:after{content:"";position:absolute;inset:29px;border:2px solid transparent;border-top-color:var(--c);border-bottom-color:var(--c);border-radius:50%;opacity:.65;animation:scanSpinReverse 2.8s linear infinite}.scanring b{position:relative;z-index:2;animation:scanPulse 1.8s ease-in-out infinite}@keyframes scanSpin{to{transform:rotate(360deg)}}@keyframes scanSpinReverse{to{transform:rotate(-360deg)}}@keyframes scanPulse{0%,100%{transform:scale(1);text-shadow:0 0 8px var(--c)}50%{transform:scale(1.08);text-shadow:0 0 22px var(--c)}}.scanring{animation:scanBreathe 2.4s ease-in-out infinite}@keyframes scanBreathe{0%,100%{box-shadow:0 0 35px var(--glow)}50%{box-shadow:0 0 75px var(--c)}}.result .scanring{animation:none}.result .scanring:before,.result .scanring:after{animation:none;opacity:.35}.result .scanring b{animation:none}.scanring b{font:1000 25px monospace}.scanflow h1{font-size:25px;margin:0 0 7px}.scanflow p{font:14px monospace;color:#91aab3;line-height:1.6}.flowbtn{margin-top:22px;max-width:340px}.result{display:none}.result.on{display:block}.waiting.off{display:none}.object{margin:20px auto;border:1px solid var(--c);border-radius:13px;padding:15px;max-width:380px;background:#07161c}.object small{font:9px monospace;color:var(--c)}.object strong{display:block;font-size:22px;margin-top:4px}
+.sessiongate{position:fixed;z-index:200;inset:0;background:radial-gradient(circle at 50% 24%,#10333f,#03080c 58%);display:flex;align-items:center;justify-content:center;padding:24px}.sessiongate.off{display:none}.sessioncard{width:min(430px,100%);text-align:center;border:1px solid var(--line);border-radius:18px;background:#071319;padding:24px;box-shadow:0 0 50px var(--glow)}.sessionbrand{font:1000 18px monospace;letter-spacing:.18em;color:var(--c)}.sessioncard h1{font-size:25px;margin:22px 0 8px}.sessioncard p{font:13px monospace;color:#91aab3;line-height:1.6}.sessionstatus{min-height:22px;margin-top:14px;font:900 11px monospace;color:var(--mut)}
 </style></head><body>
 <main class="wrap"><section class="poster"><header class="top"><div></div><div class="net">● NETWORK ONLINE</div></header><div class="sector"><small>CENTRAL OPERATIONS</small><strong>WÜRZBURG</strong></div><div class="stateflag"><small>SYSTEM STATE</small><b id="stateFlag">NOMINAL</b></div></section>
 <div class="feed" id="feed"><div class="track" id="track">// NODIV FIELD FEED // M-017 · NODE-007 INSPECTION AVAILABLE ·</div></div>
-<section class="hero"><div class="ey">IDENTITY // VERIFIED</div><div class="idrow"><div><div class="id">P002</div><div class="role">PIONEER // FIELD OPERATIVE</div></div><div class="mini">FIELD STATUS<b id="miniState">ACTIVE</b></div></div></section>
+<section class="hero"><div class="ey">IDENTITY // VERIFIED</div><div class="idrow"><div><div class="id" id="playerId">—</div><div class="role" id="playerRole">SESSION REQUIRED</div></div><div class="mini">FIELD STATUS<b id="miniState">—</b></div></div></section>
 <section class="priority" id="priority"><div class="pt" id="pt">CURRENT STATE</div><h2 id="title">FIELD STATUS NOMINAL</h2><p id="desc">No immediate action required.</p><div class="bigtime" id="time"></div></section>
 <div class="head normalops"><h2>N-CORE INVENTORY</h2><span><b>618 E</b> TOTAL ENERGY</span></div><section class="inv normalops"><div class="slot"><div class="sn">SLOT 01</div><div class="orb"></div><div class="ct"><b>NC-001</b><strong>618 E</strong><small>FIELD</small></div></div><div class="slot"><div class="sn">SLOT 02</div><div class="lock">◇<br>EMPTY</div></div><div class="slot"><div class="sn">SLOT 03</div><div class="lock">◇<br>EMPTY</div></div></section>
 <div class="head normalops"><h2>MISSION BOARD</h2><span id="mcount">1 OPEN MISSION</span></div><section class="board normalops"><div class="bar"><b>MISSION M-017</b><span>AVAILABLE</span></div><div class="mission"><strong>NODE-007 // INSPECTION</strong><p>Inventory verification required.</p><button class="btn">OPEN MISSION</button></div></section>
 <div class="head"><h2>FIELD INTERACTION</h2><span>UNIVERSAL NFC</span></div><section class="scanbox" id="scanBox"><div class="nfc" id="scanIcon">NFC</div><h2 id="scanTitle">JETZT SCANNEN</h2><p id="scanText">Antippen. Smartphone an ein NODIV-Objekt halten.<br>NODIV erkennt Objekt und nächsten Schritt automatisch.</p><button class="btn" id="scanButton" onclick="startScan()">NFC · JETZT SCANNEN</button></section>
 <div class="controls"><button onclick="setState('normal')">NORMAL</button><button onclick="setState('mission')">MISSION</button><button onclick="setState('ghost')">GHOST</button><button onclick="setState('critical')">CRITICAL</button></div></main>
 <div class="bottom"><nav class="nav"><button class="on">PIONEER</button><button>MISSIONS</button><button>IDENTITY</button></nav></div>
+<div class="sessiongate" id="sessionGate"><div class="sessioncard"><div class="sessionbrand">NODIV // ACCESS</div><h1 id="sessionTitle">IDENTIFIZIEREN</h1><p id="sessionText">Scanne einmal deine NODIV Access Card.<br>Danach bleibt deine Spieler-Session aktiv.</p><button class="btn flowbtn" id="sessionButton" onclick="startSessionScan()">ACCESS CARD SCANNEN</button><div class="sessionstatus" id="sessionStatus">NO ACTIVE SESSION</div></div></div>
 <div class="overlay" id="overlay"><div class="scanflow"><div style="font:900 10px monospace;letter-spacing:.18em;color:#6f8992;margin-bottom:10px">CENTRAL OPERATIONS // WÜRZBURG</div><div class="brand" id="flowBrand">NODIV // SCAN</div><div class="waiting" id="waiting"><div class="scanring"><b>NFC</b></div><h1>BEREIT ZUM SCANNEN</h1><p>Halte dein Smartphone an ein NODIV-Objekt.<br>Die Software erkennt automatisch, was zu tun ist.</p><button class="btn flowbtn" onclick="demoDetected()">DEMO · NFC ERKANNT</button><button class="btn flowbtn" style="opacity:.55" onclick="closeScan()">ABBRECHEN</button></div><div class="result" id="result"><div class="scanring"><b id="resultIcon">✓</b></div><h1 id="resultTitle">OBJEKT ERKANNT</h1><div class="object"><small id="resultType">VERIFIED NODIV OBJECT</small><strong id="resultId">—</strong></div><p id="resultText">UID wird geprüft.</p><button class="btn flowbtn" id="resultButton" onclick="closeScan()">ZURÜCK ZUM FIELD HUD</button></div></div></div>
 <script>
 let timer;function base(){clearInterval(timer);document.body.className='';document.getElementById('feed').className='feed';document.getElementById('time').textContent='';document.getElementById('priority').style.paddingRight='14px'}
@@ -41,11 +43,78 @@ if(s==='critical'){document.body.className='critical';f.textContent='CRITICAL';m
 function setNormalScan(){document.getElementById('scanIcon').textContent='NFC';document.getElementById('scanTitle').textContent='JETZT SCANNEN';document.getElementById('scanText').innerHTML='Antippen. Smartphone an ein NODIV-Objekt halten.<br>NODIV erkennt Objekt und nächsten Schritt automatisch.';document.getElementById('scanButton').textContent='NFC · JETZT SCANNEN'}
 function setSecurityScan(){document.getElementById('scanIcon').textContent='ID';document.getElementById('scanTitle').textContent='SECURITY / SAFETY SCAN';document.getElementById('scanText').innerHTML='Am FOP-Treffpunkt identifizieren. Danach übernimmt der FOP die weitere Kommunikation.<br>UNBOUND-Erkennung bleibt für einen zulässigen Catch aktiv.';document.getElementById('scanButton').textContent='START SECURITY / SAFETY SCAN'}
 const API='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
-let scanController=null,scanRunning=false;
+let scanController=null,scanRunning=false,sessionScanController=null;
+const SESSION_KEY='nodiv_player_session_v01';
+let activeSessionToken='';
 function apiRequest(params){return new Promise((resolve,reject)=>{const cb='nodivScan_'+Date.now()+'_'+Math.floor(Math.random()*100000),sc=document.createElement('script');const timeout=setTimeout(()=>{cleanup();reject(new Error('SERVER RESPONSE TIMEOUT'))},10000);function cleanup(){clearTimeout(timeout);if(sc.parentNode)sc.parentNode.removeChild(sc);try{delete window[cb]}catch(e){window[cb]=undefined}}window[cb]=data=>{cleanup();resolve(data)};sc.onerror=()=>{cleanup();reject(new Error('SERVER CONNECTION ERROR'))};sc.src=API+'?'+new URLSearchParams({...params,callback:cb,_:Date.now()}).toString();document.body.appendChild(sc)})}
+function setPlayerSession(data){
+  if(!data||!data.authenticated||!data.session||!data.player)return false;
+  activeSessionToken=data.token||activeSessionToken;
+  if(activeSessionToken)localStorage.setItem(SESSION_KEY,activeSessionToken);
+  const p=data.player;
+  document.getElementById('playerId').textContent=p.identity||'—';
+  document.getElementById('playerRole').textContent=p.role==='FOP'?'FIELD OPERATOR':(p.role||'PLAYER');
+  document.getElementById('miniState').textContent=p.status||'ACTIVE';
+  document.getElementById('sessionGate').classList.add('off');
+  return true;
+}
+function clearPlayerSession(status){
+  activeSessionToken='';
+  localStorage.removeItem(SESSION_KEY);
+  document.getElementById('playerId').textContent='—';
+  document.getElementById('playerRole').textContent='SESSION REQUIRED';
+  document.getElementById('miniState').textContent='—';
+  document.getElementById('sessionStatus').textContent=status||'NO ACTIVE SESSION';
+  document.getElementById('sessionGate').classList.remove('off');
+}
+async function restorePlayerSession(){
+  const token=localStorage.getItem(SESSION_KEY)||'';
+  if(!token){clearPlayerSession('NO ACTIVE SESSION');return}
+  document.getElementById('sessionStatus').textContent='SESSION WIRD GEPRÜFT …';
+  try{
+    const data=await apiRequest({action:'sessioncheck',token});
+    if(data&&data.ok&&data.authenticated&&data.session){
+      activeSessionToken=token;
+      setPlayerSession(data);
+    }else{
+      clearPlayerSession((data&&data.status)||'SESSION INVALID');
+    }
+  }catch(err){clearPlayerSession('SESSION CHECK FAILED')}
+}
+async function startSessionScan(){
+  const status=document.getElementById('sessionStatus'),button=document.getElementById('sessionButton');
+  if(!('NDEFReader' in window)){status.textContent='WEB NFC NICHT VERFÜGBAR';return}
+  try{
+    button.disabled=true;status.textContent='ACCESS CARD BEREITHALTEN …';
+    sessionScanController=new AbortController();
+    const reader=new NDEFReader();let handled=false;
+    reader.onreading=async event=>{
+      if(handled)return;handled=true;
+      if(sessionScanController){sessionScanController.abort();sessionScanController=null}
+      const uid=String(event.serialNumber||'').trim().toUpperCase();
+      if(!uid){status.textContent='NFC UID NICHT VERFÜGBAR';button.disabled=false;return}
+      status.textContent='IDENTITÄT WIRD GEPRÜFT …';
+      try{
+        const data=await apiRequest({action:'sessionstart',uid});
+        if(!data.ok)throw new Error(data.error||'SESSION START FAILED');
+        if(!setPlayerSession(data)){
+          status.textContent=(data.status||'ACCESS DENIED');
+          button.disabled=false;
+        }
+      }catch(err){status.textContent=err.message||'SESSION START FAILED';button.disabled=false}
+    };
+    reader.onreadingerror=()=>{if(!handled){status.textContent='ACCESS CARD NICHT LESBAR';button.disabled=false}};
+    await reader.scan({signal:sessionScanController.signal});
+    status.textContent='ACCESS CARD SCANNEN …';
+  }catch(err){
+    sessionScanController=null;button.disabled=false;
+    if(err.name!=='AbortError')status.textContent=err.message||'NFC SCAN FAILED';
+  }
+}
 function showScanResult(data,uid){const type=data&&data.found?data.type:'UNKNOWN',d=data&&data.display?data.display:{};document.getElementById('waiting').classList.add('off');document.getElementById('result').classList.add('on');document.getElementById('resultIcon').textContent=data&&data.found?'✓':'?';let title='OBJEKT UNBEKANNT',label='UNKNOWN NFC OBJECT',main='UNREGISTERED',txt='Nicht im NODIV-System registriert.';if(type==='N_CORE'){title='N-CORE ERKANNT';label='NODIV // VERIFIED';main=(d.energy!==undefined&&d.energy!=='')?d.energy+' E':'ENERGY —';txt='STATUS // '+(d.status||'VERIFIED')}else if(type==='ACCESS_CARD'){title='PLAYER ID ERKANNT';label='NODIV // '+(d.verified?'VERIFIED':'IDENTIFIED');main=(d.role==='FOP'?'FIELD OPERATOR':(d.role||'PLAYER'));txt='STATUS // '+(d.status||'UNVERIFIED')}else if(type==='NODE'){title='NODE ERKANNT';label='NODIV // VERIFIED NODE';main='NODE';txt='STATUS // '+(d.status||'VERIFIED')}document.getElementById('resultId').textContent=main;document.getElementById('resultType').textContent=label;document.getElementById('resultTitle').textContent=title;const resultText=document.getElementById('resultText');resultText.innerText=txt;resultText.style.color=(d.status==='EXTRACTED'||d.status==='ACTIVE')?'var(--g)':(d.status==='GHOST'?'var(--a)':'')}
 function showScanError(message){document.getElementById('waiting').classList.add('off');document.getElementById('result').classList.add('on');document.getElementById('resultIcon').textContent='!';document.getElementById('resultTitle').textContent='SCAN FEHLER';document.getElementById('resultType').textContent='NODIV NFC';document.getElementById('resultId').textContent='NO RESULT';document.getElementById('resultText').innerText=message}
 async function startScan(){document.getElementById('flowBrand').textContent=document.body.classList.contains('critical')?'NODIV // SECURITY / SAFETY SCAN':'NODIV // SCAN';document.getElementById('overlay').classList.add('on');document.getElementById('waiting').classList.remove('off');document.getElementById('result').classList.remove('on');if(!('NDEFReader' in window)){showScanError('Web NFC nicht verfügbar. Android + Chrome erforderlich.');return}if(scanRunning)return;try{scanRunning=true;scanController=new AbortController();const reader=new NDEFReader();let handled=false;reader.onreading=async event=>{if(handled||!scanRunning)return;handled=true;scanRunning=false;if(scanController){scanController.abort();scanController=null}const uid=String(event.serialNumber||'').trim().toUpperCase();if(!uid){showScanError('NFC UID nicht verfügbar.');return}try{const data=await apiRequest({action:'uidlookup',uid});if(!data.ok)throw new Error(data.error||'UNKNOWN SERVER ERROR');showScanResult(data,uid)}catch(err){showScanError(err.message)}};reader.onreadingerror=()=>{if(!handled)showScanError('NFC-Tag konnte nicht gelesen werden.')};await reader.scan({signal:scanController.signal})}catch(err){scanRunning=false;scanController=null;if(err.name!=='AbortError')showScanError(err.message||'NFC SCAN FAILED')}}
 function demoDetected(){showScanResult({ok:true,found:true,type:'NODE',id:'NODE-007'},'DEMO')}
 function closeScan(){if(scanController){scanController.abort();scanController=null}scanRunning=false;document.getElementById('overlay').classList.remove('on')}
+restorePlayerSession();
 </script></body></html>
