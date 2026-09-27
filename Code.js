@@ -5,6 +5,7 @@ const NODE_SHEET_NAME = 'Node Register';
 const ACCESS_CARD_SHEET_NAME = 'Access Card Register';
 
 const TRANSACTION_LOG_SHEET_NAME = 'Transaction Log';
+const DEPLOYMENT_SHEET_NAME = 'Deployment Register';
 
 
 
@@ -259,6 +260,14 @@ function doGet(e) {
     } else if (action === 'coredeposit') {
 
       result = depositOwnedCoreToReserve(e);
+
+    } else if (action === 'deploymentassign') {
+
+      result = assignCoreDeployment(e);
+
+    } else if (action === 'deploymentaccept') {
+
+      result = acceptCoreDeployment(e);
 
     } else {
 
@@ -2486,6 +2495,161 @@ function depositOwnedCoreToReserve(e) {
   } finally {
     try { lock.releaseLock(); } catch (error) {}
   }
+}
+
+/*
+ * ============================================================
+ * CORE DEPLOYMENT / MISSION CARGO V0.1
+ * ============================================================
+ * Deployment is deliberately separate from Core ownership.
+ * A transport Core stays NODIV_RESERVE // HQ while a player is
+ * its purpose-bound Carrier/Custodian.
+ */
+function getDeploymentRegisterSheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DEPLOYMENT_SHEET_NAME);
+  if (!sheet) throw new Error('Tabellenblatt "' + DEPLOYMENT_SHEET_NAME + '" wurde nicht gefunden.');
+  return sheet;
+}
+
+function normalizeNodeId(value) {
+  const nodeId = String(value || '').trim().toUpperCase();
+  if (!/^NODE-\d{3}$/.test(nodeId)) throw new Error('Ungültiges Node ID Format.');
+  return nodeId;
+}
+
+function findDeploymentById(deploymentId) {
+  const wanted = String(deploymentId || '').trim().toUpperCase();
+  if (!wanted) return null;
+  const sheet = getDeploymentRegisterSheet();
+  const lastRow = Math.max(sheet.getLastRow(), 2);
+  const rows = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim().toUpperCase() === wanted) {
+      return {
+        row: i + 2, deploymentId: wanted,
+        coreId: String(rows[i][1] || '').trim().toUpperCase(),
+        carrierId: String(rows[i][2] || '').trim().toUpperCase(),
+        carrierRole: String(rows[i][3] || '').trim().toUpperCase(),
+        targetNode: String(rows[i][4] || '').trim().toUpperCase(),
+        purpose: String(rows[i][5] || '').trim().toUpperCase(),
+        status: String(rows[i][6] || '').trim().toUpperCase(),
+        createdAt: rows[i][7] || null, acceptedAt: rows[i][8] || null,
+        deliveredAt: rows[i][9] || null, transactionId: String(rows[i][10] || '').trim()
+      };
+    }
+  }
+  return null;
+}
+
+function hasOpenDeploymentForCore(coreId) {
+  const sheet = getDeploymentRegisterSheet();
+  const lastRow = Math.max(sheet.getLastRow(), 2);
+  const rows = sheet.getRange(2, 2, lastRow - 1, 6).getDisplayValues();
+  const wanted = normalizeCoreId(coreId);
+  return rows.some(r => String(r[0] || '').trim().toUpperCase() === wanted &&
+    ['ASSIGNED','IN_TRANSIT'].includes(String(r[5] || '').trim().toUpperCase()));
+}
+
+function createDeploymentId() {
+  return 'DEP-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') +
+    '-' + Utilities.getUuid().substring(0, 6).toUpperCase();
+}
+
+function assignCoreDeployment(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const session = resolvePlayerSession(e.parameter.token || '');
+    if (!session.ok) return session.response;
+    const actor = session.player;
+    if (!['FOUNDER','FOP'].includes(actor.role)) {
+      return gameplayActionDenied(actor, 'ROLE_DENIED', 'Keine Berechtigung zur Ausgabe von Mission Cargo.');
+    }
+
+    const uid = normalizeUid(e.parameter.uid || '');
+    const carrierId = String(e.parameter.carrier || '').trim().toUpperCase();
+    const targetNode = normalizeNodeId(e.parameter.targetNode || '');
+    if (!uid) throw new Error('N-Core NFC UID fehlt.');
+    if (!carrierId) throw new Error('Carrier ID fehlt.');
+
+    const carrier = findIdentityById(carrierId);
+    if (!carrier || carrier.status !== 'ACTIVE' || !['PIONEER','FOP'].includes(carrier.role)) {
+      return gameplayActionDenied(actor, 'INVALID_CARRIER', 'Carrier ist keine aktive PIONEER/FIELD OPERATOR Identität.');
+    }
+
+    const hit = lookupUidGlobally(uid);
+    if (!hit.found || hit.type !== 'N_CORE' || !hit.id) {
+      return gameplayActionDenied(actor, 'CORE_NOT_FOUND', 'Gescannter NFC Tag ist kein registrierter N-Core.');
+    }
+    const core = readCoreState(hit.id);
+    if (core.uid !== uid || core.ownerType !== 'NODIV_RESERVE' || core.ownerId !== 'HQ' || core.status !== 'RESERVE') {
+      return gameplayActionDenied(actor, 'CORE_NOT_RESERVE', 'N-Core ist nicht frei in der NODIV Reserve verfügbar.');
+    }
+    if (hasOpenDeploymentForCore(core.coreId)) {
+      return gameplayActionDenied(actor, 'CORE_ALREADY_ASSIGNED', 'Für diesen N-Core existiert bereits ein offener Deployment-Auftrag.');
+    }
+    if (getNodeGameplayStatus(targetNode) === 'UNDEFINED') {
+      return gameplayActionDenied(actor, 'TARGET_NODE_UNKNOWN', 'Ziel-Node ist nicht registriert.');
+    }
+
+    const deploymentId = createDeploymentId();
+    getDeploymentRegisterSheet().appendRow([
+      deploymentId, core.coreId, carrier.identity, carrier.role, targetNode,
+      'DEPLOYMENT', 'ASSIGNED', new Date(), '', '', ''
+    ]);
+    SpreadsheetApp.flush();
+
+    return {
+      ok:true, authenticated:true, session:true, action:true, status:'DEPLOYMENT_ASSIGNED',
+      deployment:{deploymentId:deploymentId,carrierId:carrier.identity,carrierRole:carrier.role,targetNode:targetNode,purpose:'DEPLOYMENT',status:'ASSIGNED'},
+      core:{energy:core.actualEnergy === '' ? core.visibleEnergy : core.actualEnergy, status:core.status}
+    };
+  } finally { try { lock.releaseLock(); } catch (error) {} }
+}
+
+function acceptCoreDeployment(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const session = resolvePlayerSession(e.parameter.token || '');
+    if (!session.ok) return session.response;
+    const player = session.player;
+    const deployment = findDeploymentById(e.parameter.deployment || '');
+    if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
+    if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
+    if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
+      return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
+    }
+
+    const core = readCoreState(deployment.coreId);
+    if (core.ownerType !== 'NODIV_RESERVE' || core.ownerId !== 'HQ' || core.status !== 'RESERVE') {
+      return gameplayActionDenied(player, 'CORE_NOT_RESERVE', 'Mission Cargo ist nicht mehr in der NODIV Reserve verfügbar.');
+    }
+
+    const transactionId = appendTransactionLog({
+      eventType:'DEPLOYMENT_ACCEPTED', actorId:player.identity, actorRole:player.role,
+      coreId:core.coreId, fromType:'NODIV_RESERVE', fromId:'HQ',
+      toType:'NODIV_RESERVE', toId:'HQ', visibleEnergy:core.visibleEnergy,
+      hiddenEnergy:core.hiddenEnergy, actualEnergy:core.actualEnergy,
+      nodeId:deployment.targetNode, result:'SUCCESS',
+      details:'MISSION CARGO // carrier ' + player.identity + ' // target ' + deployment.targetNode
+    });
+
+    getDeploymentRegisterSheet().getRange(deployment.row, 7, 1, 5).setValues([[
+      'IN_TRANSIT', deployment.createdAt || new Date(), new Date(), '', transactionId
+    ]]);
+    getRegisterSheet().getRange(core.row, CORE_COL.STATUS).setValue('IN_TRANSIT');
+    SpreadsheetApp.flush();
+
+    return {
+      ok:true, authenticated:true, session:true, action:true, status:'MISSION_CARGO_IN_TRANSIT',
+      transactionId:transactionId,
+      deployment:{deploymentId:deployment.deploymentId,targetNode:deployment.targetNode,purpose:'DEPLOYMENT',status:'IN_TRANSIT'},
+      cargo:{energy:core.actualEnergy === '' ? core.visibleEnergy : core.actualEnergy},
+      ownership:{type:'NODIV_RESERVE',id:'HQ'},
+      carrier:{identity:player.identity,role:player.role}
+    };
+  } finally { try { lock.releaseLock(); } catch (error) {} }
 }
 
 function gameplayActionDenied(player, status, message) {
