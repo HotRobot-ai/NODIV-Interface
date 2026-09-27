@@ -135,7 +135,7 @@ window.addEventListener('load', function () {
 <a-entity position="-3.55 3.05 -6.95" rotation="0 10 0">
 <a-plane mixin="panel"></a-plane>
 <a-text value="MISSION CONTROL" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
-<a-text value="SYSTEM  //  NOMINAL\nMISSIONS  //  01\nFIELD  //  ONLINE" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-text id="missionLiveText" value="SYSTEM  //  CONNECTING\nMISSION CARGO  //  --\nFIELD  //  SYNC" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:0 0 360;loop:true;dur:5000;easing:linear"></a-ring>
 </a-entity>
 
@@ -143,20 +143,20 @@ window.addEventListener('load', function () {
 <a-plane class="clickable" node-console mixin="panel"></a-plane>
 <a-entity id="nodeBase">
 <a-text value="NODE NETWORK" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
-<a-text value="NETWORK  //  STANDBY\nNODES  //  15\nLINK  //  SECURE" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-text id="nodeLiveText" value="NETWORK  //  CONNECTING\nNODES  //  --\nLINK  //  SYNC" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".34" radius-outer=".36" position=".82 -.33 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
 </a-entity>
 <a-entity id="nodeDetail" visible="false" position="0 0 .04">
   <a-text value="NODE NETWORK // TACTICAL" align="center" width="3.0" position="0 .68 0" color="#7defff"></a-text>
-  <a-text value="NODE-001   AVAILABLE\nNODE-002   STANDBY\nNODE-003   STANDBY\n\nNETWORK   15 NODES\nSTATUS    NOMINAL" width="2.8" position="-1.42 .12 0" color="#b8edf5"></a-text>
+  <a-text id="nodeTacticalText" value="LIVE DATA CONNECTING...\n\nNETWORK   --\nSTATUS    SYNC" width="2.8" position="-1.42 .12 0" color="#b8edf5"></a-text>
   <a-text value="SELECT PANEL TO RETURN" align="center" width="2.2" position="0 -.76 0" color="#34bdd2"></a-text>
 </a-entity>
 </a-entity>
 
 <a-entity position="3.55 3.05 -6.95" rotation="0 -10 0">
 <a-plane mixin="panel"></a-plane>
-<a-text value="PIONEER STATUS" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
-<a-text value="FIELD UNITS  //  READY\nSESSION  //  AWAITING\nACCESS  //  CONTROLLED" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-text id="fieldLiveTitle" value="FIELD OPERATIONS" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text id="fieldLiveText" value="MISSION CARGO  //  SYNC\nDEPLOYMENTS  //  --\nSTATUS  //  CONNECTING" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
 <a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
 </a-entity>
 
