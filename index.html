@@ -193,6 +193,10 @@ function showGameplayResult(data,uid){
     button.textContent='N-CORE AN HQ ÜBERGEBEN';
     button.onclick=()=>executeCoreDeposit(uid);
   }
+  if(d.allowed&&d.action==='DEPLOY_MISSION_CARGO'&&uid){
+    button.textContent='MISSION CARGO EINSETZEN';
+    button.onclick=()=>deliverMissionCargo(uid);
+  }
   if(d.allowed&&d.action==='RESERVE_CORE'&&uid){
     button.textContent='MISSION CARGO AUSGEBEN';
     button.onclick=()=>openDeploymentIssue(uid,o);
@@ -252,6 +256,27 @@ async function acceptDeployment(deploymentId){
     button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
   }catch(err){
     txt.innerText=err.message||'MISSION CARGO FAILED';txt.style.color='var(--a)';
+    button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+  }
+}
+async function deliverMissionCargo(uid){
+  const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
+  button.disabled=true;button.textContent='DEPLOYMENT WIRD BESTÄTIGT …';
+  try{
+    const data=await apiRequest({action:'deploymentdeliver',token:activeSessionToken,uid});
+    if(!data.ok)throw new Error(data.error||'DEPLOYMENT FAILED');
+    if(!data.authenticated||!data.session){clearPlayerSession(data.status||'SESSION REQUIRED');closeScan();return}
+    if(!data.action)throw new Error(data.message||data.status||'DEPLOYMENT DENIED');
+    const dep=data.deployment||{},cargo=data.cargo||{};
+    document.getElementById('resultIcon').textContent='✓';
+    document.getElementById('resultTitle').textContent='DEPLOYMENT COMPLETE';
+    document.getElementById('resultType').textContent='NODIV // MISSION CARGO';
+    document.getElementById('resultId').textContent=(cargo.energy!==undefined?cargo.energy+' E':'N-CORE');
+    txt.innerText='Mission Cargo am Ziel-Node eingesetzt.\n\nTARGET // '+(dep.targetNode||'—')+'\nSTATUS // DELIVERED';
+    txt.style.color='var(--g)';
+    button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+  }catch(err){
+    txt.innerText=err.message||'DEPLOYMENT FAILED';txt.style.color='var(--a)';
     button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
   }
 }
