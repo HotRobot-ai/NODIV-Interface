@@ -273,6 +273,14 @@ function doGet(e) {
 
       result = getPendingPlayerDeployments(e);
 
+    } else if (action === 'provisionnode') {
+
+      result = provisionNodeFromSession(e);
+
+    } else if (action === 'deploymentdeliver') {
+
+      result = deliverCoreDeployment(e);
+
     } else if (action === 'hqstatus') {
 
       result = getHqLiveOperations(e);
