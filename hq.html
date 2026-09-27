@@ -25,6 +25,77 @@ AFRAME.registerComponent('node-console', {
     });
   }
 });
+
+const NODIV_API = 'https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
+
+function hqSetText(id, value) {
+  const el = document.querySelector(id);
+  if (el) el.setAttribute('value', value);
+}
+
+function hqLoadLiveOperations() {
+  const callback = 'nodivHqLive_' + Date.now();
+  const script = document.createElement('script');
+  window[callback] = function (data) {
+    try {
+      if (!data || !data.ok) throw new Error('HQ data unavailable');
+
+      const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+      const deployments = Array.isArray(data.deployments) ? data.deployments : [];
+      const registered = Number(data.network && data.network.registeredNodes || 0);
+      const networkStatus = String(data.network && data.network.status || 'UNKNOWN');
+      const cargo = deployments.find(d => d.status === 'IN_TRANSIT') || deployments[0] || null;
+
+      hqSetText('#missionLiveText',
+        'SYSTEM  //  ' + networkStatus +
+        '\\nMISSION CARGO  //  ' + String(deployments.length).padStart(2,'0') +
+        '\\nFIELD  //  LIVE');
+
+      hqSetText('#nodeLiveText',
+        'NETWORK  //  LIVE' +
+        '\\nNODES  //  ' + registered +
+        '\\nLINK  //  SECURE');
+
+      const nodeLines = nodes.filter(n => n.registered).slice(0,3)
+        .map(n => n.id + '   ' + n.status);
+      hqSetText('#nodeTacticalText',
+        (nodeLines.length ? nodeLines.join('\\n') : 'NO REGISTERED NODES') +
+        '\\n\\nNETWORK   ' + registered + ' NODES' +
+        '\\nSTATUS    ' + networkStatus);
+
+      if (cargo) {
+        hqSetText('#fieldLiveTitle', 'MISSION CARGO // ' + cargo.status);
+        hqSetText('#fieldLiveText',
+          'TARGET  //  ' + (cargo.targetNode || '—') +
+          '\\nENERGY  //  ' + (cargo.energy === '' ? '—' : cargo.energy + ' E') +
+          '\\nCARRIER  //  ' + (cargo.carrierId || '—'));
+      } else {
+        hqSetText('#fieldLiveTitle', 'FIELD OPERATIONS');
+        hqSetText('#fieldLiveText',
+          'MISSION CARGO  //  CLEAR' +
+          '\\nDEPLOYMENTS  //  00' +
+          '\\nSTATUS  //  NOMINAL');
+      }
+    } catch (error) {
+      hqSetText('#missionLiveText','SYSTEM  //  DATA LINK ERROR\\nMISSION CARGO  //  --\\nFIELD  //  OFFLINE');
+    } finally {
+      delete window[callback];
+      script.remove();
+    }
+  };
+  script.onerror = function () {
+    hqSetText('#missionLiveText','SYSTEM  //  DATA LINK ERROR\\nMISSION CARGO  //  --\\nFIELD  //  OFFLINE');
+    delete window[callback];
+    script.remove();
+  };
+  script.src = NODIV_API + '?action=hqstatus&callback=' + encodeURIComponent(callback) + '&_=' + Date.now();
+  document.body.appendChild(script);
+}
+
+window.addEventListener('load', function () {
+  setTimeout(hqLoadLiveOperations, 1200);
+  setInterval(hqLoadLiveOperations, 15000);
+});
 </script>
 </head>
 <body>
