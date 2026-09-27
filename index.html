@@ -159,6 +159,59 @@ function showGameplayResult(data,uid){
     button.textContent='N-CORE AN HQ ÜBERGEBEN';
     button.onclick=()=>executeCoreDeposit(uid);
   }
+  if(d.allowed&&d.action==='RESERVE_CORE'&&uid){
+    button.textContent='MISSION CARGO AUSGEBEN';
+    button.onclick=()=>openDeploymentIssue(uid,o);
+  }
+}
+function openDeploymentIssue(uid,core){
+  const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
+  const carrier=prompt('CARRIER ID // z. B. P001 oder F001');
+  if(!carrier)return;
+  const target=prompt('TARGET NODE // z. B. NODE-001');
+  if(!target)return;
+  button.disabled=true;button.textContent='DEPLOYMENT WIRD ANGELEGT …';
+  txt.innerText='MISSION CARGO wird vorbereitet.\n\nCARRIER // '+carrier.toUpperCase()+'\nTARGET // '+target.toUpperCase();
+  apiRequest({action:'deploymentassign',token:activeSessionToken,uid,carrier:carrier.toUpperCase(),targetNode:target.toUpperCase()})
+    .then(data=>{
+      if(!data.ok)throw new Error(data.error||'DEPLOYMENT FAILED');
+      if(!data.authenticated||!data.session){clearPlayerSession(data.status||'SESSION REQUIRED');closeScan();return}
+      if(!data.action)throw new Error(data.message||data.status||'DEPLOYMENT DENIED');
+      const dep=data.deployment||{};
+      document.getElementById('resultIcon').textContent='✓';
+      document.getElementById('resultTitle').textContent='MISSION CARGO ASSIGNED';
+      document.getElementById('resultType').textContent='NODIV // DEPLOYMENT';
+      document.getElementById('resultId').textContent=(core&&core.energy!==undefined?core.energy+' E':'N-CORE');
+      txt.innerText='Transportauftrag angelegt.\n\nCARRIER // '+(dep.carrierId||carrier.toUpperCase())+'\nTARGET // '+(dep.targetNode||target.toUpperCase())+'\nSTATUS // '+(dep.status||'ASSIGNED');
+      txt.style.color='var(--g)';
+      button.disabled=false;button.textContent='MISSION CARGO ÜBERNEHMEN';
+      button.onclick=()=>acceptDeployment(dep.deploymentId);
+    })
+    .catch(err=>{
+      txt.innerText=err.message||'DEPLOYMENT FAILED';txt.style.color='var(--a)';
+      button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+    });
+}
+async function acceptDeployment(deploymentId){
+  const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
+  button.disabled=true;button.textContent='MISSION CARGO WIRD ÜBERNOMMEN …';
+  try{
+    const data=await apiRequest({action:'deploymentaccept',token:activeSessionToken,deployment:deploymentId});
+    if(!data.ok)throw new Error(data.error||'MISSION CARGO FAILED');
+    if(!data.authenticated||!data.session){clearPlayerSession(data.status||'SESSION REQUIRED');closeScan();return}
+    if(!data.action)throw new Error(data.message||data.status||'MISSION CARGO DENIED');
+    const dep=data.deployment||{},cargo=data.cargo||{};
+    document.getElementById('resultIcon').textContent='✓';
+    document.getElementById('resultTitle').textContent='MISSION CARGO';
+    document.getElementById('resultType').textContent='NODIV // IN TRANSIT';
+    document.getElementById('resultId').textContent=(cargo.energy!==undefined?cargo.energy+' E':'N-CORE');
+    txt.innerText='MISSION CARGO übernommen.\n\nTARGET // '+(dep.targetNode||'—')+'\nSTATUS // IN TRANSIT';
+    txt.style.color='var(--g)';
+    button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+  }catch(err){
+    txt.innerText=err.message||'MISSION CARGO FAILED';txt.style.color='var(--a)';
+    button.disabled=false;button.textContent='ZURÜCK ZUM FIELD HUD';button.onclick=closeScan;
+  }
 }
 async function executeCoreDeposit(uid){
   const button=document.getElementById('resultButton'),txt=document.getElementById('resultText');
