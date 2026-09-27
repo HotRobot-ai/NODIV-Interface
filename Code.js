@@ -273,6 +273,10 @@ function doGet(e) {
 
       result = getPendingPlayerDeployments(e);
 
+    } else if (action === 'hqstatus') {
+
+      result = getHqLiveOperations(e);
+
     } else {
 
 
@@ -2862,6 +2866,64 @@ function deliverCoreDeployment(e) {
     };
   }finally{try{lock.releaseLock()}catch(error){}}
 }
+
+function getHqLiveOperations(e) {
+  /*
+   * HQ V0.4 // LIVE OPERATIONS
+   * Read-only operational snapshot for the VR command room.
+   * No player/session data is exposed here beyond operational carrier IDs
+   * already required to display active Mission Cargo.
+   */
+  const nodeSheet = getNodeRegisterSheet();
+  const nodeRows = nodeSheet.getRange(2, 1, 15, 3).getValues();
+  const nodes = nodeRows
+    .map(row => ({
+      id: String(row[0] || '').trim().toUpperCase(),
+      registered: Boolean(normalizeUid(row[1] || '')),
+      status: String(row[2] || '').trim().toUpperCase() || 'UNDEFINED'
+    }))
+    .filter(node => node.id);
+
+  const deploymentSheet = getDeploymentRegisterSheet();
+  const lastRow = Math.max(deploymentSheet.getLastRow(), 2);
+  const deploymentRows = deploymentSheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  const deployments = [];
+
+  deploymentRows.forEach(row => {
+    const status = String(row[6] || '').trim().toUpperCase();
+    if (!['ASSIGNED', 'IN_TRANSIT'].includes(status)) return;
+
+    const coreId = String(row[1] || '').trim().toUpperCase();
+    let energy = '';
+    try { energy = getDeploymentCoreEnergy(coreId); } catch (error) {}
+
+    deployments.push({
+      deploymentId: String(row[0] || '').trim().toUpperCase(),
+      carrierId: String(row[2] || '').trim().toUpperCase(),
+      carrierRole: String(row[3] || '').trim().toUpperCase(),
+      targetNode: String(row[4] || '').trim().toUpperCase(),
+      purpose: String(row[5] || '').trim().toUpperCase(),
+      status: status,
+      energy: energy
+    });
+  });
+
+  return {
+    ok: true,
+    system: 'NODIV HQ',
+    mode: 'LIVE_OPERATIONS',
+    generatedAt: new Date().toISOString(),
+    network: {
+      totalNodes: nodes.length,
+      registeredNodes: nodes.filter(node => node.registered).length,
+      status: nodes.some(node => node.status === 'CRITICAL') ? 'CRITICAL' : 'NOMINAL'
+    },
+    nodes: nodes,
+    deployments: deployments,
+    readOnly: true
+  };
+}
+
 
 function gameplayActionDenied(player, status, message) {
   return {
