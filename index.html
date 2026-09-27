@@ -57,6 +57,7 @@ function setPlayerSession(data){
   document.getElementById('playerRole').textContent=p.role==='FOP'?'FIELD OPERATOR':(p.role||'PLAYER');
   document.getElementById('miniState').textContent=p.status||'ACTIVE';
   document.getElementById('sessionGate').classList.add('off');
+  setTimeout(()=>checkPendingDeployments(),120);
   return true;
 }
 function clearPlayerSession(status){
@@ -103,6 +104,39 @@ async function restorePlayerSession(){
       clearPlayerSession((data&&data.status)||'SESSION INVALID');
     }
   }catch(err){clearPlayerSession('SESSION CHECK FAILED')}
+}
+async function checkPendingDeployments(){
+  if(!activeSessionToken)return;
+  try{
+    const data=await apiRequest({action:'deploymentpending',token:activeSessionToken});
+    if(!data||!data.ok||!data.authenticated||!data.session)return;
+    const items=Array.isArray(data.deployments)?data.deployments:[];
+    if(!items.length)return;
+    const dep=items.find(x=>x.status==='ASSIGNED')||items.find(x=>x.status==='IN_TRANSIT')||items[0];
+    if(!dep)return;
+    showPendingDeployment(dep);
+  }catch(err){}
+}
+function showPendingDeployment(dep){
+  document.getElementById('overlay').classList.add('on');
+  document.getElementById('waiting').classList.add('off');
+  document.getElementById('result').classList.add('on');
+  document.getElementById('resultIcon').textContent='✓';
+  document.getElementById('resultTitle').textContent=dep.status==='IN_TRANSIT'?'MISSION CARGO':'MISSION CARGO AVAILABLE';
+  document.getElementById('resultType').textContent=dep.status==='IN_TRANSIT'?'NODIV // IN TRANSIT':'NODIV // DEPLOYMENT ASSIGNMENT';
+  document.getElementById('resultId').textContent=(dep.energy!==undefined&&dep.energy!=='')?dep.energy+' E':'N-CORE';
+  const txt=document.getElementById('resultText');
+  txt.innerText=(dep.status==='IN_TRANSIT'?'Mission Cargo ist dieser Identität zugewiesen.':'Transportauftrag wartet auf Übernahme.')+'\n\nTARGET // '+(dep.targetNode||'—')+'\nSTATUS // '+(dep.status||'ASSIGNED');
+  txt.style.color='var(--g)';
+  const button=document.getElementById('resultButton');
+  button.disabled=false;
+  if(dep.status==='ASSIGNED'){
+    button.textContent='MISSION CARGO ÜBERNEHMEN';
+    button.onclick=()=>acceptDeployment(dep.deploymentId);
+  }else{
+    button.textContent='ZURÜCK ZUM FIELD HUD';
+    button.onclick=closeScan;
+  }
 }
 async function startSessionScan(){
   const status=document.getElementById('sessionStatus'),button=document.getElementById('sessionButton');
