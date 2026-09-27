@@ -256,6 +256,10 @@ function doGet(e) {
 
       result = getGameplayRoute(e);
 
+    } else if (action === 'coredeposit') {
+
+      result = depositOwnedCoreToReserve(e);
+
     } else {
 
 
@@ -2397,7 +2401,12 @@ function routeCoreGameplay(player,core) {
 
   if(!core.ownerType||!core.ownerId) return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_UNDEFINED','N-Core erkannt. Ownership ist nicht vollständig definiert.');
 
-  if(core.ownerId===player.identity) return gameplayDecision(player,object,'CORE_OWNED',true,'OWN_CORE','N-Core gehört der aktiven Identität. Zulässige Folgeaktion wird im nächsten Router-Schritt angebunden.');
+  if(core.ownerId===player.identity) {
+    if(player.role==='FOP' && core.ownerType==='FOP') {
+      return gameplayDecision(player,object,'DEPOSIT_CORE',true,'FOP_OWN_CORE','N-Core gesichert. Rückführung in die NODIV Reserve ist zulässig.');
+    }
+    return gameplayDecision(player,object,'CORE_OWNED',true,'OWN_CORE','N-Core gehört der aktiven Identität. Für diesen Zustand ist noch keine Folgeaktion angebunden.');
+  }
 
   if(core.ownerType==='NODE') {
     if(player.nodeAccess) return gameplayDecision(player,object,'CORE_AT_NODE',true,'NODE_CORE_ACCESS','N-Core ist einem Node zugeordnet. Node-bezogene Folgeaktion ist grundsätzlich zulässig.');
@@ -2412,6 +2421,83 @@ function routeCoreGameplay(player,core) {
   }
 
   return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_MISMATCH','N-Core gehört einer anderen Identität oder Rolle. Keine automatische Umbuchung.');
+}
+
+/*
+ * GAMEPLAY ACTION V0.1 // FOP CORE DEPOSIT
+ * First complete session-authorized gameplay mutation.
+ * The browser supplies only the active session token + physically scanned Core UID.
+ * Identity, ownership and allowed transition are revalidated under ScriptLock.
+ */
+function depositOwnedCoreToReserve(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    const session = resolvePlayerSession(e.parameter.token || '');
+    if (!session.ok) return session.response;
+
+    const uid = normalizeUid(e.parameter.uid || '');
+    if (!uid) throw new Error('N-Core NFC UID fehlt.');
+
+    const player = session.player;
+    if (player.role !== 'FOP') {
+      return gameplayActionDenied(player, 'ROLE_DENIED', 'Nur FIELD OPERATOR kann einen gesicherten N-Core in die NODIV Reserve zurückführen.');
+    }
+
+    const hit = lookupUidGlobally(uid);
+    if (!hit.found || hit.type !== 'N_CORE' || !hit.id) {
+      return gameplayActionDenied(player, 'CORE_NOT_FOUND', 'Gescannter NFC Tag ist kein registrierter N-Core.');
+    }
+
+    const coreId = String(hit.id).trim().toUpperCase();
+    const state = readCoreState(coreId);
+
+    if (state.uid !== uid) throw new Error('N-Core UID stimmt nicht mit dem Register überein.');
+
+    if (state.ownerType !== 'FOP' || state.ownerId !== player.identity) {
+      return gameplayActionDenied(player, 'OWNERSHIP_MISMATCH', coreId + ' gehört nicht dem aktiven FIELD OPERATOR. Keine Umbuchung.');
+    }
+
+    const result = transferCoreOwnership({
+      coreId: coreId,
+      expectedFromType: 'FOP',
+      expectedFromId: player.identity,
+      toType: 'NODIV_RESERVE',
+      toId: 'HQ',
+      eventType: 'CORE_DEPOSIT',
+      actorId: player.identity,
+      actorRole: 'FOP',
+      newStatus: 'RESERVE',
+      details: 'FOP deposit // ' + player.identity + ' -> NODIV_RESERVE // HQ // session authorized'
+    });
+
+    return {
+      ok: true,
+      authenticated: true,
+      session: true,
+      action: true,
+      status: 'CORE_DEPOSITED',
+      message: coreId + ' wurde in die NODIV Reserve zurückgeführt.',
+      transactionId: result.transactionId,
+      core: result.core,
+      ownership: result.to
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (error) {}
+  }
+}
+
+function gameplayActionDenied(player, status, message) {
+  return {
+    ok: true,
+    authenticated: true,
+    session: true,
+    action: false,
+    status: status,
+    message: message,
+    player: { identity: player.identity, role: player.role }
+  };
 }
 
 function gameplayDecision(player,object,action,allowed,reason,message) {
