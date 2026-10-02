@@ -1268,10 +1268,14 @@ function registerUploadTerminal(e) {
     const actor=session.player; if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Upload-Terminals provisionieren.');
     const type=String(e.parameter.type||'').trim().toUpperCase(); if(!['UPLOAD_HQ','UPLOAD_FOP'].includes(type))throw new Error('Ungültiger Upload-Terminal-Typ.');
     const uid=normalizeUid(e.parameter.uid||''); if(!uid)throw new Error('NFC UID fehlt.');
-    assertUidAvailable(uid,'UPLOAD_TERMINAL','');
     const terminalId=type==='UPLOAD_HQ'?'UPLOAD-HQ-001':'UPLOAD-FOP-001',sheet=getUploadTerminalSheet(),last=Math.max(sheet.getLastRow(),1);
     const rows=last>1?sheet.getRange(2,1,last-1,6).getDisplayValues():[],existing=rows.find(r=>String(r[0]||'').trim().toUpperCase()===terminalId);
-    if(existing){const oldUid=normalizeUid(existing[2]);if(oldUid===uid)return {ok:true,authenticated:true,session:true,action:true,status:'UPLOAD_TERMINAL_ALREADY_REGISTERED',terminal:{id:terminalId,type:type,uid:uid}};throw new Error(terminalId+' besitzt bereits eine andere UID.');}
+    if(existing){
+      const oldUid=normalizeUid(existing[2]);
+      if(oldUid===uid)return {ok:true,authenticated:true,session:true,action:true,status:'UPLOAD_TERMINAL_ALREADY_REGISTERED',terminal:{id:terminalId,type:type,uid:uid,status:String(existing[3]||'ACTIVE').trim().toUpperCase()}};
+      throw new Error(terminalId+' besitzt bereits eine andere UID.');
+    }
+    assertUidAvailable(uid,'UPLOAD_TERMINAL',terminalId);
     sheet.appendRow([terminalId,type,uid,'ACTIVE',actor.identity,new Date()]);
     appendTransactionLog({eventType:'UPLOAD_TERMINAL_PROVISIONED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:terminalId+' // '+type+' // NFC UID registered'});
     SpreadsheetApp.flush();
