@@ -60,3 +60,22 @@ window.addEventListener('nodiv-founder-register-core',async()=>{
   };
  }catch(err){showFounderResult('SYSTEM ERROR',String(err.message||err),false)}
 });
+
+window.addEventListener('nodiv-founder-register-upload',async e=>{
+ if(!sessionToken)return;
+ const type=e.detail?.type; if(!['UPLOAD_HQ','UPLOAD_FOP'].includes(type))return;
+ if(!('NDEFReader' in window)){showFounderResult('NFC NOT AVAILABLE','Android + Chrome erforderlich.',false);return}
+ showFounderResult('NFC ARMED',(type==='UPLOAD_HQ'?'HQ':'FIELD OPERATOR')+' Upload-Antenne jetzt scannen.',true);
+ try{
+  const reader=new NDEFReader();await reader.scan();
+  reader.onreading=async ev=>{
+   const uid=ev.serialNumber||''; if(!uid){showFounderResult('UID MISSING','Upload-Antenne konnte nicht gelesen werden.',false);return}
+   try{
+    const r=await apiRequest({action:'registeruploadterminal',token:sessionToken,type,uid});
+    if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||'REGISTRATION FAILED');
+    showFounderResult('UPLOAD TERMINAL REGISTERED',(r.terminal?.id||type)+' // ACTIVE',true);
+    emitNodiv('IDENTITY_VERIFIED',{target:'#roleView'});
+   }catch(err){showFounderResult('REGISTRATION DENIED',String(err.message||err),false)}
+  };
+ }catch(err){showFounderResult('NFC ERROR',String(err.message||err),false)}
+});
