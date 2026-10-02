@@ -67,3 +67,7 @@ iOS-NFC-Brücke/Companion nach Hardwaretest; Quest/WebXR Situation Room auf ders
 
 ## Erster Abnahmepunkt
 Auf Android erscheint NODIV als installierbare App/PWA. Boot -> Identity -> Rollenansicht funktioniert sichtbar. Animationen sind bereits Teil dieses ersten Ergebnisses.
+
+
+## Founder-first Ergänzung
+Founder ist kein normaler Spieler-Screen, sondern ROOT/System-Control. Vor weiterem Gameplay erhält Founder zuerst die operativen Grundwerkzeuge für physische Registrierung. Erster vertikaler Founder-Workflow: Founder Access Card -> serverseitige Session -> unregistrierte Node-Antenne scannen -> vorhandenes `provisionnode` -> automatisch nächste freie NODE-001..NODE-015 -> sichtbare Bestätigung. Weitere Antennentypen (N-Core, Upload HQ/FOP usw.) werden erst nach Prüfung ihrer bestehenden Backend-Workflows ergänzt; keine generische UID-Schreibfunktion.
