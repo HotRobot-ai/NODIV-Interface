@@ -6,6 +6,7 @@ const ACCESS_CARD_SHEET_NAME = 'Access Card Register';
 
 const TRANSACTION_LOG_SHEET_NAME = 'Transaction Log';
 const DEPLOYMENT_SHEET_NAME = 'Deployment Register';
+const UPLOAD_TERMINAL_SHEET_NAME = 'Upload Terminal Register';
 
 
 
@@ -1248,6 +1249,31 @@ function formatCoreId(number) {
  */
 
 
+
+function getUploadTerminalSheet() {
+  const ss=SpreadsheetApp.getActiveSpreadsheet();
+  let sheet=ss.getSheetByName(UPLOAD_TERMINAL_SHEET_NAME);
+  if(!sheet){sheet=ss.insertSheet(UPLOAD_TERMINAL_SHEET_NAME);sheet.getRange(1,1,1,6).setValues([['TERMINAL ID','TYPE','NFC UID','STATUS','REGISTERED BY','REGISTERED AT']]);}
+  return sheet;
+}
+function registerUploadTerminal(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||''); if(!session.ok)return session.response;
+    const actor=session.player; if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Upload-Terminals provisionieren.');
+    const type=String(e.parameter.type||'').trim().toUpperCase(); if(!['UPLOAD_HQ','UPLOAD_FOP'].includes(type))throw new Error('Ungültiger Upload-Terminal-Typ.');
+    const uid=normalizeUid(e.parameter.uid||''); if(!uid)throw new Error('NFC UID fehlt.');
+    assertUidAvailable(uid,'UPLOAD_TERMINAL','');
+    const terminalId=type==='UPLOAD_HQ'?'UPLOAD-HQ-001':'UPLOAD-FOP-001',sheet=getUploadTerminalSheet(),last=Math.max(sheet.getLastRow(),1);
+    const rows=last>1?sheet.getRange(2,1,last-1,6).getDisplayValues():[],existing=rows.find(r=>String(r[0]||'').trim().toUpperCase()===terminalId);
+    if(existing){const oldUid=normalizeUid(existing[2]);if(oldUid===uid)return {ok:true,authenticated:true,session:true,action:true,status:'UPLOAD_TERMINAL_ALREADY_REGISTERED',terminal:{id:terminalId,type:type,uid:uid}};throw new Error(terminalId+' besitzt bereits eine andere UID.');}
+    sheet.appendRow([terminalId,type,uid,'ACTIVE',actor.identity,new Date()]);
+    appendTransactionLog({eventType:'UPLOAD_TERMINAL_PROVISIONED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:terminalId+' // '+type+' // NFC UID registered'});
+    SpreadsheetApp.flush();
+    return {ok:true,authenticated:true,session:true,action:true,status:'UPLOAD_TERMINAL_PROVISIONED',terminal:{id:terminalId,type:type,uid:uid,status:'ACTIVE'}};
+  }finally{try{lock.releaseLock()}catch(error){}}
+}
 
 function registerNode(e) {
 
@@ -2495,6 +2521,11 @@ function getGameplayRoute(e) {
     }
     const allowed=Boolean(player.nodeAccess);
     return gameplayDecision(player,{found:true,type:'NODE',id:hit.id||'',status:status},allowed?'NODE_INTERACTION':'NO_ACTION',allowed,allowed?'NODE_ACCESS_GRANTED':'NODE_ACCESS_DENIED',allowed?'Node erkannt. Node-Interaktion ist für diese Rolle zulässig.':'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.');
+  }
+
+  if (hit.type === 'UPLOAD_TERMINAL') {
+    const active=hit.status==='ACTIVE';
+    return gameplayDecision(player,{found:true,type:'UPLOAD_TERMINAL',id:hit.id||'',terminalType:hit.terminalType||'',status:hit.status||''},active?'UPLOAD_TERMINAL':'NO_ACTION',active,active?'UPLOAD_TERMINAL_RECOGNIZED':'UPLOAD_TERMINAL_INACTIVE',active?'Upload-Terminal erkannt. Folgeaktion wird rollenabhängig angebunden.':'Upload-Terminal ist nicht aktiv.');
   }
 
   if (hit.type === 'N_CORE') return routeCoreGameplay(player,readCoreState(hit.id));
@@ -4398,6 +4429,17 @@ function getPublicScanDisplay(hit) {
     for (let i=0;i<rows.length;i++) if (String(rows[i][0]||'').trim().toUpperCase()===hit.id) return { label:'NODIV NODE', status:String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED' };
     return { label:'NODIV NODE', status:'UNDEFINED' };
   }
+  const uploadSheet=getUploadTerminalSheet();
+  const uploadLast=Math.max(uploadSheet.getLastRow(),1);
+  if(uploadLast>1){
+    const uploadRows=uploadSheet.getRange(2,1,uploadLast-1,6).getValues();
+    for(let i=0;i<uploadRows.length;i++){
+      if(normalizeUid(uploadRows[i][2])===normalizedUid){
+        return {found:true,uid:normalizedUid,type:'UPLOAD_TERMINAL',id:String(uploadRows[i][0]||'').trim().toUpperCase(),terminalType:String(uploadRows[i][1]||'').trim().toUpperCase(),status:String(uploadRows[i][3]||'').trim().toUpperCase()};
+      }
+    }
+  }
+
   return { label:'NODIV OBJECT', status:'VERIFIED' };
 }
 
