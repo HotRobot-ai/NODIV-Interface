@@ -1,0 +1,28 @@
+/* NODIV Design System V1 */
+:root{
+ --nd-bg:#03070a;--nd-surface:#071018;--nd-surface-2:#0b1720;--nd-line:#173243;
+ --nd-text:#edf8ff;--nd-muted:#78909e;--nd-cyan:#39c8ff;--nd-cyan-soft:#9de7ff;
+ --nd-local:#d5d9dc;--nd-local-muted:#879198;--nd-unbound:#39ff88;--nd-unbound-dark:#071b10;
+ --nd-danger:#ff526c;--nd-warn:#ffd36a;--nd-ok:#70f0bd;
+ --nd-r-sm:8px;--nd-r-md:14px;--nd-r-lg:22px;
+ --nd-space-1:6px;--nd-space-2:10px;--nd-space-3:16px;--nd-space-4:24px;
+ --nd-fast:140ms;--nd-normal:320ms;--nd-slow:720ms;
+}
+*{box-sizing:border-box}
+.nd-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.1em}
+.nd-panel{background:linear-gradient(145deg,var(--nd-surface-2),var(--nd-surface));border:1px solid var(--nd-line);border-radius:var(--nd-r-md);padding:var(--nd-space-3)}
+.nd-label{color:var(--nd-muted);font:800 10px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase}
+.nd-value{font-weight:950;letter-spacing:-.035em}
+.nd-action{min-height:56px;border:1px solid currentColor;border-radius:var(--nd-r-sm);font-weight:950;letter-spacing:.09em;transition:opacity var(--nd-fast),transform var(--nd-fast),box-shadow var(--nd-normal)}
+.nd-action:active{transform:scale(.985)}.nd-action:disabled{opacity:.3;pointer-events:none}
+[data-role="PIONEER"]{--role-accent:var(--nd-cyan);--role-soft:var(--nd-cyan-soft)}
+[data-role="LOCAL"]{--role-accent:var(--nd-local);--role-soft:#f1f3f4}
+[data-role="UNBOUND"]{--role-accent:var(--nd-unbound);--role-soft:#a2ffbf}
+.nd-role-accent{color:var(--role-accent)}
+.nd-scanline{position:absolute;left:0;right:0;height:18%;background:linear-gradient(transparent,color-mix(in srgb,var(--role-accent,var(--nd-cyan)) 10%,transparent),transparent);animation:nd-scan 3.2s linear infinite;pointer-events:none}
+@keyframes nd-scan{from{top:-20%}to{top:110%}}
+.nd-glitch{animation:nd-glitch .28s steps(2,end) 2}
+@keyframes nd-glitch{25%{transform:translateX(2px)}50%{transform:translateX(-3px);filter:brightness(1.35)}75%{transform:translateX(1px)}}
+.nd-pop{animation:nd-pop .42s cubic-bezier(.2,.8,.2,1)}
+@keyframes nd-pop{0%{transform:scale(.94);opacity:.2}70%{transform:scale(1.025)}100%{transform:none;opacity:1}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
