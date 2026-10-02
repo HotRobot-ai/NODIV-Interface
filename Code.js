@@ -164,6 +164,10 @@ function doGet(e) {
 
 
 
+    } else if (action === 'registeruploadterminal') {
+
+      result = registerUploadTerminal(e);
+
     } else if (action === 'identify') {
 
 
@@ -4561,6 +4565,17 @@ function lookupUidGlobally(uid) {
   }
 
 
+
+  const uploadSheet = getUploadTerminalSheet();
+  const uploadLast = Math.max(uploadSheet.getLastRow(), 1);
+  if (uploadLast > 1) {
+    const uploadRows = uploadSheet.getRange(2, 1, uploadLast - 1, 6).getValues();
+    for (let i = 0; i < uploadRows.length; i++) {
+      if (normalizeUid(uploadRows[i][2]) === normalizedUid) {
+        return { found:true, uid:normalizedUid, type:'UPLOAD_TERMINAL', id:String(uploadRows[i][0]||'').trim().toUpperCase(), terminalType:String(uploadRows[i][1]||'').trim().toUpperCase(), status:String(uploadRows[i][3]||'').trim().toUpperCase() };
+      }
+    }
+  }
 
   return {
 
