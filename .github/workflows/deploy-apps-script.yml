@@ -33,7 +33,7 @@ jobs:
           node-version: "20"
 
       - name: Install clasp
-        run: npm install --global @google/clasp
+        run: npm install --global @google/clasp@3.4.1
 
       - name: Restore clasp credentials
         shell: bash
