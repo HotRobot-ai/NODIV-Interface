@@ -168,6 +168,10 @@ function doGet(e) {
 
       result = registerUploadTerminal(e);
 
+    } else if (action === 'founderstatus') {
+
+      result = getFounderProvisioningStatus(e);
+
     } else if (action === 'identify') {
 
 
@@ -1253,6 +1257,31 @@ function formatCoreId(number) {
  */
 
 
+
+function getFounderProvisioningStatus(e) {
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  const actor=session.player;
+  if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Founder Status erfordert ROOT Zugriff.');
+
+  const nodeSheet=getNodeRegisterSheet();
+  const nodeUids=nodeSheet.getRange(2,2,15,1).getDisplayValues().flat().map(normalizeUid);
+  const nodeCount=nodeUids.filter(Boolean).length;
+
+  const coreSheet=getRegisterSheet();
+  const coreUids=coreSheet.getRange(2,3,200,1).getDisplayValues().flat().map(normalizeUid);
+  const coreCount=coreUids.filter(Boolean).length;
+
+  const uploadSheet=getUploadTerminalSheet(),last=Math.max(uploadSheet.getLastRow(),1);
+  const uploads={UPLOAD_HQ:false,UPLOAD_FOP:false};
+  if(last>1){
+    uploadSheet.getRange(2,1,last-1,6).getDisplayValues().forEach(r=>{
+      const type=String(r[1]||'').trim().toUpperCase(),uid=normalizeUid(r[2]),status=String(r[3]||'').trim().toUpperCase();
+      if(uid&&status==='ACTIVE'&&Object.prototype.hasOwnProperty.call(uploads,type))uploads[type]=true;
+    });
+  }
+  return {ok:true,authenticated:true,session:true,status:'FOUNDER_PROVISIONING_STATUS',nodes:{registered:nodeCount,total:15},cores:{registered:coreCount,total:200},uploads:uploads};
+}
 
 function getUploadTerminalSheet() {
   const ss=SpreadsheetApp.getActiveSpreadsheet();
