@@ -31,7 +31,7 @@ const ROLE_CONFIG = {
 
   LOCAL:   { prefix: 'L', eventLimit: 3,  systemMax: 3,  provisionable: true },
 
-  UNBOUND: { prefix: 'U', eventLimit: 3,  systemMax: 3,  provisionable: false }
+  UNBOUND: { prefix: 'U', eventLimit: 3,  systemMax: 3,  provisionable: true }
 
 };
 
