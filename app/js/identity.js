@@ -79,3 +79,17 @@ window.addEventListener('nodiv-founder-register-upload',async e=>{
   };
  }catch(err){showFounderResult('NFC ERROR',String(err.message||err),false)}
 });
+
+window.addEventListener('nodiv-founder-status',async()=>{
+ if(!sessionToken)return;
+ try{
+  const r=await apiRequest({action:'founderstatus',token:sessionToken});
+  if(!r?.ok)return;
+  const cells=document.querySelectorAll('#founderOverview > div b');
+  if(cells.length!==4)return;
+  cells[0].textContent=String(r.nodes?.registered??'—')+' / 15';
+  cells[1].textContent=String(r.cores?.registered??'—')+' / 200';
+  cells[2].textContent=r.uploads?.UPLOAD_HQ?'ONLINE':'NOT REGISTERED';
+  cells[3].textContent=r.uploads?.UPLOAD_FOP?'ONLINE':'NOT REGISTERED';
+ }catch(err){showFounderResult('STATUS UNAVAILABLE',String(err.message||err),false)}
+});
