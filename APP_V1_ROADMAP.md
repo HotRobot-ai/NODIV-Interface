@@ -71,3 +71,46 @@ Auf Android erscheint NODIV als installierbare App/PWA. Boot -> Identity -> Roll
 
 ## Founder-first Ergänzung
 Founder ist kein normaler Spieler-Screen, sondern ROOT/System-Control. Vor weiterem Gameplay erhält Founder zuerst die operativen Grundwerkzeuge für physische Registrierung. Erster vertikaler Founder-Workflow: Founder Access Card -> serverseitige Session -> unregistrierte Node-Antenne scannen -> vorhandenes `provisionnode` -> automatisch nächste freie NODE-001..NODE-015 -> sichtbare Bestätigung. Weitere Antennentypen (N-Core, Upload HQ/FOP usw.) werden erst nach Prüfung ihrer bestehenden Backend-Workflows ergänzt; keine generische UID-Schreibfunktion.
+
+
+## Founder Command Office
+
+FOUNDER is not a player dashboard. It is the NODIV command office and operational assistance layer.
+
+Primary navigation order:
+1. COMMAND
+2. LIVE OPS
+3. SYSTEM
+4. ARCHIVE
+
+### COMMAND
+The default Founder landing view answers one question first: **What needs attention now?**
+
+It contains:
+- Command Briefing: current event phase, registrations, incomplete preparation, open tasks and important anomalies.
+- Registrations: participant/application state, missing assignments/data and preparation status.
+- Tasks: OPEN / WATCH / DONE / IGNORED, with source and priority.
+- AI Support: explains current state, detects inconsistencies, summarizes changes and proposes next actions. AI is advisory; Founder remains decision authority.
+- Preparation checklist derived from event/player/system state where possible.
+
+### Operations Support
+During live play the same assistance layer switches emphasis from preparation to operations:
+- summarize recent important events;
+- surface long-running IN TRANSIT states, ownership inconsistencies, stalled deployments and unusual system states;
+- create or suggest actionable tasks from system events;
+- never silently change game rules or execute discretionary game-master decisions.
+
+### LIVE OPS
+Visual-first tactical operations view. Node health, energy flow, role/system activity, missions, Catches, Uploads and alerts are shown visually before numeric detail. No continuous player GPS or live movement tracking.
+
+### SYSTEM
+Provisioning and infrastructure: Access Cards, Nodes, N-Cores, Upload HQ/FOP, backend/system health.
+
+### ARCHIVE
+Past events, audit trail, historical statistics, reports and post-event analysis.
+
+### Visual rule
+Founder must not become a spreadsheet in a sci-fi skin. States, proportions, trends and events should be represented visually first; exact numbers remain available as secondary/detail information.
+
+### Shared data principle
+COMMAND, Founder mobile, Situation Room and future Quest/VR clients consume the same authoritative backend state/events. UI scale and presentation differ; game truth does not.
