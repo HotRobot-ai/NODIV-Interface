@@ -1,0 +1,9 @@
+{
+  "name": "NODIV // Node Division",
+  "short_name": "NODIV",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#05090d",
+  "theme_color": "#050a11",
+  "description": "NODIV field interface"
+}
