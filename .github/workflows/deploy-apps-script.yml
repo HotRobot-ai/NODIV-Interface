@@ -1,0 +1,51 @@
+name: Deploy NODIV Apps Script
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Code.js"
+      - "Identity.html"
+      - "Scanner.html"
+      - "appsscript.json"
+      - ".clasp.json"
+      - ".claspignore"
+      - ".github/workflows/deploy-apps-script.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nodiv-apps-script-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install clasp
+        run: npm install --global @google/clasp
+
+      - name: Restore clasp credentials
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          test -n "$CLASPRC_JSON"
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+      - name: Push Apps Script source
+        run: clasp push --force
+
+      - name: Update production web app deployment
+        run: clasp deploy --deploymentId "AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w" --description "GitHub Actions ${GITHUB_SHA::7}"
