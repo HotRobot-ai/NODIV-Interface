@@ -51,7 +51,41 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   }
  }catch(err){if(inv)inv.innerHTML='<div class="pioneer-core loading">LIVE DATA OFFLINE</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>';if(total)total.textContent='— E';if(hqTotal)hqTotal.textContent='— E'}
 });
-window.addEventListener('nodiv-pioneer-scan',()=>{emitNodiv('NFC_ARMED',{target:'#pioneerScan'});const b=document.querySelector('#pioneerScan');if(b){b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';setTimeout(()=>{b.textContent='NFC // JETZT SCANNEN'},1800)}});
+window.addEventListener('nodiv-pioneer-scan',async()=>{
+ const b=document.querySelector('#pioneerScan');
+ if(!b||b.dataset.scanActive==='1')return;
+ if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
+ if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
+ b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
+ try{
+  const controller=new AbortController(),reader=new NDEFReader();
+  await reader.scan({signal:controller.signal});
+  let handling=false;
+  reader.onreadingerror=()=>{if(handling)return;b.textContent='NFC LESEFEHLER // ERNEUT';b.disabled=false;b.dataset.scanActive='0';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})};
+  reader.onreading=async ev=>{
+   if(handling)return;handling=true;controller.abort();
+   const uid=String(ev?.serialNumber||'').trim();
+   if(!uid)throw new Error('KEINE NFC UID GELESEN');
+   b.textContent='NODIV OBJECT // VERIFYING';
+   try{
+    const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
+    if(!route?.ok||!route?.session)throw new Error(route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
+    const object=route.object||route.target||{};
+    const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
+    const action=String(route.action||'NO_ACTION').toUpperCase();
+    const status=String(object.status||route.status||'').toUpperCase();
+    const message=String(route.message||route.reason||'').trim();
+    b.textContent=(id||type)+' // '+(action==='NODE_INTERACTION'?'ACCESS READY':action.replaceAll('_',' '));
+    b.title=[status,message].filter(Boolean).join(' // ');
+    emitNodiv(route.allowed===false?'ACCESS_DENIED':'IDENTITY_VERIFIED',{target:'#pioneerScan'});
+   }catch(err){
+    b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
+   }finally{
+    setTimeout(()=>{b.disabled=false;b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
+   }
+  };
+ }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
+});
 
 let startCorePioneerUid='';
 window.addEventListener('nodiv-founder-startcore-open',()=>{startCorePioneerUid='';const state=document.querySelector('#startCoreIssueState'),hint=document.querySelector('#startCoreIssueHint'),btn=document.querySelector('#scanStartCore');if(state)state.textContent='PIONEER ACCESS CARD';if(hint)hint.textContent='Zuerst die Access Card des Pioneers scannen. Danach den auszugebenden N-Core.';if(btn){btn.disabled=false;btn.dataset.scanActive='0';btn.textContent='AUSGABE STARTEN'}});
