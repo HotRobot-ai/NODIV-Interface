@@ -27,6 +27,10 @@ function renderRoleView(role,id){
  host.innerHTML=`<header class="role-head"><div><small>${m.accent}</small><h2>${id.identity||'—'}</h2><p>${m.label}</p></div><i class="role-sigil"></i></header>${body}<button class="role-exit" type="button">LOCK INTERFACE</button>`;
  host.hidden=false;
  host.querySelector('.role-exit').addEventListener('click',()=>location.reload());
+ const hqAccess=host.querySelector('#hqAccess'),hqPanel=host.querySelector('#hqAccessPanel'),closeHqAccess=host.querySelector('#closeHqAccess');
+ if(hqAccess&&hqPanel)hqAccess.addEventListener('click',()=>{hqPanel.hidden=false;emitNodiv('NFC_ARMED',{target:'#hqAccessPanel'});});
+ if(closeHqAccess&&hqPanel)closeHqAccess.addEventListener('click',()=>{hqPanel.hidden=true;});
+ host.querySelectorAll('[data-approach]').forEach(b=>b.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-hq-approach',{detail:{mode:b.dataset.approach}}))));
  if(role==='FOUNDER') window.dispatchEvent(new CustomEvent('nodiv-founder-status'));
  if(role==='FOUNDER'){host.querySelectorAll('[data-command-tab]').forEach(tab=>tab.addEventListener('click',()=>{host.querySelectorAll('[data-command-tab]').forEach(x=>x.classList.toggle('active',x===tab));host.querySelectorAll('[data-command-panel]').forEach(p=>p.classList.toggle('active',p.dataset.commandPanel===tab.dataset.commandTab));if(tab.dataset.commandTab==='system')window.dispatchEvent(new CustomEvent('nodiv-founder-status'));}));}
  const antenna=host.querySelector('#registerAntenna'); if(antenna) antenna.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-founder-register-antenna')));
