@@ -204,7 +204,23 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   const preflightBox=document.querySelector('#eventPreflight');
   const preflight=Array.isArray(r.preflight)?r.preflight:[];
   const preflightMap=Object.fromEntries(preflight.map(x=>[x.id,x]));
-  if(preflightBox)preflightBox.hidden=!r.systemReady;
+  if(preflightBox){
+   preflightBox.hidden=!r.systemReady;
+   let snapshot=preflightBox.querySelector('#eventConfigSnapshot');
+   if(!snapshot){
+    snapshot=document.createElement('div');
+    snapshot.id='eventConfigSnapshot';
+    snapshot.className='event-config-snapshot';
+    preflightBox.insertBefore(snapshot,document.querySelector('#confirmEventConfiguration'));
+   }
+   const ids=r.identitySummary||{}, uploads=r.uploadSummary||{}, nodeNames=Array.isArray(r.provisionedNodes)?r.provisionedNodes:[];
+   snapshot.innerHTML='<small>EVENT CONFIGURATION // ZU BESTÄTIGEN</small>'+
+    '<div><b>NODES</b> '+nodeNames.length+(nodeNames.length?' // '+nodeNames.join(', '):'')+'</div>'+
+    '<div><b>N-CORES</b> '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen</div>'+
+    '<div><b>FIELD IDENTITIES</b> '+(ids.PIONEER||0)+' Pioneer // '+(ids.LOCAL||0)+' Local // '+(ids.UNBOUND||0)+' Unbound // '+(ids.FOP||0)+' FOP</div>'+
+    '<div><b>UPLOAD</b> '+(uploads.hq||0)+' HQ Bay(s) // '+(uploads.fop||0)+' FOP Upload(s)</div>'+
+    '<div><b>ACCESS SECURITY</b> '+(nodeNames.length*5)+' mechanische Codes werden bei Initialisierung erzeugt</div>';
+  }
   const physical=document.querySelector('#confirmPhysicalEquipment'),config=document.querySelector('#confirmEventConfiguration'),finalConfirm=document.querySelector('#confirmFounderFinal');
   if(physical){physical.disabled=!r.systemReady||!!preflightMap.PHYSICAL_EQUIPMENT?.confirmed;physical.textContent=preflightMap.PHYSICAL_EQUIPMENT?.confirmed?'PHYSICAL EQUIPMENT ✓':'PHYSICAL EQUIPMENT BESTÄTIGEN'}
   if(config){config.disabled=!preflightMap.PHYSICAL_EQUIPMENT?.confirmed||!!preflightMap.EVENT_CONFIGURATION?.confirmed;config.textContent=preflightMap.EVENT_CONFIGURATION?.confirmed?'EVENT CONFIGURATION ✓':'EVENT CONFIGURATION BESTÄTIGEN'}
