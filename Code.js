@@ -865,6 +865,23 @@ function registerCore(e) {
 
 
 
+    /* Fresh physical N-Cores enter NODIV_RESERVE // HQ immediately. */
+    const registeredState = readCoreState(coreId);
+    if (!registeredState.ownerType && !registeredState.ownerId) {
+      const initTransactionId = appendTransactionLog({
+        eventType: 'CORE_INITIALIZED', actorId: 'HQ', actorRole: 'SYSTEM', coreId: coreId,
+        fromType: 'NONE', fromId: '', toType: 'NODIV_RESERVE', toId: 'HQ',
+        visibleEnergy: registeredState.visibleEnergy, hiddenEnergy: registeredState.hiddenEnergy,
+        actualEnergy: registeredState.actualEnergy, result: 'SUCCESS',
+        details: 'Automatic reserve initialization during physical N-Core registration'
+      });
+      writeCoreOwnership(registeredState.row, 'NODIV_RESERVE', 'HQ', initTransactionId);
+      sheet.getRange(registeredState.row, CORE_COL.STATUS).setValue('RESERVE');
+      SpreadsheetApp.flush();
+    } else if (registeredState.ownerType !== 'NODIV_RESERVE' || registeredState.ownerId !== 'HQ') {
+      throw new Error(coreId + ' besitzt bereits Ownership // ' + (registeredState.ownerType || '—') + ' // ' + (registeredState.ownerId || '—'));
+    }
+
     const nextFreeCore =
 
       findNextFreeCore(
