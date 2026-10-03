@@ -329,6 +329,10 @@ function doGet(e) {
 
       result = activateEvent(e);
 
+    } else if (action === 'eventabort') {
+
+      result = abortEvent(e);
+
     } else if (action === 'nodeinstallorder') {
 
       result = getNodeInstallOrder(e);
@@ -3423,6 +3427,41 @@ function activateEvent(e) {
     appendTransactionLog({eventType:'EVENT_FIELD_ACTIVE',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // Field Operations activated'});
     SpreadsheetApp.flush();
     return {ok:true,authenticated:true,action:true,status:'FIELD_ACTIVE',eventId:event.eventId};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+function abortEvent(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann ein Event abbrechen.');
+
+    const event=readCurrentEvent();
+    if(!event)return {ok:true,authenticated:true,action:false,status:'NO_ACTIVE_EVENT'};
+    if(event.state==='FIELD_ACTIVE')return gameplayActionDenied(actor,'FIELD_ACTIVE_ABORT_DENIED','Ein laufendes Field Event kann nicht über den sicheren Initialisierungs-Abbruch zurückgesetzt werden.');
+
+    const eventSheet=getEventRegisterSheet(), now=new Date();
+    eventSheet.getRange(event.row,2).setValue('ABORTED');
+    eventSheet.getRange(event.row,10).setValue(now);
+
+    const codeSheet=getEventNodeCodeSheet();
+    if(codeSheet.getLastRow()>1){
+      const rows=codeSheet.getRange(2,1,codeSheet.getLastRow()-1,13).getValues();
+      rows.forEach((row,index)=>{
+        if(String(row[0]||'')===event.eventId){
+          codeSheet.getRange(index+2,8).setValue('');
+          codeSheet.getRange(index+2,9).setValue('');
+          codeSheet.getRange(index+2,10).setValue('ABORTED');
+          codeSheet.getRange(index+2,13).setValue(now);
+        }
+      });
+    }
+    appendTransactionLog({eventType:'EVENT_ABORTED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // initialization safely aborted'});
+    SpreadsheetApp.flush();
+    return {ok:true,authenticated:true,action:true,status:'EVENT_ABORTED',eventId:event.eventId};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
