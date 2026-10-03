@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261003-1510';
+import {routeIdentity} from './router.js?v=20261003-1540';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -98,20 +98,20 @@ window.addEventListener('nodiv-founder-status',async()=>{
    cells[0].textContent=String(r.nodes?.registered??'—')+' / 15';
    cells[1].textContent=String(r.cores?.registered??'—')+' / 200';
    cells[2].textContent=r.uploads?.UPLOAD_HQ?'ONLINE':'NICHT REGISTRIERT';
-   cells[3].textContent=r.uploads?.UPLOAD_FOP?'ONLINE':'NICHT REGISTRIERT';
+   cells[3].textContent=r.uploads?.UPLOAD_HQ?'BEREIT':'NICHT REGISTRIERT';
   }
   const nodeCount=Number(r.nodes?.registered||0),coreCount=Number(r.cores?.registered||0);
   const missing=[];
   if(nodeCount<10)missing.push((10-nodeCount)+' Start-Node'+(10-nodeCount===1?'':'s'));
   if(coreCount<30)missing.push((30-coreCount)+' Start-N-Core'+(30-coreCount===1?'':'s'));
   if(!r.uploads?.UPLOAD_HQ)missing.push('Upload HQ');
-  if(!r.uploads?.UPLOAD_FOP)missing.push('Upload FOP');
+
   const analysis=document.querySelector('#commandAnalysis');
   if(analysis)analysis.textContent=missing.length?'VORBEREITUNG OFFEN // '+missing.length+' BEREICH'+(missing.length===1?'':'E'):'STARTINFRASTRUKTUR BEREIT';
   const prep=document.querySelector('#commandPreparation');
   if(prep)prep.innerHTML=missing.length
    ?'<strong>'+nodeCount+'/10 NODES // '+coreCount+'/30 N-CORES</strong><p>Offen: '+missing.join(' · ')+'</p>'
-   :'<strong>STARTINFRASTRUKTUR BEREIT</strong><p>10 Nodes, 30 N-Cores und beide Upload-Terminals sind registriert.</p>';
+   :'<strong>STARTINFRASTRUKTUR BEREIT</strong><p>10 Nodes, 30 N-Cores und das HQ-Terminal sind registriert.</p>';
   const matrix=document.querySelector('#matrixMode');
   if(matrix)matrix.textContent=missing.length?'VORBEREITUNG // '+missing.length+' OFFEN':'STARTBEREIT';
  }catch(err){showFounderResult('STATUS UNAVAILABLE',String(err.message||err),false)}
