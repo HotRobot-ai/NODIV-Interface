@@ -3230,13 +3230,19 @@ function gameplayActionDenied(player, status, message) {
   };
 }
 
-function gameplayDecision(player,object,action,allowed,reason,message) {
-  return {ok:true,authenticated:true,session:true,route:true,player:{identity:player.identity,role:player.role,status:getSessionPlayerDisplay(player).status},object:object,decision:{action:action,allowed:Boolean(allowed),reason:reason,message:message},readOnly:true};
+function gameplayDecision(player,object,action,allowed,reason,message,extra) {
+  const response={ok:true,authenticated:true,session:true,route:true,player:{identity:player.identity,role:player.role,status:getSessionPlayerDisplay(player).status},object:object,decision:{action:action,allowed:Boolean(allowed),reason:reason,message:message},readOnly:true};
+  if(extra&&typeof extra==='object')Object.keys(extra).forEach(key=>{response[key]=extra[key];});
+  return response;
 }
 
 function getNodeGameplayStatus(nodeId) {
   const wanted=String(nodeId||'').trim().toUpperCase(), sheet=getNodeRegisterSheet(), rows=sheet.getRange(2,1,15,3).getValues();
-  for(let i=0;i<rows.length;i++) if(String(rows[i][0]||'').trim().toUpperCase()===wanted) return String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED';
+  for(let i=0;i<rows.length;i++){
+    const registeredId=String(rows[i][0]||'').trim().toUpperCase();
+    const canonicalId=/^NODE-\d{3}$/.test(registeredId)?registeredId:formatNodeId(i+1);
+    if(canonicalId===wanted)return String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED';
+  }
   return 'UNDEFINED';
 }
 
