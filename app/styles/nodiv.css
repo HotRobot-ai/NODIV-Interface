@@ -164,3 +164,10 @@
 .provisioner p{min-height:32px;margin:10px 0 0;color:#7595a5;font:700 9px/1.5 ui-monospace,monospace;letter-spacing:.04em}
 .provisioner .role-action{margin-top:4px}
 @media(min-width:700px){.provisioner{max-width:620px;margin-left:auto;margin-right:auto}}
+
+.terminal-flow{display:grid;grid-template-columns:34px 1fr;gap:10px 11px;margin:14px 0}
+.terminal-flow>span{width:34px;height:34px;display:grid;place-items:center;border:1px solid #39c8ff55;color:#8ee5ff;font:900 9px ui-monospace,monospace;background:#031018}
+.terminal-flow>div{min-height:44px;padding-bottom:9px;border-bottom:1px solid #39c8ff1c}
+.terminal-flow b{color:#e7f9ff;font:900 10px ui-monospace,monospace;letter-spacing:.1em}
+.terminal-flow p{min-height:0;margin:4px 0 0}
+@media(min-width:760px){.terminal-flow{grid-template-columns:34px 1fr 34px 1fr 34px 1fr}.terminal-flow>div{border-bottom:0;border-left:1px solid #39c8ff1c;padding-left:10px}}
