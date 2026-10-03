@@ -325,6 +325,14 @@ function doGet(e) {
 
       result = activateEvent(e);
 
+    } else if (action === 'nodeinstallorder') {
+
+      result = getNodeInstallOrder(e);
+
+    } else if (action === 'nodeinstallconfirm') {
+
+      result = confirmNodeInstallation(e);
+
     } else {
 
 
@@ -2622,7 +2630,8 @@ function getGameplayRoute(e) {
       authorization.allowed?'NODE_INTERACTION':'NO_ACTION',
       authorization.allowed,
       authorization.reason,
-      authorization.message
+      authorization.message,
+      authorization.allowed&&authorization.accessCode?{accessCode:authorization.accessCode}:null
     );
   }
 
@@ -3359,6 +3368,80 @@ function activateEvent(e) {
     appendTransactionLog({eventType:'EVENT_FIELD_ACTIVE',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // Field Operations activated'});
     SpreadsheetApp.flush();
     return {ok:true,authenticated:true,action:true,status:'FIELD_ACTIVE',eventId:event.eventId};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/*
+ * FOP NODE INSTALLATION V0.1
+ * The FOP receives only the code that must be set physically.
+ * Reserve codes stay server-side. Confirmation makes PRIMARY active.
+ */
+function getNodeInstallOrder(e) {
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  const actor=session.player;
+  if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER oder FIELD OPERATOR können Node-Installationsaufträge abrufen.');
+
+  const nodeId=String(e.parameter.node||'').trim().toUpperCase();
+  if(!/^NODE-\d{3}$/.test(nodeId))throw new Error('Gültige Node-ID fehlt.');
+  const event=readCurrentEvent();
+  if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Node-Installation ist nur für ein initialisiertes Event möglich.');
+
+  const eventNode=findEventNodeCode(event.eventId,nodeId);
+  if(!eventNode)return gameplayActionDenied(actor,'NODE_NOT_IN_EVENT','Dieser Node gehört nicht zum initialisierten Event.');
+  if(eventNode.changeStatus==='ACTIVE')return {ok:true,authenticated:true,action:false,status:'NODE_ALREADY_INSTALLED',nodeId:nodeId,eventId:event.eventId};
+
+  const codeSheet=getEventNodeCodeSheet(), now=new Date();
+  if(actor.role==='FOP'){
+    const assigned=String(codeSheet.getRange(eventNode.row,11).getDisplayValue()||'').trim().toUpperCase();
+    if(assigned&&assigned!==actor.identity)return gameplayActionDenied(actor,'NODE_ASSIGNED_TO_OTHER_FOP','Dieser Node ist bereits einem anderen Field Operator zugewiesen.');
+    if(!assigned)codeSheet.getRange(eventNode.row,11).setValue(actor.identity);
+  }
+  codeSheet.getRange(eventNode.row,9).setValue('PRIMARY');
+  codeSheet.getRange(eventNode.row,10).setValue('ASSIGNED_FOR_INSTALL');
+  codeSheet.getRange(eventNode.row,13).setValue(now);
+  SpreadsheetApp.flush();
+
+  return {ok:true,authenticated:true,action:true,status:'NODE_INSTALL_ORDER',eventId:event.eventId,node:{id:nodeId,code:eventNode.codes[0],slot:'PRIMARY'},instruction:'Mechanisches Schloss auf den angezeigten Code stellen und Installation anschließend bestätigen.'};
+}
+
+function confirmNodeInstallation(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER oder FIELD OPERATOR können eine Node-Installation bestätigen.');
+
+    const nodeId=String(e.parameter.node||'').trim().toUpperCase();
+    if(!/^NODE-\d{3}$/.test(nodeId))throw new Error('Gültige Node-ID fehlt.');
+    const event=readCurrentEvent();
+    if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Kein initialisiertes Event für die Installation vorhanden.');
+    const eventNode=findEventNodeCode(event.eventId,nodeId);
+    if(!eventNode)return gameplayActionDenied(actor,'NODE_NOT_IN_EVENT','Dieser Node gehört nicht zum initialisierten Event.');
+
+    const codeSheet=getEventNodeCodeSheet();
+    const assigned=String(codeSheet.getRange(eventNode.row,11).getDisplayValue()||'').trim().toUpperCase();
+    if(actor.role==='FOP'&&assigned&&assigned!==actor.identity)return gameplayActionDenied(actor,'NODE_ASSIGNED_TO_OTHER_FOP','Dieser Node ist einem anderen Field Operator zugewiesen.');
+    if(eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY')return gameplayActionDenied(actor,'INSTALL_ORDER_REQUIRED','Zuerst muss ein gültiger Installationsauftrag abgerufen werden.');
+
+    const now=new Date();
+    codeSheet.getRange(eventNode.row,8).setValue('PRIMARY');
+    codeSheet.getRange(eventNode.row,9).setValue('');
+    codeSheet.getRange(eventNode.row,10).setValue('ACTIVE');
+    if(!assigned)codeSheet.getRange(eventNode.row,11).setValue(actor.identity);
+    codeSheet.getRange(eventNode.row,12).setValue(now);
+    codeSheet.getRange(eventNode.row,13).setValue(now);
+
+    const nodeSheet=getNodeRegisterSheet(), nodeNumber=parseInt(nodeId.substring(5),10), nodeRow=nodeNumber+1;
+    nodeSheet.getRange(nodeRow,3).setValue('INSTALLED');
+    nodeSheet.getRange(nodeRow,5).setValue(actor.identity);
+    nodeSheet.getRange(nodeRow,6).setValue(now);
+
+    appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId:nodeId,result:'SUCCESS',details:event.eventId+' // physical installation confirmed // PRIMARY active'});
+    SpreadsheetApp.flush();
+    return {ok:true,authenticated:true,action:true,status:'NODE_INSTALLED',eventId:event.eventId,node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
