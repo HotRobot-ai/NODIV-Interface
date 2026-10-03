@@ -53,6 +53,27 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
 });
 window.addEventListener('nodiv-pioneer-scan',()=>{emitNodiv('NFC_ARMED',{target:'#pioneerScan'});const b=document.querySelector('#pioneerScan');if(b){b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';setTimeout(()=>{b.textContent='NFC // JETZT SCANNEN'},1800)}});
 
+let startCorePioneerUid='';
+window.addEventListener('nodiv-founder-startcore-open',()=>{startCorePioneerUid='';const state=document.querySelector('#startCoreIssueState'),hint=document.querySelector('#startCoreIssueHint'),btn=document.querySelector('#scanStartCore');if(state)state.textContent='PIONEER ACCESS CARD';if(hint)hint.textContent='Zuerst die Access Card des Pioneers scannen. Danach den auszugebenden N-Core.';if(btn){btn.disabled=false;btn.dataset.scanActive='0';btn.textContent='AUSGABE STARTEN'}});
+window.addEventListener('nodiv-founder-startcore-scan',async()=>{
+ const state=document.querySelector('#startCoreIssueState'),hint=document.querySelector('#startCoreIssueHint'),btn=document.querySelector('#scanStartCore');
+ if(!('NDEFReader' in window)){if(hint)hint.textContent='Web NFC nicht verfügbar // Android + Chrome erforderlich.';return}
+ if(btn?.dataset.scanActive==='1')return;
+ if(btn){btn.dataset.scanActive='1';btn.disabled=true;btn.textContent='PIONEER ACCESS CARD SCANNEN'}
+ try{
+  const cardController=new AbortController(),cardReader=new NDEFReader();await cardReader.scan({signal:cardController.signal});let cardHandling=false;
+  cardReader.onreading=async ev=>{if(cardHandling)return;cardHandling=true;cardController.abort();const cardUid=String(ev.serialNumber||'').trim();if(!cardUid)throw new Error('Access Card UID fehlt.');
+   try{const identity=await apiRequest({action:'identify',uid:cardUid});if(!identity?.ok||!identity?.authenticated||String(identity.role||'').toUpperCase()!=='PIONEER')throw new Error('Gescannte Karte ist keine aktive PIONEER Access Card.');startCorePioneerUid=cardUid;if(state)state.textContent=(identity.identity||'PIONEER')+' // CORE SCAN';if(hint)hint.textContent='Pioneer verifiziert. Jetzt den N-Core an das Smartphone halten.';if(btn)btn.textContent='N-CORE SCANNEN';
+    const coreController=new AbortController(),coreReader=new NDEFReader();await coreReader.scan({signal:coreController.signal});let coreHandling=false;
+    coreReader.onreading=async ce=>{if(coreHandling)return;coreHandling=true;coreController.abort();const coreUid=String(ce.serialNumber||'').trim();if(!coreUid)throw new Error('N-Core UID fehlt.');
+     try{const lookup=await apiRequest({action:'uidlookup',uid:coreUid});if(!lookup?.ok||!lookup?.found||lookup.type!=='N_CORE'||!lookup.id)throw new Error('Gescannter Tag ist kein registrierter N-Core.');const result=await apiRequest({action:'startcore',core:lookup.id,pioneerUid:startCorePioneerUid,uid:coreUid});if(!result?.ok)throw new Error(result?.error||result?.message||'START-CORE AUSGABE FEHLGESCHLAGEN');if(state)state.textContent=(result.identity||identity.identity||'PIONEER')+' // '+lookup.id+' AUSGEGEBEN';if(hint)hint.textContent=lookup.id+' wurde serverseitig dem Pioneer zugeordnet.';if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='WEITEREN START-CORE AUSGEBEN'}showFounderResult('START-CORE AUSGEGEBEN',(result.identity||identity.identity)+' // '+lookup.id,true);emitNodiv('CORE_TRANSFERRED',{target:'#startCoreIssuer'});}
+     catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false)}
+    };
+   }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false)}
+  };
+ }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}}
+});
+
 let founderAccessRole='';
 window.addEventListener('nodiv-founder-accesscard-open',()=>{founderAccessRole='';const role=document.querySelector('#accessCardRole'),id=document.querySelector('#accessCardProvisionId'),hint=document.querySelector('#accessCardProvisionHint'),name=document.querySelector('#accessCardDisplayName');if(role)role.value='';if(name)name.value='';if(id)id.textContent='ROLLE AUSWÄHLEN';if(hint)hint.textContent='Rolle auswählen. NODIV ermittelt automatisch die nächste freie Identität.';});
 window.addEventListener('nodiv-founder-accesscard-role',async e=>{founderAccessRole=String(e.detail?.role||'').trim().toUpperCase();const id=document.querySelector('#accessCardProvisionId'),hint=document.querySelector('#accessCardProvisionHint');if(!founderAccessRole){if(id)id.textContent='ROLLE AUSWÄHLEN';return}try{const r=await apiRequest({action:'nextidentity',role:founderAccessRole});if(!r?.ok||!r.available||!r.nextIdentity)throw new Error(founderAccessRole+' LIMIT ERREICHT');if(id)id.textContent=r.nextIdentity+' // '+founderAccessRole;if(hint)hint.textContent='Nächste freie Identität reserviert erst beim erfolgreichen NFC-Scan // '+r.count+' / '+r.limit+' belegt.';}catch(err){if(id)id.textContent='NICHT VERFÜGBAR';if(hint)hint.textContent=String(err.message||err)}});
