@@ -3287,7 +3287,18 @@ function readCurrentEvent() {
 function listProvisionedNodeIds() {
   const sheet=getNodeRegisterSheet();
   const rows=sheet.getRange(2,1,15,3).getValues(), ids=[];
-  rows.forEach(r=>{const id=String(r[0]||'').trim().toUpperCase(),uid=normalizeUid(r[1]||'');if(/^NODE-\d{3}$/.test(id)&&uid)ids.push(id);});
+  rows.forEach((r,index)=>{
+    const uid=normalizeUid(r[1]||'');
+    if(!uid)return;
+    let id=String(r[0]||'').trim().toUpperCase();
+    /*
+     * provisionNodeFromSession() assigns the physical slot by row.
+     * Older Node Register sheets may not have NODE-001..015 prefilled
+     * in column A, so derive the canonical ID from the fixed row slot.
+     */
+    if(!/^NODE-\d{3}$/.test(id))id=formatNodeId(index+1);
+    ids.push(id);
+  });
   return ids;
 }
 
