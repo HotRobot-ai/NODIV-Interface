@@ -3348,24 +3348,54 @@ function getEventReadiness(e) {
   const nodes=listProvisionedNodeIds();
   const coreSheet=getRegisterSheet();
   const coreRows=coreSheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
-  let registeredCores=0, reserveCores=0, invalidOwnership=0;
+  let registeredCores=0, reserveCores=0, invalidOwnership=0, assignedCores=0;
+  const coreDiagnostics=[];
+
   coreRows.forEach(row=>{
     const uid=normalizeUid(row[CORE_COL.UID-1]);
     if(!uid)return;
+
     registeredCores++;
+    const coreId=String(row[CORE_COL.ID-1]||'').trim().toUpperCase();
+    const visibleEnergy=Number(row[CORE_COL.VISIBLE_ENERGY-1]||0);
+    const status=String(row[CORE_COL.STATUS-1]||'').trim().toUpperCase();
     const ownerType=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();
     const ownerId=String(row[CORE_COL.OWNER_ID-1]||'').trim().toUpperCase();
+    const ownershipValid=Boolean(ownerType&&ownerId);
+
     if(ownerType==='NODIV_RESERVE'&&ownerId==='HQ')reserveCores++;
-    if(!ownerType||!ownerId)invalidOwnership++;
+    else if(ownershipValid)assignedCores++;
+    else invalidOwnership++;
+
+    coreDiagnostics.push({
+      id:coreId,
+      energy:visibleEnergy,
+      status:status||'UNDEFINED',
+      ownerType:ownerType||'',
+      ownerId:ownerId||'',
+      ok:ownershipValid,
+      detail:ownershipValid
+        ? (ownerType==='NODIV_RESERVE'&&ownerId==='HQ'?'HQ RESERVE':ownerType+' // '+ownerId)
+        : 'OWNERSHIP FEHLT'
+    });
   });
 
   const checks=[
     {id:'NODES',ok:nodes.length>0,value:nodes.length,detail:nodes.length+' provisioniert'},
-    {id:'N_CORES',ok:registeredCores>0&&invalidOwnership===0,value:registeredCores,detail:registeredCores+' registriert // '+reserveCores+' HQ Reserve'},
-    {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?'Ownership unvollständig':'sauber'}
+    {id:'N_CORES',ok:registeredCores>0&&invalidOwnership===0,value:registeredCores,detail:registeredCores+' registriert // '+reserveCores+' HQ Reserve // '+assignedCores+' zugewiesen'},
+    {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?(invalidOwnership+' Core(s) ohne Ownership'):'sauber'}
   ];
   const blocking=checks.filter(x=>!x.ok);
-  return {ok:true,authenticated:true,status:blocking.length?'NOT_READY':'BASELINE_READY',ready:blocking.length===0,checks:checks,provisionedNodes:nodes};
+  return {
+    ok:true,
+    authenticated:true,
+    status:blocking.length?'NOT_READY':'BASELINE_READY',
+    ready:blocking.length===0,
+    checks:checks,
+    provisionedNodes:nodes,
+    coreSummary:{registered:registeredCores,hqReserve:reserveCores,assigned:assignedCores,invalidOwnership:invalidOwnership},
+    coreDiagnostics:coreDiagnostics
+  };
 }
 
 function initializeEvent(e) {
