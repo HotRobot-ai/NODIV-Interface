@@ -184,11 +184,29 @@ async function refreshFounderEventStatus(){
   state.textContent=ev.state||'STANDBY';
   if(list)list.innerHTML=nodes.length?nodes.map(n=>'<span>'+n+'</span>').join(''):'<span>KEINE NODES</span>';
   if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S)'):(nodes.length+' provisionierte Node(s) bereit.');
-  if(init)init.disabled=ev.state==='INITIALIZED'||ev.state==='FIELD_ACTIVE';
+  if(init)init.disabled=true;
   if(activate)activate.disabled=ev.state!=='INITIALIZED';
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
 }
 window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEventStatus,0)});
+window.addEventListener('nodiv-founder-event-readiness',async()=>{
+ if(!sessionToken)return;
+ const btn=document.querySelector('#checkEventReadiness'),init=document.querySelector('#initializeEvent');
+ if(btn){btn.disabled=true;btn.textContent='PRÜFUNG LÄUFT'}
+ try{
+  const r=await apiRequest({action:'eventreadiness',token:sessionToken});
+  if(!r?.ok)throw new Error(r?.message||r?.error||'READINESS CHECK FEHLGESCHLAGEN');
+  const failed=Array.isArray(r.checks)?r.checks.filter(x=>!x.ok):[];
+  if(r.ready){
+   showFounderResult('BASELINE READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // '),true,btn);
+   if(init)init.disabled=false;
+  }else{
+   showFounderResult('NICHT BEREIT',failed.map(x=>x.id+': '+x.detail).join(' // ')||r.status,false,btn);
+   if(init)init.disabled=true;
+  }
+ }catch(err){showFounderResult('READINESS FEHLER',String(err.message||err),false,btn);if(init)init.disabled=true}
+ finally{if(btn){btn.disabled=false;btn.textContent='READINESS CHECK'}}
+});
 window.addEventListener('nodiv-founder-event-initialize',async()=>{
  if(!sessionToken)return;
  const btn=document.querySelector('#initializeEvent');
