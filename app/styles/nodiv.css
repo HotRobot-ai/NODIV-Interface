@@ -80,3 +80,36 @@
 .command-grid article{position:relative;border-color:#193544;background:linear-gradient(145deg,#08131a,#04090d);overflow:hidden}.command-grid article:after{content:"";position:absolute;left:0;top:0;width:2px;height:36%;background:#58cfff77}.command-grid strong{color:#e8f7ff}.micro-line{width:38px;height:1px;background:#58cfff88;margin-top:10px}
 .ai-support{display:grid;grid-template-columns:46px 1fr;align-items:center;gap:12px;border-color:#214656;background:linear-gradient(110deg,#0b1b24,#04090d 65%)}.ai-support p{margin:4px 0 0}.ai-mark{width:42px;height:42px;border:1px solid #55cfff77;display:grid;place-items:center;color:#9de7ff;font:900 11px ui-monospace,monospace;box-shadow:inset 0 0 18px #39c8ff10}
 @media(max-width:390px){.command-stage{min-height:286px}.command-core{min-height:286px;grid-template-columns:1fr 1fr;padding-left:10px;padding-right:10px}.command-radar{width:130px;height:130px}.command-radar em{inset:43px}.command-readout h3{font-size:25px}}
+
+
+/* Founder Command V0.3 — NODIV blue identity + network matrix */
+[data-role="FOUNDER"]{--role-accent:#39c8ff;--role-soft:#dff7ff}
+[data-role="FOUNDER"] .role-head h2{color:#a9eaff}
+[data-role="FOUNDER"] .role-sigil{border-color:#39c8ff;box-shadow:0 0 24px #39c8ff22}
+[data-role="FOUNDER"] .role-sigil:before{content:"";position:absolute;inset:5px;border:1px solid #39c8ff55;border-radius:50%;clip-path:polygon(0 0,100% 0,100% 24%,0 64%)}
+[data-role="FOUNDER"] .role-sigil:after{border-style:solid;border-color:#9de7ff55;clip-path:polygon(0 0,42% 0,42% 100%,0 100%)}
+.founder-stage{background:radial-gradient(circle at 22% 48%,#0d45635c,transparent 31%),linear-gradient(140deg,#061722,#02070c 66%)}
+.founder-identity{position:relative;z-index:1;min-height:315px;display:grid;grid-template-columns:1.08fr .92fr;align-items:center;padding:38px 18px 34px}
+.founder-portrait{width:150px;height:188px;justify-self:center;position:relative;border:1px solid #39c8ff66;background:radial-gradient(circle at 50% 30%,#39c8ff26,transparent 25%),linear-gradient(180deg,#061925,#02080d);clip-path:polygon(10% 0,100% 0,100% 88%,88% 100%,0 100%,0 10%);box-shadow:inset 0 0 34px #39c8ff12,0 0 32px #39c8ff10}
+.founder-portrait:before{content:"FOUNDER";position:absolute;left:9px;top:9px;color:#9de7ff;font:800 7px ui-monospace,monospace;letter-spacing:.18em}
+.founder-portrait:after{content:"WÜRZBURG // EST. 2027";position:absolute;left:9px;right:9px;bottom:8px;color:#52798d;font:700 6px ui-monospace,monospace;letter-spacing:.12em;text-align:center}
+.portrait-energy{position:absolute;inset:0;background:linear-gradient(118deg,transparent 0 57%,#39c8ff16 57.5% 58%,transparent 58.5%),repeating-linear-gradient(165deg,transparent 0 14px,#39c8ff0c 15px 16px);mask-image:linear-gradient(to bottom,#000,transparent 86%)}
+.identity-core{position:absolute;width:108px;height:108px;left:21px;top:40px;border:1px solid #39c8ffaa;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 28px #39c8ff1d,inset 0 0 28px #39c8ff12}
+.identity-core:before,.identity-core:after{content:"";position:absolute;border-radius:50%}.identity-core:before{inset:9px;border:1px dashed #9de7ff88;animation:spin 10s linear infinite}.identity-core:after{inset:23px;border:1px solid #39c8ff77;border-left-color:transparent;border-bottom-color:transparent;animation:spin 4.8s linear infinite reverse}
+.identity-core i{position:absolute;border:1px solid #39c8ff66;border-radius:50%}.identity-core i:nth-child(1){inset:-8px;border-left-color:transparent;border-right-color:transparent;animation:spin 7s linear infinite}.identity-core i:nth-child(2){inset:17px;border-top-color:transparent;animation:spin 5s linear infinite reverse}.identity-core i:nth-child(3){width:5px;height:5px;background:#b7eeff;border:0;box-shadow:0 0 12px #39c8ff;top:12px;left:51px}
+.identity-core span{color:#e9fbff;font:900 15px ui-monospace,monospace;letter-spacing:.1em;text-shadow:0 0 15px #39c8ff}
+.command-readout h3 em{font-style:normal;color:#39c8ff;font-size:.58em;letter-spacing:.13em}
+.authority-line{display:flex;justify-content:space-between;margin-top:15px;padding-top:8px;border-top:1px solid #39c8ff33;color:#6f94a6;font:800 7px ui-monospace,monospace;letter-spacing:.14em}.authority-line b{color:#9de7ff}
+.network-matrix{position:relative;margin:12px 0;border:1px solid #19445a;background:linear-gradient(145deg,#06131b,#03090e);padding:12px;overflow:hidden}
+.network-matrix:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#39c8ff0c,transparent);transform:translateX(-100%);animation:matrixScan 4.5s ease-in-out infinite;pointer-events:none}
+@keyframes matrixScan{50%,100%{transform:translateX(100%)}}
+.matrix-head{display:flex;justify-content:space-between;color:#6f93a5;font:800 7px ui-monospace,monospace;letter-spacing:.12em}.matrix-head b{color:#78dfff}
+.matrix-field{height:120px;position:relative;margin-top:7px;background-image:linear-gradient(#39c8ff09 1px,transparent 1px),linear-gradient(90deg,#39c8ff09 1px,transparent 1px);background-size:20px 20px}
+.matrix-field svg{position:absolute;inset:0;width:100%;height:100%}.matrix-field path{fill:none;stroke:#39c8ff55;stroke-width:1}.matrix-field circle{fill:#06131b;stroke:#8ce5ff;stroke-width:1.5;filter:drop-shadow(0 0 4px #39c8ff)}
+.matrix-core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:46px;height:46px;border:1px solid #39c8ff77;border-radius:50%;display:grid;place-items:center;background:#031018;color:#a9ecff;font:900 7px ui-monospace,monospace;letter-spacing:.1em;box-shadow:0 0 24px #39c8ff24}
+.network-matrix p{margin:5px 0 0;color:#527181;font:700 7px/1.4 ui-monospace,monospace;letter-spacing:.07em}
+[data-role="FOUNDER"] .command-tabs button.active{color:#9de7ff;border-bottom-color:#39c8ff;background:#39c8ff08}
+[data-role="FOUNDER"] .attention-strip{border-left-color:#39c8ff;background:linear-gradient(90deg,#39c8ff14,transparent)}
+[data-role="FOUNDER"] .command-grid article{border-color:#174156;background:linear-gradient(145deg,#061722,#03090e)}
+[data-role="FOUNDER"] .ai-support{border-color:#1c5068;background:linear-gradient(110deg,#08202d,#03090e 65%)}
+@media(max-width:390px){.founder-identity{min-height:286px;grid-template-columns:1fr 1fr;padding-left:8px;padding-right:8px}.founder-portrait{width:128px;height:166px}.identity-core{width:92px;height:92px;left:18px;top:38px}.identity-core i:nth-child(3){left:43px}.command-readout h3{font-size:24px}.matrix-field{height:108px}}
