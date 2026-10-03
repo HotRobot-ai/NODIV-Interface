@@ -10,6 +10,7 @@ const UPLOAD_TERMINAL_SHEET_NAME = 'Upload Terminal Register';
 const PLAYER_ENERGY_SHEET_NAME = 'Player Energy Ledger';
 const EVENT_SHEET_NAME = 'Event Register';
 const EVENT_NODE_CODE_SHEET_NAME = 'Event Node Codes';
+const EVENT_PREFLIGHT_SHEET_NAME = 'Event Preflight';
 
 
 
@@ -324,6 +325,10 @@ function doGet(e) {
     } else if (action === 'eventreadinessrepair') {
 
       result = repairMissingCoreOwnership(e);
+
+    } else if (action === 'eventpreflightconfirm') {
+
+      result = confirmEventPreflight(e);
 
     } else if (action === 'eventinitialize') {
 
@@ -3343,6 +3348,64 @@ function getEventStatus(e) {
   return {ok:true,authenticated:true,event:event||{state:'STANDBY',eventId:'',plannedNodes:0,activeNodes:0},provisionedNodes:listProvisionedNodeIds()};
 }
 
+
+function getEventPreflightSheet() {
+  const ss=SpreadsheetApp.getActiveSpreadsheet();
+  let sheet=ss.getSheetByName(EVENT_PREFLIGHT_SHEET_NAME);
+  if(!sheet){
+    sheet=ss.insertSheet(EVENT_PREFLIGHT_SHEET_NAME);
+    sheet.appendRow(['CHECK ID','CONFIRMED','CONFIRMED BY','CONFIRMED AT','UPDATED AT']);
+  }
+  return sheet;
+}
+
+function readEventPreflight() {
+  const ids=['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'];
+  const state={};
+  ids.forEach(id=>state[id]={id:id,confirmed:false,confirmedBy:'',confirmedAt:''});
+  const sheet=getEventPreflightSheet();
+  if(sheet.getLastRow()>1){
+    sheet.getRange(2,1,sheet.getLastRow()-1,5).getValues().forEach(row=>{
+      const id=String(row[0]||'').trim().toUpperCase();
+      if(!state[id])return;
+      state[id]={id:id,confirmed:String(row[1]||'').toUpperCase()==='TRUE'||row[1]===true,confirmedBy:String(row[2]||''),confirmedAt:row[3]||''};
+    });
+  }
+  return ids.map(id=>state[id]);
+}
+
+function confirmEventPreflight(e) {
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  const actor=session.player;
+  if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Pre-Flight Prüfungen bestätigen.');
+
+  const checkId=String(e.parameter.check||'').trim().toUpperCase();
+  const allowed=['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'];
+  if(!allowed.includes(checkId))return gameplayActionDenied(actor,'INVALID_PREFLIGHT_CHECK','Unbekannte Pre-Flight Prüfung.');
+
+  const readiness=getEventReadiness(e);
+  if(!readiness.systemReady)return gameplayActionDenied(actor,'BASELINE_NOT_READY','System-Baseline muss zuerst vollständig bereit sein.');
+
+  const current=readiness.preflight||[];
+  const physical=current.find(x=>x.id==='PHYSICAL_EQUIPMENT');
+  const config=current.find(x=>x.id==='EVENT_CONFIGURATION');
+  if(checkId==='EVENT_CONFIGURATION'&&(!physical||!physical.confirmed))
+    return gameplayActionDenied(actor,'PREFLIGHT_ORDER','PHYSICAL EQUIPMENT muss zuerst bestätigt werden.');
+  if(checkId==='FINAL_FOUNDER_CONFIRMATION'&&(!physical||!physical.confirmed||!config||!config.confirmed))
+    return gameplayActionDenied(actor,'PREFLIGHT_ORDER','Physical Equipment und Event Configuration müssen zuerst bestätigt werden.');
+
+  const sheet=getEventPreflightSheet(),now=new Date();
+  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,1).getDisplayValues().flat():[];
+  const idx=rows.findIndex(v=>String(v).trim().toUpperCase()===checkId);
+  if(idx>=0)sheet.getRange(idx+2,1,1,5).setValues([[checkId,true,actor.identity,now,now]]);
+  else sheet.appendRow([checkId,true,actor.identity,now,now]);
+
+  appendTransactionLog({eventType:'EVENT_PREFLIGHT_CONFIRMED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:checkId});
+  SpreadsheetApp.flush();
+  return {ok:true,authenticated:true,action:true,status:'PREFLIGHT_CONFIRMED',check:checkId,preflight:readEventPreflight()};
+}
+
 function getEventReadiness(e) {
   const session=resolvePlayerSession(e.parameter.token||'');
   if(!session.ok)return session.response;
@@ -3422,18 +3485,25 @@ function getEventReadiness(e) {
     {id:'ACCESS_SECURITY',ok:accessSecurityOk,value:codeCapacityRequired,detail:accessSecurityOk?(codeCapacityRequired+' frische mechanische Codes für '+nodes.length+' Node(s) reservierbar'):'Code-Set kann nicht sicher vorbereitet werden'}
   ];
   const blocking=checks.filter(x=>!x.ok);
+  const systemReady=blocking.length===0;
+  const preflight=readEventPreflight();
+  const preflightReady=preflight.every(x=>x.confirmed);
+  const eventReady=systemReady&&preflightReady;
   return {
     ok:true,
     authenticated:true,
-    status:blocking.length?'NOT_READY':'SYSTEM_BASELINE_READY',
-    ready:blocking.length===0,
+    status:!systemReady?'NOT_READY':(eventReady?'EVENT_READY':'SYSTEM_BASELINE_READY'),
+    ready:eventReady,
+    systemReady:systemReady,
+    preflightReady:preflightReady,
+    preflight:preflight,
     checks:checks,
     provisionedNodes:nodes,
     coreSummary:{registered:registeredCores,hqReserve:reserveCores,assigned:assignedCores,invalidOwnership:invalidOwnership},
     identitySummary:activeRoles,
     uploadSummary:{hq:activeHqUploads,fop:activeFopUploads},
     coreDiagnostics:coreDiagnostics,
-    manualChecksPending:['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION']
+    manualChecksPending:preflight.filter(x=>!x.confirmed).map(x=>x.id)
   };
 }
 
