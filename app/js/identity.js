@@ -33,15 +33,23 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
  const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
  try{
-  const [energy,preview]=await Promise.all([
-   apiRequest({action:'energybalance',token:sessionToken}),
-   Promise.resolve(null)
-  ]);
-  if(energy?.ok&&secured)secured.textContent=String(energy.balance??0)+' E';
-  if(inv){inv.innerHTML='<div class="pioneer-core loading">NO CORE DATA</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>'}
-  if(total)total.textContent='0 E';
-  if(hqTotal)hqTotal.textContent='0 E';
- }catch(err){if(total)total.textContent='DATA OFFLINE';if(hqTotal)hqTotal.textContent='DATA OFFLINE'}
+  const state=await apiRequest({action:'playerstate',token:sessionToken});
+  if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
+  const capacity=Math.max(0,Number(state.player?.coreCapacity||0)),cores=Array.isArray(state.cores)?state.cores:[];
+  if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
+  if(total)total.textContent=String(state.carriedEnergy??0)+' E';
+  if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
+  if(inv){
+   const slots=[];
+   for(let i=0;i<3;i++){
+    const core=cores[i];
+    if(core)slots.push('<div class="pioneer-core"><span><b>'+String(core.energy??'—')+' E</b>'+String(core.status||'FIELD')+'</span></div>');
+    else if(i<capacity)slots.push('<div class="pioneer-core"><span><b>EMPTY</b>READY</span></div>');
+    else slots.push('<div class="pioneer-core locked">SLOT 0'+(i+1)+'<br>LOCKED</div>');
+   }
+   inv.innerHTML=slots.join('');
+  }
+ }catch(err){if(inv)inv.innerHTML='<div class="pioneer-core loading">LIVE DATA OFFLINE</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>';if(total)total.textContent='— E';if(hqTotal)hqTotal.textContent='— E'}
 });
 window.addEventListener('nodiv-pioneer-scan',()=>{emitNodiv('NFC_ARMED',{target:'#pioneerScan'});const b=document.querySelector('#pioneerScan');if(b){b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';setTimeout(()=>{b.textContent='NFC // JETZT SCANNEN'},1800)}});
 
