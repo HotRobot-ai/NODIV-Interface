@@ -1281,20 +1281,27 @@ function getFounderProvisioningStatus(e) {
   const coreUids=coreSheet.getRange(2,3,200,1).getDisplayValues().flat().map(normalizeUid);
   const coreCount=coreUids.filter(Boolean).length;
 
-  const uploadSheet=getUploadTerminalSheet(),last=Math.max(uploadSheet.getLastRow(),1);
+  const uploadSheet=findUploadTerminalSheet();
   const uploads={UPLOAD_HQ:false,UPLOAD_FOP:false};
-  if(last>1){
-    uploadSheet.getRange(2,1,last-1,6).getDisplayValues().forEach(r=>{
-      const type=String(r[1]||'').trim().toUpperCase(),uid=normalizeUid(r[2]),status=String(r[3]||'').trim().toUpperCase();
-      if(uid&&status==='ACTIVE'&&Object.prototype.hasOwnProperty.call(uploads,type))uploads[type]=true;
-    });
+  if(uploadSheet){
+    const last=Math.max(uploadSheet.getLastRow(),1);
+    if(last>1){
+      uploadSheet.getRange(2,1,last-1,6).getDisplayValues().forEach(r=>{
+        const type=String(r[1]||'').trim().toUpperCase(),uid=normalizeUid(r[2]),status=String(r[3]||'').trim().toUpperCase();
+        if(uid&&status==='ACTIVE'&&Object.prototype.hasOwnProperty.call(uploads,type))uploads[type]=true;
+      });
+    }
   }
   return {ok:true,authenticated:true,session:true,status:'FOUNDER_PROVISIONING_STATUS',nodes:{registered:nodeCount,total:15},cores:{registered:coreCount,total:200},uploads:uploads};
 }
 
+function findUploadTerminalSheet() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(UPLOAD_TERMINAL_SHEET_NAME);
+}
+
 function getUploadTerminalSheet() {
   const ss=SpreadsheetApp.getActiveSpreadsheet();
-  let sheet=ss.getSheetByName(UPLOAD_TERMINAL_SHEET_NAME);
+  let sheet=findUploadTerminalSheet();
   if(!sheet){sheet=ss.insertSheet(UPLOAD_TERMINAL_SHEET_NAME);sheet.getRange(1,1,1,6).setValues([['TERMINAL ID','TYPE','NFC UID','STATUS','REGISTERED BY','REGISTERED AT']]);}
   return sheet;
 }
@@ -2728,7 +2735,7 @@ function getHqUploadPreview(e) {
   return {
     ok: true, authenticated: true, session: true, action: true,
     status: cores.length ? 'HQ_UPLOAD_READY' : 'HQ_UPLOAD_EMPTY',
-    bay: { id: hit.id || 'UPLOAD-HQ-001', type: 'UPLOAD_HQ', status: 'ACTIVE' },
+    bay: { id: hit.id, type: 'UPLOAD_HQ', status: hit.status },
     pioneer: { identity: player.identity, coreCapacity: player.coreCapacity },
     cores: cores.slice(0, 3),
     selectable: cores.length > 0,
