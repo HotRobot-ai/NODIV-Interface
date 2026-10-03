@@ -113,3 +113,39 @@
 [data-role="FOUNDER"] .command-grid article{border-color:#174156;background:linear-gradient(145deg,#061722,#03090e)}
 [data-role="FOUNDER"] .ai-support{border-color:#1c5068;background:linear-gradient(110deg,#08202d,#03090e 65%)}
 @media(max-width:390px){.founder-identity{min-height:286px;grid-template-columns:1fr 1fr;padding-left:8px;padding-right:8px}.founder-portrait{width:128px;height:166px}.identity-core{width:92px;height:92px;left:18px;top:38px}.identity-core i:nth-child(3){left:43px}.command-readout h3{font-size:24px}.matrix-field{height:108px}}
+
+
+/* Founder Command V0.31 — mobile density pass from real-device review */
+[data-role="FOUNDER"] .role-view{padding-top:16px}
+[data-role="FOUNDER"] .role-head{min-height:70px;align-items:center;padding:8px 0 12px;margin-bottom:6px}
+[data-role="FOUNDER"] .role-head small{font-size:7px;letter-spacing:.14em}
+[data-role="FOUNDER"] .role-head h2{font-size:27px;margin-top:3px;letter-spacing:.02em}
+[data-role="FOUNDER"] .role-head p{font-size:9px;margin-top:3px;color:#86a9ba}
+[data-role="FOUNDER"] .role-sigil{width:46px;height:46px}
+[data-role="FOUNDER"] .role-head:after{bottom:-4px}
+[data-role="FOUNDER"] .founder-console{margin-top:8px}
+[data-role="FOUNDER"] .command-tabs{margin-bottom:12px}
+[data-role="FOUNDER"] .command-tabs button{min-height:42px}
+[data-role="FOUNDER"] .founder-stage{box-shadow:inset 0 0 55px #000,0 12px 35px #0007}
+[data-role="FOUNDER"] .founder-portrait{background:
+ radial-gradient(circle at 52% 67%,#e4b34b18 0 2%,transparent 3%),
+ linear-gradient(155deg,transparent 0 42%,#39c8ff22 42.5% 43%,transparent 43.5%),
+ linear-gradient(25deg,transparent 0 66%,#39c8ff16 66.5% 67%,transparent 67.5%),
+ radial-gradient(ellipse at 50% 82%,#d99f3922,transparent 31%),
+ radial-gradient(circle at 50% 28%,#39c8ff2b,transparent 28%),
+ linear-gradient(180deg,#071c29,#02080d);
+}
+[data-role="FOUNDER"] .founder-portrait:before{color:#d7b15c;text-shadow:0 0 12px #d7b15c33}
+[data-role="FOUNDER"] .founder-portrait:after{color:#b38d43}
+[data-role="FOUNDER"] .portrait-energy:after{content:"";position:absolute;left:9px;right:9px;bottom:26px;height:28px;border-top:1px solid #d3a84a44;background:linear-gradient(12deg,transparent 45%,#39c8ff18 46% 48%,transparent 49%)}
+[data-role="FOUNDER"] .network-matrix{box-shadow:inset 0 0 32px #39c8ff08}
+[data-role="FOUNDER"] .matrix-field circle{animation:matrixNode 3.4s ease-in-out infinite}
+[data-role="FOUNDER"] .matrix-field circle:nth-child(2n){animation-delay:-1.4s}
+[data-role="FOUNDER"] .matrix-field circle:nth-child(3n){animation-delay:-2.3s}
+@keyframes matrixNode{50%{stroke:#d9f7ff;filter:drop-shadow(0 0 7px #39c8ff)}}
+@media(max-width:480px){
+ [data-role="FOUNDER"] .role-view{padding-left:12px;padding-right:12px}
+ [data-role="FOUNDER"] .command-stage-top,[data-role="FOUNDER"] .command-stage-foot{left:10px;right:10px}
+ [data-role="FOUNDER"] .command-stage-top{font-size:6px}
+ [data-role="FOUNDER"] .command-stage-foot{font-size:6px}
+}
