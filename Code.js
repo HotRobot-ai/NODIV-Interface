@@ -1804,6 +1804,11 @@ function provisionNodeFromSession(e) {
       throw new Error(nodeId + ' wurde während der Provisionierung bereits belegt.');
     }
 
+    const existingId = String(sheet.getRange(row, 1).getDisplayValue() || '').trim().toUpperCase();
+    if (existingId && existingId !== nodeId) {
+      throw new Error('Node-Slot ' + nodeId + ' enthält eine widersprüchliche ID // ' + existingId);
+    }
+    sheet.getRange(row, 1).setValue(nodeId);
     sheet.getRange(row, 2).setValue(uid);
     sheet.getRange(row, 3).setValue('AVAILABLE');
     sheet.getRange(row, 5).setValue(actor.identity);
@@ -5104,6 +5109,365 @@ function lookupUidGlobally(uid) {
     }
 
   }
+
+
+
+  const uploadSheet = getUploadTerminalSheet();
+  const uploadLast = Math.max(uploadSheet.getLastRow(), 1);
+  if (uploadLast > 1) {
+    const uploadRows = uploadSheet.getRange(2, 1, uploadLast - 1, 6).getValues();
+    for (let i = 0; i < uploadRows.length; i++) {
+      if (normalizeUid(uploadRows[i][2]) === normalizedUid) {
+        return { found:true, uid:normalizedUid, type:'UPLOAD_TERMINAL', id:String(uploadRows[i][0]||'').trim().toUpperCase(), terminalType:String(uploadRows[i][1]||'').trim().toUpperCase(), status:String(uploadRows[i][3]||'').trim().toUpperCase() };
+      }
+    }
+  }
+
+  return {
+
+    found: false,
+
+    uid: normalizedUid
+
+  };
+
+}
+
+
+
+
+
+function assertUidAvailable(uid, allowedType, allowedId) {
+
+  const hit = lookupUidGlobally(uid);
+
+
+
+  if (!hit.found) return true;
+
+
+
+  const sameAssignment =
+
+    allowedType &&
+
+    allowedId &&
+
+    hit.type === String(allowedType).toUpperCase() &&
+
+    hit.id === String(allowedId).trim().toUpperCase();
+
+
+
+  if (sameAssignment) return true;
+
+
+
+  const extra =
+
+    hit.type === 'ACCESS_CARD' && hit.identity
+
+      ? ' // ' + hit.identity
+
+      : '';
+
+
+
+  throw new Error(
+
+    'UID bereits vergeben // ' +
+
+    hit.type +
+
+    ' // ' +
+
+    hit.id +
+
+    extra
+
+  );
+
+}
+
+
+
+
+
+/*
+
+ \* ============================================================
+
+ \* REGISTER SHEET
+
+ \* ============================================================
+
+ */
+
+
+
+function getRegisterSheet() {
+
+
+
+  const ss =
+
+    SpreadsheetApp
+
+      .getActiveSpreadsheet();
+
+
+
+
+
+  const sheet =
+
+    ss.getSheetByName(
+
+      SHEET_NAME
+
+    );
+
+
+
+
+
+  if (!sheet) {
+
+
+
+    throw new Error(
+
+      'Tabellenblatt "' +
+
+      SHEET_NAME +
+
+      '" wurde nicht gefunden.'
+
+    );
+
+
+
+  }
+
+
+
+
+
+  return sheet;
+
+
+
+}
+
+
+
+
+
+
+
+/*
+
+ \* ============================================================
+
+ \* UID NORMALIZATION
+
+ \* ============================================================
+
+ */
+
+
+
+function normalizeUid(value) {
+
+
+
+  let uid =
+
+    String(value || '')
+
+      .trim()
+
+      .toUpperCase()
+
+      .replace(
+
+        /[^0-9A-F]/g,
+
+        ''
+
+      );
+
+
+
+
+
+  if (!uid) {
+
+
+
+    return '';
+
+
+
+  }
+
+
+
+
+
+  return uid
+
+    .match(/.{1,2}/g)
+
+    .join(':');
+
+
+
+}
+
+
+
+
+
+
+
+/*
+
+ \* ============================================================
+
+ \* API RESPONSE
+
+ \* ============================================================
+
+ */
+
+
+
+function createResponse(e, data) {
+
+
+
+  const callback =
+
+    String(
+
+      e.parameter.callback || ''
+
+    ).trim();
+
+
+
+
+
+  /*
+
+   \* JSONP
+
+   */
+
+
+
+  if (callback) {
+
+
+
+    if (
+
+      !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(
+
+        callback
+
+      )
+
+    ) {
+
+
+
+      return ContentService
+
+        .createTextOutput(
+
+          JSON.stringify({
+
+            ok: false,
+
+            error: 'Ungültiger Callback.'
+
+          })
+
+        )
+
+        .setMimeType(
+
+          ContentService.MimeType.JSON
+
+        );
+
+
+
+    }
+
+
+
+
+
+    return ContentService
+
+      .createTextOutput(
+
+        callback +
+
+        '(' +
+
+        JSON.stringify(data) +
+
+        ');'
+
+      )
+
+      .setMimeType(
+
+        ContentService.MimeType.JAVASCRIPT
+
+      );
+
+
+
+  }
+
+
+
+
+
+  /*
+
+   \* Normale JSON-Antwort
+
+   */
+
+
+
+  return ContentService
+
+    .createTextOutput(
+
+      JSON.stringify(
+
+        data,
+
+        null,
+
+        2
+
+      )
+
+    )
+
+    .setMimeType(
+
+      ContentService.MimeType.JSON
+
+    );
 
 
 
