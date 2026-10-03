@@ -29,6 +29,22 @@ export async function startIdentity(){
  }catch(err){btn.disabled=false;btn.textContent='RETRY NFC';msg.textContent=String(err.message||err);emitNodiv('ACCESS_DENIED',{target:'#app'})}
 }
 
+window.addEventListener('nodiv-pioneer-live',async()=>{
+ if(!sessionToken)return;
+ const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
+ try{
+  const [energy,preview]=await Promise.all([
+   apiRequest({action:'energybalance',token:sessionToken}),
+   Promise.resolve(null)
+  ]);
+  if(energy?.ok&&secured)secured.textContent=String(energy.balance??0)+' E';
+  if(inv){inv.innerHTML='<div class="pioneer-core loading">NO CORE DATA</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>'}
+  if(total)total.textContent='0 E';
+  if(hqTotal)hqTotal.textContent='0 E';
+ }catch(err){if(total)total.textContent='DATA OFFLINE';if(hqTotal)hqTotal.textContent='DATA OFFLINE'}
+});
+window.addEventListener('nodiv-pioneer-scan',()=>{emitNodiv('NFC_ARMED',{target:'#pioneerScan'});const b=document.querySelector('#pioneerScan');if(b){b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';setTimeout(()=>{b.textContent='NFC // JETZT SCANNEN'},1800)}});
+
 let founderAccessRole='';
 window.addEventListener('nodiv-founder-accesscard-open',()=>{founderAccessRole='';const role=document.querySelector('#accessCardRole'),id=document.querySelector('#accessCardProvisionId'),hint=document.querySelector('#accessCardProvisionHint'),name=document.querySelector('#accessCardDisplayName');if(role)role.value='';if(name)name.value='';if(id)id.textContent='ROLLE AUSWÄHLEN';if(hint)hint.textContent='Rolle auswählen. NODIV ermittelt automatisch die nächste freie Identität.';});
 window.addEventListener('nodiv-founder-accesscard-role',async e=>{founderAccessRole=String(e.detail?.role||'').trim().toUpperCase();const id=document.querySelector('#accessCardProvisionId'),hint=document.querySelector('#accessCardProvisionHint');if(!founderAccessRole){if(id)id.textContent='ROLLE AUSWÄHLEN';return}try{const r=await apiRequest({action:'nextidentity',role:founderAccessRole});if(!r?.ok||!r.available||!r.nextIdentity)throw new Error(founderAccessRole+' LIMIT ERREICHT');if(id)id.textContent=r.nextIdentity+' // '+founderAccessRole;if(hint)hint.textContent='Nächste freie Identität reserviert erst beim erfolgreichen NFC-Scan // '+r.count+' / '+r.limit+' belegt.';}catch(err){if(id)id.textContent='NICHT VERFÜGBAR';if(hint)hint.textContent=String(err.message||err)}});
