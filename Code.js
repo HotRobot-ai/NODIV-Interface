@@ -8,6 +8,8 @@ const TRANSACTION_LOG_SHEET_NAME = 'Transaction Log';
 const DEPLOYMENT_SHEET_NAME = 'Deployment Register';
 const UPLOAD_TERMINAL_SHEET_NAME = 'Upload Terminal Register';
 const PLAYER_ENERGY_SHEET_NAME = 'Player Energy Ledger';
+const EVENT_SHEET_NAME = 'Event Register';
+const EVENT_NODE_CODE_SHEET_NAME = 'Event Node Codes';
 
 
 
@@ -310,6 +312,18 @@ function doGet(e) {
     } else if (action === 'hqstatus') {
 
       result = getHqLiveOperations(e);
+
+    } else if (action === 'eventstatus') {
+
+      result = getEventStatus(e);
+
+    } else if (action === 'eventinitialize') {
+
+      result = initializeEvent(e);
+
+    } else if (action === 'eventactivate') {
+
+      result = activateEvent(e);
 
     } else {
 
@@ -3219,6 +3233,148 @@ function getNodeGameplayStatus(nodeId) {
 
 
 /*
+ * ============================================================
+ * EVENT CONTROL / MECHANICAL NODE CODES V0.1
+ * ============================================================
+ * Lifecycle: STANDBY -> INITIALIZED -> FIELD_ACTIVE.
+ * Codes are generated once at initialization and never logged.
+ * Five globally unique four-digit codes are reserved per event Node.
+ */
+function getEventRegisterSheet() {
+  const ss=SpreadsheetApp.getActiveSpreadsheet();
+  let sheet=ss.getSheetByName(EVENT_SHEET_NAME);
+  if(!sheet){
+    sheet=ss.insertSheet(EVENT_SHEET_NAME);
+    sheet.getRange(1,1,1,10).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT']]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getEventNodeCodeSheet() {
+  const ss=SpreadsheetApp.getActiveSpreadsheet();
+  let sheet=ss.getSheetByName(EVENT_NODE_CODE_SHEET_NAME);
+  if(!sheet){
+    sheet=ss.insertSheet(EVENT_NODE_CODE_SHEET_NAME);
+    sheet.getRange(1,1,1,13).setValues([['EVENT ID','NODE ID','PRIMARY','RESERVE 1','RESERVE 2','RESERVE 3','RESERVE 4','ACTIVE SLOT','PENDING SLOT','CHANGE STATUS','ASSIGNED FOP','INSTALLED AT','UPDATED AT']]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function readCurrentEvent() {
+  const sheet=getEventRegisterSheet();
+  if(sheet.getLastRow()<2)return null;
+  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,10).getValues();
+  for(let i=rows.length-1;i>=0;i--){
+    const state=String(rows[i][1]||'').trim().toUpperCase();
+    if(['STANDBY','INITIALIZED','FIELD_ACTIVE'].includes(state)){
+      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||'')};
+    }
+  }
+  return null;
+}
+
+function listProvisionedNodeIds() {
+  const sheet=getNodeRegisterSheet();
+  const rows=sheet.getRange(2,1,15,3).getValues(), ids=[];
+  rows.forEach(r=>{const id=String(r[0]||'').trim().toUpperCase(),uid=normalizeUid(r[1]||'');if(/^NODE-\d{3}$/.test(id)&&uid)ids.push(id);});
+  return ids;
+}
+
+function generateMechanicalCode(used) {
+  for(let tries=0;tries<200;tries++){
+    const hex=Utilities.getUuid().replace(/-/g,'').slice(0,8);
+    const value=parseInt(hex,16)%10000;
+    const code=String(value).padStart(4,'0');
+    if(!used[code]){used[code]=true;return code;}
+  }
+  throw new Error('Eindeutiger Node-Code konnte nicht erzeugt werden.');
+}
+
+function getEventStatus(e) {
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')return gameplayActionDenied(session.player,'ROLE_DENIED','Nur FOUNDER kann den Eventstatus abrufen.');
+  const event=readCurrentEvent();
+  return {ok:true,authenticated:true,event:event||{state:'STANDBY',eventId:'',plannedNodes:0,activeNodes:0},provisionedNodes:listProvisionedNodeIds()};
+}
+
+function initializeEvent(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann ein Event initialisieren.');
+
+    const existing=readCurrentEvent();
+    if(existing&&['INITIALIZED','FIELD_ACTIVE'].includes(existing.state))return gameplayActionDenied(actor,'EVENT_ALREADY_INITIALIZED','Es existiert bereits ein initialisiertes oder aktives Event.');
+
+    const nodes=listProvisionedNodeIds();
+    if(!nodes.length)return gameplayActionDenied(actor,'NO_PROVISIONED_NODES','Kein provisionierter Node vorhanden.');
+
+    const requested=String(e.parameter.nodes||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+    const selected=requested.length?requested:nodes.slice();
+    const invalid=selected.filter(id=>!nodes.includes(id));
+    if(invalid.length)throw new Error('Nicht provisionierte Nodes: '+invalid.join(', '));
+    if(selected.length>15)throw new Error('Maximal 15 Nodes pro Event.');
+
+    const eventId='EVT-'+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyyMMdd-HHmmss')+'-'+Utilities.getUuid().slice(0,4).toUpperCase();
+    const used={}, codeSheet=getEventNodeCodeSheet(), now=new Date();
+    selected.forEach(nodeId=>{
+      const codes=[];for(let i=0;i<5;i++)codes.push(generateMechanicalCode(used));
+      codeSheet.appendRow([eventId,nodeId,codes[0],codes[1],codes[2],codes[3],codes[4],'','PRIMARY','ASSIGNED_FOR_INSTALL','', '',now]);
+    });
+
+    const eventSheet=getEventRegisterSheet();
+    eventSheet.appendRow([eventId,'INITIALIZED',now,now,'',actor.identity,selected.length,0,'INITIALIZED_BASELINE',now]);
+    appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'});
+    SpreadsheetApp.flush();
+    return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected}};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+function activateEvent(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Field Operations aktivieren.');
+    const event=readCurrentEvent();
+    if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Event muss zuerst initialisiert werden.');
+
+    const codes=getEventNodeCodeSheet(), rows=codes.getLastRow()>1?codes.getRange(2,1,codes.getLastRow()-1,13).getValues():[];
+    const pending=rows.filter(r=>String(r[0])===event.eventId&&String(r[9]||'').toUpperCase()!=='ACTIVE');
+    if(pending.length)return gameplayActionDenied(actor,'NODES_NOT_INSTALLED',pending.length+' Node(s) sind noch nicht physisch installiert/bestätigt.');
+
+    const sheet=getEventRegisterSheet(), now=new Date();
+    sheet.getRange(event.row,2).setValue('FIELD_ACTIVE');
+    sheet.getRange(event.row,5).setValue(now);
+    sheet.getRange(event.row,8).setValue(event.plannedNodes);
+    sheet.getRange(event.row,10).setValue(now);
+    appendTransactionLog({eventType:'EVENT_FIELD_ACTIVE',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // Field Operations activated'});
+    SpreadsheetApp.flush();
+    return {ok:true,authenticated:true,action:true,status:'FIELD_ACTIVE',eventId:event.eventId};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+function findEventNodeCode(eventId,nodeId) {
+  const sheet=getEventNodeCodeSheet();
+  if(sheet.getLastRow()<2)return null;
+  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues();
+  for(let i=rows.length-1;i>=0;i--){
+    if(String(rows[i][0])===String(eventId)&&String(rows[i][1]).trim().toUpperCase()===String(nodeId).trim().toUpperCase()){
+      return {row:i+2,eventId:String(rows[i][0]),nodeId:String(rows[i][1]),codes:[String(rows[i][2]),String(rows[i][3]),String(rows[i][4]),String(rows[i][5]),String(rows[i][6])],activeSlot:String(rows[i][7]||''),pendingSlot:String(rows[i][8]||''),changeStatus:String(rows[i][9]||'').toUpperCase()};
+    }
+  }
+  return null;
+}
+
+/*
  * NODE ACCESS AUTHORIZATION V0.1
  * A mechanical Node code is never an authorization credential.
  * Gameplay must be authorized server-side for the concrete identity + Node.
@@ -3229,38 +3385,24 @@ function getNodeGameplayStatus(nodeId) {
 function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
   const id=String(nodeId||'').trim().toUpperCase();
   const status=String(nodeStatus||'UNDEFINED').trim().toUpperCase();
+  if(!id)return {allowed:false,reason:'NODE_ID_INVALID',message:'Node konnte nicht eindeutig identifiziert werden.'};
+  if(!Boolean(player.nodeAccess))return {allowed:false,reason:'NODE_ROLE_ACCESS_DENIED',message:'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.'};
 
-  if(!id) return {allowed:false,reason:'NODE_ID_INVALID',message:'Node konnte nicht eindeutig identifiziert werden.'};
+  const event=readCurrentEvent();
+  if(!event||event.state!=='FIELD_ACTIVE')return {allowed:false,reason:'EVENT_NOT_FIELD_ACTIVE',message:'Node erkannt. Field Operations sind noch nicht aktiv.'};
 
-  if(!Boolean(player.nodeAccess)) {
-    return {allowed:false,reason:'NODE_ROLE_ACCESS_DENIED',message:'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.'};
-  }
+  const eventNode=findEventNodeCode(event.eventId,id);
+  if(!eventNode)return {allowed:false,reason:'NODE_NOT_IN_ACTIVE_EVENT',message:'Node erkannt. Dieser Node gehört nicht zum aktiven Event.'};
+  if(eventNode.changeStatus!=='ACTIVE'||!eventNode.activeSlot)return {allowed:false,reason:'NODE_INSTALLATION_NOT_CONFIRMED',message:'Node erkannt. Die physische Installation ist noch nicht bestätigt.'};
 
-  if(['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(status)) {
-    return {
-      allowed:false,
-      reason:'NODE_NOT_FIELD_ACTIVE',
-      message:status==='AVAILABLE'
-        ? 'Node erkannt. Der Node ist provisioniert, aber noch nicht für den Feldbetrieb freigegeben.'
-        : 'Node erkannt. Der Node ist aktuell nicht für den Feldbetrieb freigegeben.'
-    };
-  }
+  if(['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(status))return {allowed:false,reason:'NODE_NOT_FIELD_ACTIVE',message:'Node erkannt. Der Node ist aktuell nicht für den Feldbetrieb freigegeben.'};
 
-  /*
-   * Next layers belong here, in this order:
-   * 1) active event / Node assigned to event
-   * 2) identity-specific mission / discovery / progression entitlement
-   * 3) global Node stabilization window
-   * 4) personal Node cooldown (Exchange / Restore)
-   * 5) release current ACTIVE mechanical code
-   */
-  return {
-    allowed:true,
-    reason:'NODE_ACCESS_GRANTED',
-    message:'Node erkannt. Server-seitige Basisfreigabe erteilt.'
-  };
+  const slotMap={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4};
+  const codeIndex=slotMap[eventNode.activeSlot];
+  if(codeIndex===undefined)return {allowed:false,reason:'NODE_CODE_STATE_INVALID',message:'Node erkannt. Zugangscode-Status ist ungültig.'};
+
+  return {allowed:true,reason:'NODE_ACCESS_GRANTED',message:'Node erkannt. Server-seitige Freigabe erteilt.',accessCode:eventNode.codes[codeIndex]};
 }
-
 
 function provisionAccessCardFromSession(e) {
   const lock = LockService.getScriptLock();
