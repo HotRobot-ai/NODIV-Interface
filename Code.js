@@ -7,6 +7,7 @@ const ACCESS_CARD_SHEET_NAME = 'Access Card Register';
 const TRANSACTION_LOG_SHEET_NAME = 'Transaction Log';
 const DEPLOYMENT_SHEET_NAME = 'Deployment Register';
 const UPLOAD_TERMINAL_SHEET_NAME = 'Upload Terminal Register';
+const PLAYER_ENERGY_SHEET_NAME = 'Player Energy Ledger';
 
 
 
@@ -269,6 +270,10 @@ function doGet(e) {
     } else if (action === 'coredeposit') {
 
       result = depositOwnedCoreToReserve(e);
+
+    } else if (action === 'energybalance') {
+
+      result = getPlayerEnergyBalance(e);
 
     } else if (action === 'uploadpreview') {
 
@@ -2622,6 +2627,64 @@ function routeCoreGameplay(player,core) {
  * derives selectable cores from authoritative ownership; the
  * browser cannot invent core IDs or energy values.
  */
+/*
+ * ============================================================
+ * PLAYER ENERGY LEDGER V1.0
+ * ============================================================
+ * Server-side source of truth for permanently SECURED energy.
+ * One BALANCE row per identity. All future credits/debits must
+ * pass through bookPlayerEnergy() while holding ScriptLock.
+ */
+function getPlayerEnergyLedgerSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(PLAYER_ENERGY_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(PLAYER_ENERGY_SHEET_NAME);
+    sheet.appendRow(['Entry ID','Timestamp','Identity','Role','Type','Amount','Balance After','Reference','Details']);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function readPlayerEnergyBalance(identity) {
+  const wanted = String(identity || '').trim().toUpperCase();
+  if (!wanted) throw new Error('Identity fehlt.');
+  const sheet = getPlayerEnergyLedgerSheet();
+  const last = sheet.getLastRow();
+  if (last < 2) return 0;
+  const rows = sheet.getRange(2,1,last-1,9).getValues();
+  for (let i=rows.length-1;i>=0;i--) {
+    if (String(rows[i][2]||'').trim().toUpperCase() === wanted) {
+      const balance = Number(rows[i][6] || 0);
+      if (!Number.isFinite(balance) || balance < 0) throw new Error('Energy Ledger enthält einen ungültigen Kontostand.');
+      return balance;
+    }
+  }
+  return 0;
+}
+
+function bookPlayerEnergy(data) {
+  const identity = String(data.identity || '').trim().toUpperCase();
+  const role = String(data.role || '').trim().toUpperCase();
+  const type = String(data.type || '').trim().toUpperCase();
+  const amount = Number(data.amount);
+  if (!identity || !role || !type) throw new Error('Energy Ledger Buchung ist unvollständig.');
+  if (!Number.isFinite(amount) || amount === 0) throw new Error('Energy Ledger Betrag ist ungültig.');
+  const before = readPlayerEnergyBalance(identity);
+  const after = before + amount;
+  if (after < 0) throw new Error('SECURED ENERGY reicht für diese Aktion nicht aus.');
+  const entryId = 'EN-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') + '-' + Utilities.getUuid().substring(0,8).toUpperCase();
+  getPlayerEnergyLedgerSheet().appendRow([entryId,new Date(),identity,role,type,amount,after,String(data.reference||''),String(data.details||'')]);
+  return {entryId:entryId,before:before,amount:amount,balance:after};
+}
+
+function getPlayerEnergyBalance(e) {
+  const session = resolvePlayerSession(e.parameter.token || '');
+  if (!session.ok) return session.response;
+  const player = session.player;
+  return {ok:true,authenticated:true,session:true,identity:player.identity,securedEnergy:readPlayerEnergyBalance(player.identity)};
+}
+
 function getHqUploadPreview(e) {
   const session = resolvePlayerSession(e.parameter.token || '');
   if (!session.ok) return session.response;
