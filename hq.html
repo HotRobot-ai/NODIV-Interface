@@ -126,24 +126,58 @@ window.addEventListener('load', function () {
 <a-cylinder position="0 .92 -2.25" radius="1.75" height=".12" material="color:#071116;metalness:.8;roughness:.25"></a-cylinder>
 <a-cylinder position="0 .39 -2.25" radius=".52" height="1.1" material="color:#061015;metalness:.8;roughness:.3"></a-cylinder>
 
-<!-- holographic Würzburg-ish city abstraction -->
-<a-entity position="0 1.12 -2.25">
-  <a-cylinder radius="1.45" height=".025" material="color:#00bfe8;opacity:.12;transparent:true;emissive:#00dfff;emissiveIntensity:.7"></a-cylinder>
-  <a-entity>
-    <a-box position="-.55 .18 -.15" width=".34" height=".36" depth=".34" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
-    <a-box position=".18 .28 .1" width=".5" height=".56" depth=".4" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
-    <a-box position=".65 .14 -.35" width=".28" height=".28" depth=".45" material="color:#36dcff;opacity:.55;transparent:true;wireframe:true"></a-box>
-    <a-box position="-.15 .12 .58" width=".75" height=".24" depth=".3" material="color:#36dcff;opacity:.5;transparent:true;wireframe:true"></a-box>
-    <a-cone position="-.75 .38 -.58" radius-bottom=".32" radius-top=".05" height=".75" material="color:#57e8ff;opacity:.42;transparent:true;wireframe:true"></a-cone>
+<!-- holographic Würzburg tactical city model -->
+<a-entity position="0 1.08 -2.25" scale=".82 .82 .82">
+  <a-cylinder radius="1.62" height=".025" material="color:#00bfe8;opacity:.08;transparent:true;emissive:#00dfff;emissiveIntensity:.55"></a-cylinder>
+  <!-- Main: segmented luminous river -->
+  <a-box position="-1.18 .055 .46" rotation="0 18 0" width=".72" height=".018" depth=".15" material="color:#38dfff;opacity:.42;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="-.57 .055 .24" rotation="0 20 0" width=".65" height=".018" depth=".15" material="color:#38dfff;opacity:.48;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="-.02 .055 .02" rotation="0 25 0" width=".58" height=".018" depth=".15" material="color:#38dfff;opacity:.52;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position=".55 .055 -.17" rotation="0 14 0" width=".65" height=".018" depth=".15" material="color:#38dfff;opacity:.48;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="1.18 .055 -.38" rotation="0 20 0" width=".72" height=".018" depth=".15" material="color:#38dfff;opacity:.42;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+
+  <!-- Festung Marienberg -->
+  <a-entity position="-.9 .08 -.08">
+    <a-box position="0 .24 0" width=".58" height=".32" depth=".42" material="color:#64eaff;opacity:.34;transparent:true;wireframe:true"></a-box>
+    <a-box position="-.25 .41 -.12" width=".12" height=".3" depth=".12" material="color:#8ff3ff;opacity:.52;transparent:true;wireframe:true"></a-box>
+    <a-box position=".24 .4 .1" width=".12" height=".28" depth=".12" material="color:#8ff3ff;opacity:.52;transparent:true;wireframe:true"></a-box>
+    <a-text value="FESTUNG" width=".72" align="center" position="0 .61 0" color="#8cefff"></a-text>
   </a-entity>
-  <a-torus radius="1.2" radius-tubular=".008" rotation="90 0 0" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:90 360 0;loop:true;dur:12000;easing:linear"></a-torus>
-  <a-text value="WUERZBURG // LIVE GRID" align="center" width="2.7" position="0 .85 0" color="#67eaff"></a-text>
-  <a-entity position=".42 .2 -.18">
-    <a-cylinder id="holoNodeBeacon" holo-pulse radius=".045" height=".42" material="color:#67eaff;opacity:.9;transparent:true;emissive:#00dfff;emissiveIntensity:1.2"></a-cylinder>
-    <a-ring radius-inner=".11" radius-outer=".125" rotation="-90 0 0" position="0 -.2 0" material="color:#67eaff;opacity:.8;transparent:true;emissive:#00dfff;emissiveIntensity:1"></a-ring>
-    <a-text id="holoNodeTitle" value="NODE-001 // SYNC" width="1.4" position=".1 .18 0" color="#d8faff"></a-text>
-    <a-text id="holoNodeEnergy" value="ENERGY  //  --" width="1.1" position=".1 .03 0" color="#86ddea"></a-text>
+
+  <!-- Alte Mainbrücke -->
+  <a-entity position="-.38 .13 .18" rotation="0 -18 0">
+    <a-box width=".72" height=".035" depth=".075" material="color:#a4f5ff;opacity:.72;transparent:true;emissive:#00bcd4;emissiveIntensity:.55"></a-box>
+    <a-text value="ALTE MAINBRUECKE" width=".66" align="center" position="0 .13 0" color="#74ddea"></a-text>
   </a-entity>
+
+  <!-- Altstadt block field -->
+  <a-entity position=".34 .06 .13">
+    <a-box position="-.28 .11 .35" width=".18" height=".22" depth=".16" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <a-box position="0 .17 .31" width=".2" height=".34" depth=".18" material="color:#45d9f2;opacity:.46;transparent:true;wireframe:true"></a-box>
+    <a-box position=".31 .1 .25" width=".22" height=".2" depth=".16" material="color:#45d9f2;opacity:.4;transparent:true;wireframe:true"></a-box>
+    <a-box position="-.18 .1 -.02" width=".22" height=".2" depth=".2" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <a-box position=".18 .14 -.05" width=".26" height=".28" depth=".2" material="color:#45d9f2;opacity:.44;transparent:true;wireframe:true"></a-box>
+    <a-box position=".5 .09 -.13" width=".2" height=".18" depth=".24" material="color:#45d9f2;opacity:.38;transparent:true;wireframe:true"></a-box>
+    <a-box position=".02 .09 -.36" width=".2" height=".18" depth=".2" material="color:#45d9f2;opacity:.38;transparent:true;wireframe:true"></a-box>
+    <a-box position=".38 .13 -.42" width=".22" height=".26" depth=".18" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <!-- Dom landmark -->
+    <a-box position=".06 .3 .04" width=".2" height=".48" depth=".24" material="color:#87efff;opacity:.56;transparent:true;wireframe:true"></a-box>
+    <a-cone position="-.01 .67 .04" radius-bottom=".055" radius-top="0" height=".28" material="color:#9af5ff;opacity:.6;transparent:true;wireframe:true"></a-cone>
+    <a-cone position=".13 .67 .04" radius-bottom=".055" radius-top="0" height=".28" material="color:#9af5ff;opacity:.6;transparent:true;wireframe:true"></a-cone>
+    <a-text value="ALTSTADT" width=".82" align="center" position=".18 .79 .18" color="#69ddec"></a-text>
+  </a-entity>
+
+  <a-ring radius="1.48" radius-tubular=".006" rotation="90 0 0" material="color:#00e5ff;opacity:.38;transparent:true;emissive:#00dfff;emissiveIntensity:.7" animation="property:rotation;to:90 360 0;loop:true;dur:18000;easing:linear"></a-ring>
+  <a-ring radius=".92" radius-tubular=".004" rotation="90 0 0" material="color:#00e5ff;opacity:.22;transparent:true"></a-ring>
+
+  <!-- live NODIV node layer -->
+  <a-entity position=".55 .22 -.24">
+    <a-cylinder id="holoNodeBeacon" holo-pulse radius=".045" height=".48" material="color:#67eaff;opacity:.92;transparent:true;emissive:#00dfff;emissiveIntensity:1.2"></a-cylinder>
+    <a-ring radius-inner=".12" radius-outer=".14" rotation="-90 0 0" position="0 -.23 0" material="color:#67eaff;opacity:.9;transparent:true;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+    <a-text id="holoNodeTitle" value="NODE-001 // SYNC" width="1.45" position=".12 .22 0" color="#d8faff"></a-text>
+    <a-text id="holoNodeEnergy" value="ENERGY  //  --" width="1.1" position=".12 .06 0" color="#86ddea"></a-text>
+  </a-entity>
+  <a-text value="WUERZBURG // TACTICAL GRID" align="center" width="2.7" position="0 1.02 0" color="#67eaff"></a-text>
 </a-entity>
 
 <!-- front wall -->
