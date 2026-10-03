@@ -191,7 +191,7 @@ async function refreshFounderEventStatus(){
 window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEventStatus,0)});
 window.addEventListener('nodiv-founder-event-readiness',async()=>{
  if(!sessionToken)return;
- const btn=document.querySelector('#checkEventReadiness'),init=document.querySelector('#initializeEvent');
+ const btn=document.querySelector('#checkEventReadiness'),init=document.querySelector('#initializeEvent'),repair=document.querySelector('#repairCoreOwnership');
  if(btn){btn.disabled=true;btn.textContent='PRÜFUNG LÄUFT'}
  try{
   const r=await apiRequest({action:'eventreadiness',token:sessionToken});
@@ -200,6 +200,7 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   const coreDiagnostics=Array.isArray(r.coreDiagnostics)?r.coreDiagnostics:[];
   const badCores=coreDiagnostics.filter(x=>!x.ok);
   const summary=r.coreSummary||{};
+  if(repair)repair.hidden=(summary.invalidOwnership||0)===0;
   if(r.ready){
    const coreLine='N_CORES: '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen';
    showFounderResult('BASELINE READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // ')+' // '+coreLine,true,btn);
@@ -212,6 +213,25 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   }
  }catch(err){showFounderResult('READINESS FEHLER',String(err.message||err),false,btn);if(init)init.disabled=true}
  finally{if(btn){btn.disabled=false;btn.textContent='READINESS CHECK'}}
+});
+window.addEventListener('nodiv-founder-ownership-repair',async()=>{
+ if(!sessionToken)return;
+ const btn=document.querySelector('#repairCoreOwnership'),init=document.querySelector('#initializeEvent');
+ if(btn){btn.disabled=true;btn.textContent='OWNERSHIP WIRD REPARIERT'}
+ try{
+  const r=await apiRequest({action:'eventreadinessrepair',token:sessionToken});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'REPARATUR FEHLGESCHLAGEN');
+  const repaired=Array.isArray(r.repaired)?r.repaired:[];
+  showFounderResult(
+   repaired.length?'OWNERSHIP REPARIERT':'KEINE REPARATUR NÖTIG',
+   repaired.length?repaired.map(x=>x.id+(x.energy?' · '+x.energy+' E':'')+' → HQ RESERVE').join(' // '):'Keine registrierten Cores ohne Ownership gefunden.',
+   true,btn
+  );
+  if(btn)btn.hidden=true;
+  if(init)init.disabled=true;
+  document.querySelector('#checkEventReadiness')?.click();
+ }catch(err){showFounderResult('REPARATUR FEHLER',String(err.message||err),false,btn)}
+ finally{if(btn){btn.disabled=false;btn.textContent='OWNERSHIP REPARIEREN'}}
 });
 window.addEventListener('nodiv-founder-event-initialize',async()=>{
  if(!sessionToken)return;
