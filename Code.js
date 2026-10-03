@@ -291,6 +291,10 @@ function doGet(e) {
 
       result = getPendingPlayerDeployments(e);
 
+    } else if (action === 'provisionaccesscard') {
+
+      result = provisionAccessCardFromSession(e);
+
     } else if (action === 'provisionnode') {
 
       result = provisionNodeFromSession(e);
@@ -3154,6 +3158,45 @@ function getNodeGameplayStatus(nodeId) {
   return 'UNDEFINED';
 }
 
+
+function provisionAccessCardFromSession(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const session = resolvePlayerSession(e.parameter.token || '');
+    if (!session.ok) return session.response;
+    const actor = session.player;
+    if (actor.role !== 'FOUNDER') return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Access Cards über das Command Office provisionieren.');
+
+    const newUid = normalizeUid(e.parameter.uid || '');
+    const role = String(e.parameter.role || '').trim().toUpperCase();
+    const displayName = String(e.parameter.displayName || '').trim();
+    if (!newUid) throw new Error('Neue Access Card UID fehlt.');
+
+    const rules = getRoleRules(role);
+    const config = ROLE_CONFIG[role];
+    if (!rules || !config || !config.provisionable) throw new Error('Diese Rolle kann nicht als neue Identität ausgegeben werden.');
+
+    assertUidAvailable(newUid);
+    const identityInfo = calculateNextIdentity(role);
+    if (!identityInfo.available) throw new Error(role + ' LIMIT ERREICHT // ' + identityInfo.count + ' VON ' + identityInfo.limit);
+
+    const identity = identityInfo.nextIdentity;
+    const sheet = getAccessCardRegisterSheet();
+    const lastRow = Math.max(sheet.getLastRow(), 2);
+    const rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+    const cardId = findNextAccessCardId(rows);
+    const now = new Date();
+
+    sheet.appendRow([cardId,identity,role,newUid,'ACTIVE',displayName,rules.coreCapacity,rules.nodeAccess,rules.catchAccess,'',now,'Issued via Founder Command Office']);
+    appendTransactionLog({eventType:'REGISTER',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:'ACCESS_CARD '+cardId+' // '+identity+' // '+role+' // UID '+newUid});
+    SpreadsheetApp.flush();
+
+    return {ok:true,authenticated:true,session:true,action:true,status:'ACCESS_CARD_PROVISIONED',card:{cardId:cardId,identity:identity,role:role,displayName:displayName||identity,uid:newUid,coreCapacity:rules.coreCapacity,nodeAccess:rules.nodeAccess,catchAccess:rules.catchAccess},roleCount:identityInfo.count+1,roleLimit:identityInfo.limit};
+  } finally {
+    try { lock.releaseLock(); } catch (error) {}
+  }
+}
 
 function registerAccessCard(e) {
 
