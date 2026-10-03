@@ -317,6 +317,10 @@ function doGet(e) {
 
       result = getEventStatus(e);
 
+    } else if (action === 'eventreadiness') {
+
+      result = getEventReadiness(e);
+
     } else if (action === 'eventinitialize') {
 
       result = initializeEvent(e);
@@ -3329,6 +3333,35 @@ function getEventStatus(e) {
   if(session.player.role!=='FOUNDER')return gameplayActionDenied(session.player,'ROLE_DENIED','Nur FOUNDER kann den Eventstatus abrufen.');
   const event=readCurrentEvent();
   return {ok:true,authenticated:true,event:event||{state:'STANDBY',eventId:'',plannedNodes:0,activeNodes:0},provisionedNodes:listProvisionedNodeIds()};
+}
+
+function getEventReadiness(e) {
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  const actor=session.player;
+  if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Event Readiness prüfen.');
+
+  const nodes=listProvisionedNodeIds();
+  const coreSheet=getRegisterSheet();
+  const coreRows=coreSheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
+  let registeredCores=0, reserveCores=0, invalidOwnership=0;
+  coreRows.forEach(row=>{
+    const uid=normalizeUid(row[CORE_COL.UID-1]);
+    if(!uid)return;
+    registeredCores++;
+    const ownerType=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();
+    const ownerId=String(row[CORE_COL.OWNER_ID-1]||'').trim().toUpperCase();
+    if(ownerType==='NODIV_RESERVE'&&ownerId==='HQ')reserveCores++;
+    if(!ownerType||!ownerId)invalidOwnership++;
+  });
+
+  const checks=[
+    {id:'NODES',ok:nodes.length>0,value:nodes.length,detail:nodes.length+' provisioniert'},
+    {id:'N_CORES',ok:registeredCores>0&&invalidOwnership===0,value:registeredCores,detail:registeredCores+' registriert // '+reserveCores+' HQ Reserve'},
+    {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?'Ownership unvollständig':'sauber'}
+  ];
+  const blocking=checks.filter(x=>!x.ok);
+  return {ok:true,authenticated:true,status:blocking.length?'NOT_READY':'BASELINE_READY',ready:blocking.length===0,checks:checks,provisionedNodes:nodes};
 }
 
 function initializeEvent(e) {
