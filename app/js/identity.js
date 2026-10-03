@@ -66,10 +66,10 @@ window.addEventListener('nodiv-founder-startcore-scan',async()=>{
    try{const identity=await apiRequest({action:'identify',uid:cardUid});if(!identity?.ok||!identity?.authenticated||String(identity.role||'').toUpperCase()!=='PIONEER')throw new Error('Gescannte Karte ist keine aktive PIONEER Access Card.');startCorePioneerUid=cardUid;if(state)state.textContent=(identity.identity||'PIONEER')+' // CORE SCAN';if(hint)hint.textContent='Pioneer verifiziert. Jetzt den N-Core an das Smartphone halten.';if(btn)btn.textContent='N-CORE SCANNEN';
     const coreController=new AbortController(),coreReader=new NDEFReader();await coreReader.scan({signal:coreController.signal});let coreHandling=false;
     coreReader.onreading=async ce=>{if(coreHandling)return;coreHandling=true;coreController.abort();const coreUid=String(ce.serialNumber||'').trim();if(!coreUid)throw new Error('N-Core UID fehlt.');
-     try{const lookup=await apiRequest({action:'uidlookup',uid:coreUid});if(!lookup?.ok||!lookup?.found||lookup.type!=='N_CORE'||!lookup.id)throw new Error('Gescannter Tag ist kein registrierter N-Core.');const result=await apiRequest({action:'startcore',core:lookup.id,pioneerUid:startCorePioneerUid,uid:coreUid});if(!result?.ok)throw new Error(result?.error||result?.message||'START-CORE AUSGABE FEHLGESCHLAGEN');if(state)state.textContent=(result.identity||identity.identity||'PIONEER')+' // '+lookup.id+' AUSGEGEBEN';if(hint)hint.textContent=lookup.id+' wurde serverseitig dem Pioneer zugeordnet.';if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='WEITEREN START-CORE AUSGEBEN'}showFounderResult('START-CORE AUSGEGEBEN',(result.identity||identity.identity)+' // '+lookup.id,true);emitNodiv('CORE_TRANSFERRED',{target:'#startCoreIssuer'});}
-     catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false)}
+     try{const lookup=await apiRequest({action:'uidlookup',uid:coreUid});if(!lookup?.ok||!lookup?.found||lookup.type!=='N_CORE'||!lookup.id)throw new Error('Gescannter Tag ist kein registrierter N-Core.');const result=await apiRequest({action:'startcore',core:lookup.id,pioneerUid:startCorePioneerUid,uid:coreUid});if(!result?.ok)throw new Error(result?.error||result?.message||'START-CORE AUSGABE FEHLGESCHLAGEN');if(state)state.textContent=(result.identity||identity.identity||'PIONEER')+' // '+lookup.id+' AUSGEGEBEN';if(hint)hint.textContent=lookup.id+' wurde serverseitig dem Pioneer zugeordnet.';if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='WEITEREN START-CORE AUSGEBEN'}showFounderResult('START-CORE AUSGEGEBEN',(result.identity||identity.identity)+' // '+lookup.id,true,btn);emitNodiv('CORE_TRANSFERRED',{target:'#startCoreIssuer'});}
+     catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false,btn)}
     };
-   }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false)}
+   }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}showFounderResult('START-CORE ABGEWIESEN',String(err.message||err),false,btn)}
   };
  }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='AUSGABE ERNEUT STARTEN'}}
 });
@@ -103,14 +103,14 @@ window.addEventListener('nodiv-founder-accesscard-scan',async()=>{
     if(id)id.textContent=(r.card?.identity||'IDENTITY')+' // '+(r.card?.role||role);
     if(hint)hint.textContent='REGISTRIERT // '+(r.card?.identity||'')+' // UID '+uid;
     if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='WEITERE ACCESS CARD REGISTRIEREN'}
-    showFounderResult('ACCESS CARD REGISTRIERT',(r.card?.identity||'')+' // '+(r.card?.role||role),true);
+    showFounderResult('ACCESS CARD REGISTRIERT',(r.card?.identity||'')+' // '+(r.card?.role||role),true,btn);
     emitNodiv('IDENTITY_VERIFIED',{target:'#accessCardProvisioner'});
     founderAccessRole='';
     const roleSelect=document.querySelector('#accessCardRole');if(roleSelect)roleSelect.value='';
    }catch(err){
     if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}
     if(hint)hint.textContent='GELESENE UID // '+uid+' // '+String(err.message||err);
-    showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false);
+    showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false,btn);
    }
   };
  }catch(err){if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err)}
@@ -118,10 +118,10 @@ window.addEventListener('nodiv-founder-accesscard-scan',async()=>{
 window.addEventListener('nodiv-founder-register-antenna',async()=>{
  if(!sessionToken)return;
  const btn=document.querySelector('#registerAntenna');
- if(!('NDEFReader' in window)){showFounderResult('NFC NICHT VERFÜGBAR','Android + Chrome erforderlich.',false);return}
+ if(!('NDEFReader' in window)){showFounderResult('NFC NICHT VERFÜGBAR','Android + Chrome erforderlich.',false,btn);return}
  if(btn?.dataset.scanActive==='1')return;
  if(btn){btn.dataset.scanActive='1';btn.disabled=true;btn.textContent='NFC ARMED // NODE SCANNEN'}
- showFounderResult('NFC ARMED','NFC-Tag des Nodes jetzt an das Smartphone halten.',true);
+ showFounderResult('NFC ARMED','NFC-Tag des Nodes jetzt an das Smartphone halten.',true,btn);
  try{
   const controller=new AbortController(),reader=new NDEFReader();
   await reader.scan({signal:controller.signal});
@@ -130,7 +130,7 @@ window.addEventListener('nodiv-founder-register-antenna',async()=>{
    if(handling)return;
    controller.abort();
    if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
-   showFounderResult('NFC FEHLER','Node-Tag konnte nicht gelesen werden.',false);
+   showFounderResult('NFC FEHLER','Node-Tag konnte nicht gelesen werden.',false,btn);
   };
   reader.onreading=async e=>{
    if(handling)return;
@@ -139,31 +139,38 @@ window.addEventListener('nodiv-founder-register-antenna',async()=>{
    const uid=e&&typeof e.serialNumber==='string'?e.serialNumber.trim():'';
    if(!uid){
     if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
-    showFounderResult('UID FEHLT','Node-Tag konnte nicht eindeutig gelesen werden.',false);
+    showFounderResult('UID FEHLT','Node-Tag konnte nicht eindeutig gelesen werden.',false,btn);
     return;
    }
    try{
-    showFounderResult('NODE WIRD GEPRÜFT','NODIV prüft UID und reserviert die nächste freie Node-ID.',true);
+    showFounderResult('NODE WIRD GEPRÜFT','NODIV prüft UID und reserviert die nächste freie Node-ID.',true,btn);
     const r=await apiRequest({action:'provisionnode',token:sessionToken,uid});
     if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'REGISTRIERUNG FEHLGESCHLAGEN');
-    showFounderResult('NODE REGISTRIERT',(r.node?.id||'NODE')+' // '+(r.node?.status||'AVAILABLE'),true);
+    showFounderResult('NODE REGISTRIERT',(r.node?.id||'NODE')+' // '+(r.node?.status||'AVAILABLE'),true,btn);
     emitNodiv('IDENTITY_VERIFIED',{target:'#roleView'});
     window.dispatchEvent(new CustomEvent('nodiv-founder-status'));
    }catch(err){
-    showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false);
+    showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false,btn);
    }finally{
     if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
    }
   };
  }catch(err){
   if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
-  showFounderResult('NFC FEHLER',String(err.message||err),false);
+  showFounderResult('NFC FEHLER',String(err.message||err),false,btn);
  }
 });
-function showFounderResult(title,detail,ok){
- let el=document.querySelector('#founderResult');
- if(!el){el=document.createElement('div');el.id='founderResult';el.className='founder-result';document.querySelector('.founder-console')?.appendChild(el)}
- el.className='founder-result '+(ok?'ok':'bad');el.innerHTML='<strong>'+String(title)+'</strong><span>'+String(detail)+'</span>';
+function showFounderResult(title,detail,ok,target){
+ const anchor=typeof target==='string'?document.querySelector(target):target;
+ let el=anchor?.nextElementSibling;
+ if(!el||!el.classList?.contains('founder-result')){
+  el=document.createElement('div');
+  el.className='founder-result';
+  if(anchor)anchor.insertAdjacentElement('afterend',el);
+  else document.querySelector('.founder-console')?.appendChild(el);
+ }
+ el.className='founder-result '+(ok?'ok':'bad');
+ el.innerHTML='<strong>'+String(title)+'</strong><span>'+String(detail)+'</span>';
 }
 
 window.addEventListener('nodiv-founder-core-open',async()=>{
@@ -179,7 +186,7 @@ window.addEventListener('nodiv-founder-core-scan',async()=>{
  if(!coreId){if(hint)hint.textContent='Kein freier N-Core geladen.';return} if(!Number.isFinite(value)||value<=0){if(hint)hint.textContent='Bitte einen gültigen Energiewert größer 0 eingeben.';input?.focus();return}
  if(!('NDEFReader' in window)){if(hint)hint.textContent='Web NFC nicht verfügbar // Android + Chrome erforderlich.';return}
  if(btn){btn.disabled=true;btn.textContent='NFC ARMED // N-CORE SCANNEN'} if(hint)hint.textContent=coreId+' // '+value+' E // N-Core jetzt an das Gerät halten.';
- try{const reader=new NDEFReader();await reader.scan();let handling=false;reader.onreadingerror=()=>{if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent='NFC-Antenne konnte nicht gelesen werden.'};reader.onreading=async e=>{if(handling)return;const uid=e&&typeof e.serialNumber==='string'?e.serialNumber.trim():'';if(!uid){if(hint)hint.textContent='Keine gültige NFC UID gelesen.';return}handling=true;try{const r=await apiRequest({action:'register',core:coreId,uid,energy:value});if(!r?.ok)throw new Error(r?.error||r?.message||'REGISTRATION FAILED');showFounderResult('N-CORE REGISTRIERT',coreId+' // '+value+' E',true);emitNodiv('CORE_TRANSFERRED',{target:'#coreProvisioner'});if(id){id.textContent=coreId+' // '+value+' E // ✓';id.classList.add('provision-success')}if(hint)hint.textContent='ERFOLGREICH REGISTRIERT // nächster N-Core wird geladen.';if(btn){btn.disabled=true;btn.textContent='REGISTRIERT ✓'}panel.dataset.coreId='';window.dispatchEvent(new CustomEvent('nodiv-founder-status'));setTimeout(async()=>{try{const free=await apiRequest({action:'nextfree'});if(!free?.ok||!free.nextFreeCore)throw new Error('Kein weiterer freier N-Core.');panel.dataset.coreId=free.nextFreeCore;if(id){id.classList.remove('provision-success');id.textContent=free.nextFreeCore}if(input)input.value='';if(hint)hint.textContent='Energiewert eingeben. Danach NFC-Scan starten.';if(btn){btn.disabled=false;btn.textContent='NFC-SCAN STARTEN'}input?.focus();}catch(nextErr){if(id){id.classList.remove('provision-success');id.textContent='KEIN FREIER N-CORE'}if(hint)hint.textContent=String(nextErr.message||nextErr);if(btn){btn.disabled=true;btn.textContent='REGISTRIERUNG ABGESCHLOSSEN'}}},900);}catch(err){handling=false;if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err);showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false)}};}catch(err){if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err)}
+ try{const reader=new NDEFReader();await reader.scan();let handling=false;reader.onreadingerror=()=>{if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent='NFC-Antenne konnte nicht gelesen werden.'};reader.onreading=async e=>{if(handling)return;const uid=e&&typeof e.serialNumber==='string'?e.serialNumber.trim():'';if(!uid){if(hint)hint.textContent='Keine gültige NFC UID gelesen.';return}handling=true;try{const r=await apiRequest({action:'register',core:coreId,uid,energy:value});if(!r?.ok)throw new Error(r?.error||r?.message||'REGISTRATION FAILED');showFounderResult('N-CORE REGISTRIERT',coreId+' // '+value+' E',true,btn);emitNodiv('CORE_TRANSFERRED',{target:'#coreProvisioner'});if(id){id.textContent=coreId+' // '+value+' E // ✓';id.classList.add('provision-success')}if(hint)hint.textContent='ERFOLGREICH REGISTRIERT // nächster N-Core wird geladen.';if(btn){btn.disabled=true;btn.textContent='REGISTRIERT ✓'}panel.dataset.coreId='';window.dispatchEvent(new CustomEvent('nodiv-founder-status'));setTimeout(async()=>{try{const free=await apiRequest({action:'nextfree'});if(!free?.ok||!free.nextFreeCore)throw new Error('Kein weiterer freier N-Core.');panel.dataset.coreId=free.nextFreeCore;if(id){id.classList.remove('provision-success');id.textContent=free.nextFreeCore}if(input)input.value='';if(hint)hint.textContent='Energiewert eingeben. Danach NFC-Scan starten.';if(btn){btn.disabled=false;btn.textContent='NFC-SCAN STARTEN'}input?.focus();}catch(nextErr){if(id){id.classList.remove('provision-success');id.textContent='KEIN FREIER N-CORE'}if(hint)hint.textContent=String(nextErr.message||nextErr);if(btn){btn.disabled=true;btn.textContent='REGISTRIERUNG ABGESCHLOSSEN'}}},900);}catch(err){handling=false;if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err);showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false)}};}catch(err){if(btn){btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err)}
 });
 
 window.addEventListener('nodiv-founder-register-upload',async e=>{
