@@ -2601,8 +2601,15 @@ function getGameplayRoute(e) {
         isTarget?'Ziel-Node erkannt. Mission Cargo kann eingesetzt werden.':'Mission Cargo ist an einen anderen Ziel-Node gebunden.'
       );
     }
-    const allowed=Boolean(player.nodeAccess);
-    return gameplayDecision(player,{found:true,type:'NODE',id:hit.id||'',status:status},allowed?'NODE_INTERACTION':'NO_ACTION',allowed,allowed?'NODE_ACCESS_GRANTED':'NODE_ACCESS_DENIED',allowed?'Node erkannt. Node-Interaktion ist für diese Rolle zulässig.':'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.');
+    const authorization=getNodeAccessAuthorization(player,hit.id,status);
+    return gameplayDecision(
+      player,
+      {found:true,type:'NODE',id:hit.id||'',status:status},
+      authorization.allowed?'NODE_INTERACTION':'NO_ACTION',
+      authorization.allowed,
+      authorization.reason,
+      authorization.message
+    );
   }
 
   if (hit.type === 'UPLOAD_TERMINAL') {
@@ -3208,6 +3215,50 @@ function getNodeGameplayStatus(nodeId) {
   const wanted=String(nodeId||'').trim().toUpperCase(), sheet=getNodeRegisterSheet(), rows=sheet.getRange(2,1,15,3).getValues();
   for(let i=0;i<rows.length;i++) if(String(rows[i][0]||'').trim().toUpperCase()===wanted) return String(rows[i][2]||'').trim().toUpperCase()||'UNDEFINED';
   return 'UNDEFINED';
+}
+
+
+/*
+ * NODE ACCESS AUTHORIZATION V0.1
+ * A mechanical Node code is never an authorization credential.
+ * Gameplay must be authorized server-side for the concrete identity + Node.
+ *
+ * AVAILABLE means physically provisioned but not commissioned for field use.
+ * Access-code release will be attached here once the event/code register exists.
+ */
+function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
+  const id=String(nodeId||'').trim().toUpperCase();
+  const status=String(nodeStatus||'UNDEFINED').trim().toUpperCase();
+
+  if(!id) return {allowed:false,reason:'NODE_ID_INVALID',message:'Node konnte nicht eindeutig identifiziert werden.'};
+
+  if(!Boolean(player.nodeAccess)) {
+    return {allowed:false,reason:'NODE_ROLE_ACCESS_DENIED',message:'Node erkannt. Diese Rolle besitzt keinen Node-Zugriff.'};
+  }
+
+  if(['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(status)) {
+    return {
+      allowed:false,
+      reason:'NODE_NOT_FIELD_ACTIVE',
+      message:status==='AVAILABLE'
+        ? 'Node erkannt. Der Node ist provisioniert, aber noch nicht für den Feldbetrieb freigegeben.'
+        : 'Node erkannt. Der Node ist aktuell nicht für den Feldbetrieb freigegeben.'
+    };
+  }
+
+  /*
+   * Next layers belong here, in this order:
+   * 1) active event / Node assigned to event
+   * 2) identity-specific mission / discovery / progression entitlement
+   * 3) global Node stabilization window
+   * 4) personal Node cooldown (Exchange / Restore)
+   * 5) release current ACTIVE mechanical code
+   */
+  return {
+    allowed:true,
+    reason:'NODE_ACCESS_GRANTED',
+    message:'Node erkannt. Server-seitige Basisfreigabe erteilt.'
+  };
 }
 
 
