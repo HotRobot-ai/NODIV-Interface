@@ -270,6 +270,10 @@ function doGet(e) {
 
       result = depositOwnedCoreToReserve(e);
 
+    } else if (action === 'uploadpreview') {
+
+      result = getHqUploadPreview(e);
+
     } else if (action === 'deploymentassign') {
 
       result = assignCoreDeployment(e);
@@ -2610,6 +2614,59 @@ function routeCoreGameplay(player,core) {
   }
 
   return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_MISMATCH','N-Core gehört einer anderen Identität oder Rolle. Keine automatische Umbuchung.');
+}
+
+/*
+ * HQ UPLOAD V1.0 // READ-ONLY PREVIEW
+ * The player phone scans a registered HQ upload bay. The server
+ * derives selectable cores from authoritative ownership; the
+ * browser cannot invent core IDs or energy values.
+ */
+function getHqUploadPreview(e) {
+  const session = resolvePlayerSession(e.parameter.token || '');
+  if (!session.ok) return session.response;
+
+  const player = session.player;
+  if (player.role !== 'PIONEER') {
+    return gameplayActionDenied(player, 'ROLE_DENIED', 'HQ Upload ist nur für PIONEER verfügbar.');
+  }
+
+  const bayUid = normalizeUid(e.parameter.uid || '');
+  if (!bayUid) throw new Error('Upload Bay NFC UID fehlt.');
+
+  const hit = lookupUidGlobally(bayUid);
+  if (!hit.found || hit.type !== 'UPLOAD_TERMINAL' ||
+      hit.terminalType !== 'UPLOAD_HQ' || hit.status !== 'ACTIVE') {
+    return gameplayActionDenied(player, 'UPLOAD_BAY_INVALID', 'Keine aktive HQ Upload Bay erkannt.');
+  }
+
+  const sheet = getRegisterSheet();
+  const rows = sheet.getRange(2, 1, 200, CORE_COL.UPDATED_AT).getValues();
+  const cores = [];
+
+  rows.forEach((row, index) => {
+    const ownerType = String(row[CORE_COL.OWNER_TYPE - 1] || '').trim().toUpperCase();
+    const ownerId = String(row[CORE_COL.OWNER_ID - 1] || '').trim().toUpperCase();
+    if (ownerType !== 'PIONEER' || ownerId !== player.identity) return;
+
+    const coreId = String(row[CORE_COL.ID - 1] || '').trim().toUpperCase();
+    const status = String(row[CORE_COL.STATUS - 1] || '').trim().toUpperCase();
+    const visible = row[CORE_COL.VISIBLE_ENERGY - 1] === '' ? '' : Number(row[CORE_COL.VISIBLE_ENERGY - 1]);
+    const actual = row[CORE_COL.ACTUAL_ENERGY - 1] === '' ? visible : Number(row[CORE_COL.ACTUAL_ENERGY - 1]);
+
+    if (!coreId || status === 'IN_TRANSIT') return;
+    cores.push({ coreId: coreId, energy: actual, status: status });
+  });
+
+  return {
+    ok: true, authenticated: true, session: true, action: true,
+    status: cores.length ? 'HQ_UPLOAD_READY' : 'HQ_UPLOAD_EMPTY',
+    bay: { id: hit.id || 'UPLOAD-HQ-001', type: 'UPLOAD_HQ', status: 'ACTIVE' },
+    pioneer: { identity: player.identity, coreCapacity: player.coreCapacity },
+    cores: cores.slice(0, 3),
+    selectable: cores.length > 0,
+    message: cores.length ? 'HQ Upload Bay verbunden. N-Cores können ausgewählt werden.' : 'Keine persönlichen N-Cores für Upload verfügbar.'
+  };
 }
 
 /*
