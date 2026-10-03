@@ -173,6 +173,82 @@ function showFounderResult(title,detail,ok,target){
  el.innerHTML='<strong>'+String(title)+'</strong><span>'+String(detail)+'</span>';
 }
 
+async function refreshFounderEventStatus(){
+ if(!sessionToken)return;
+ const state=document.querySelector('#eventState'),hint=document.querySelector('#eventHint'),list=document.querySelector('#eventNodes'),init=document.querySelector('#initializeEvent'),activate=document.querySelector('#activateEvent');
+ if(!state)return;
+ try{
+  const r=await apiRequest({action:'eventstatus',token:sessionToken});
+  if(!r?.ok)throw new Error(r?.message||r?.error||'EVENT STATUS FAILED');
+  const ev=r.event||{},nodes=Array.isArray(r.provisionedNodes)?r.provisionedNodes:[];
+  state.textContent=ev.state||'STANDBY';
+  if(list)list.innerHTML=nodes.length?nodes.map(n=>'<span>'+n+'</span>').join(''):'<span>KEINE NODES</span>';
+  if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S)'):(nodes.length+' provisionierte Node(s) bereit.');
+  if(init)init.disabled=ev.state==='INITIALIZED'||ev.state==='FIELD_ACTIVE';
+  if(activate)activate.disabled=ev.state!=='INITIALIZED';
+ }catch(err){if(hint)hint.textContent=String(err.message||err)}
+}
+window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEventStatus,0)});
+window.addEventListener('nodiv-founder-event-initialize',async()=>{
+ if(!sessionToken)return;
+ const btn=document.querySelector('#initializeEvent');
+ if(btn){btn.disabled=true;btn.textContent='EVENT WIRD INITIALISIERT'}
+ try{
+  const s=await apiRequest({action:'eventstatus',token:sessionToken});
+  const nodes=Array.isArray(s?.provisionedNodes)?s.provisionedNodes:[];
+  if(!nodes.length)throw new Error('Kein provisionierter Node vorhanden.');
+  const r=await apiRequest({action:'eventinitialize',token:sessionToken,nodes:nodes.join(',')});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'INITIALISIERUNG FEHLGESCHLAGEN');
+  showFounderResult('EVENT INITIALISIERT',(r.event?.eventId||'EVENT')+' // '+(r.event?.plannedNodes||nodes.length)+' NODE(S)',true,btn);
+  emitNodiv('IDENTITY_VERIFIED',{target:'#eventState'});
+ }catch(err){showFounderResult('INITIALISIERUNG ABGEWIESEN',String(err.message||err),false,btn)}
+ finally{if(btn)btn.textContent='EVENT INITIALISIEREN';await refreshFounderEventStatus()}
+});
+window.addEventListener('nodiv-founder-event-activate',async()=>{
+ if(!sessionToken)return;
+ const btn=document.querySelector('#activateEvent');
+ if(btn){btn.disabled=true;btn.textContent='FIELD CHECK'}
+ try{
+  const r=await apiRequest({action:'eventactivate',token:sessionToken});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'AKTIVIERUNG FEHLGESCHLAGEN');
+  showFounderResult('FIELD OPERATIONS AKTIV',r.eventId||'EVENT ACTIVE',true,btn);
+  emitNodiv('IDENTITY_VERIFIED',{target:'#eventState'});
+ }catch(err){showFounderResult('AKTIVIERUNG GESPERRT',String(err.message||err),false,btn)}
+ finally{if(btn)btn.textContent='FIELD OPERATIONS AKTIVIEREN';await refreshFounderEventStatus()}
+});
+window.addEventListener('nodiv-fop-install-order',async()=>{
+ if(!sessionToken)return;
+ const input=document.querySelector('#fopNodeId'),btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
+ const node=String(input?.value||'').trim().toUpperCase();
+ if(!/^NODE-\d{3}$/.test(node)){if(hint)hint.textContent='Gültige Node-ID eingeben, z. B. NODE-001.';return}
+ if(btn){btn.disabled=true;btn.textContent='AUFTRAG WIRD GELADEN'}
+ try{
+  const r=await apiRequest({action:'nodeinstallorder',token:sessionToken,node});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
+  if(panel)panel.hidden=false;
+  if(value)value.textContent=r.node?.code||'••••';
+  if(hint)hint.textContent=node+' // Schloss auf diesen Code stellen und erst danach bestätigen.';
+  if(panel)panel.dataset.nodeId=node;
+  emitNodiv('NFC_ARMED',{target:'#fopInstallCode'});
+ }catch(err){if(panel)panel.hidden=false;if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
+ finally{if(btn){btn.disabled=false;btn.textContent='INSTALLATIONSAUFTRAG ABRUFEN'}}
+});
+window.addEventListener('nodiv-fop-install-confirm',async()=>{
+ if(!sessionToken)return;
+ const panel=document.querySelector('#fopInstallCode'),btn=document.querySelector('#fopInstallConfirm'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
+ const node=panel?.dataset.nodeId||'';
+ if(!node){if(hint)hint.textContent='Zuerst Installationsauftrag abrufen.';return}
+ if(btn){btn.disabled=true;btn.textContent='BESTÄTIGUNG WIRD GESENDET'}
+ try{
+  const r=await apiRequest({action:'nodeinstallconfirm',token:sessionToken,node});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'BESTÄTIGUNG FEHLGESCHLAGEN');
+  if(value)value.textContent='ACTIVE';
+  if(hint)hint.textContent=node+' // PRIMARY CODE AKTIV // INSTALLATION BESTÄTIGT';
+  if(btn)btn.textContent='INSTALLIERT ✓';
+  emitNodiv('IDENTITY_VERIFIED',{target:'#fopInstallCode'});
+ }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.disabled=false;btn.textContent='INSTALLATION BESTÄTIGEN'}}
+});
+
 window.addEventListener('nodiv-founder-core-open',async()=>{
  if(!sessionToken)return;
  const panel=document.querySelector('#coreProvisioner'),id=document.querySelector('#coreProvisionId'),hint=document.querySelector('#coreProvisionHint'),input=document.querySelector('#coreEnergy');
