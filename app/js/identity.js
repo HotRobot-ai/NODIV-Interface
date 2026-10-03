@@ -116,22 +116,49 @@ window.addEventListener('nodiv-founder-accesscard-scan',async()=>{
  }catch(err){if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NFC-SCAN ERNEUT STARTEN'}if(hint)hint.textContent=String(err.message||err)}
 });
 window.addEventListener('nodiv-founder-register-antenna',async()=>{
- const host=document.querySelector('#roleView'); if(!sessionToken){return}
- if(!('NDEFReader' in window)){showFounderResult('NFC NOT AVAILABLE','Android + Chrome erforderlich.',false);return}
- showFounderResult('NFC ARMED','Unregistrierte Node-Antenne an das Smartphone halten.',true);
+ if(!sessionToken)return;
+ const btn=document.querySelector('#registerAntenna');
+ if(!('NDEFReader' in window)){showFounderResult('NFC NICHT VERFÜGBAR','Android + Chrome erforderlich.',false);return}
+ if(btn?.dataset.scanActive==='1')return;
+ if(btn){btn.dataset.scanActive='1';btn.disabled=true;btn.textContent='NFC ARMED // NODE SCANNEN'}
+ showFounderResult('NFC ARMED','NFC-Tag des Nodes jetzt an das Smartphone halten.',true);
  try{
-  const reader=new NDEFReader(); await reader.scan();
-  reader.onreading=async e=>{
-   const uid=e.serialNumber||''; if(!uid){showFounderResult('UID MISSING','Antenne konnte nicht gelesen werden.',false);return}
-   try{
-    showFounderResult('VERIFYING UID','NODIV prüft und reserviert die nächste freie Node-ID.',true);
-    const r=await apiRequest({action:'provisionnode',token:sessionToken,uid});
-    if(!r?.ok||r?.action!==true) throw new Error(r?.message||r?.status||'PROVISION FAILED');
-    showFounderResult('ANTENNA REGISTERED',(r.node?.id||'NODE')+' // '+(r.node?.status||'AVAILABLE'),true);
-    emitNodiv('IDENTITY_VERIFIED',{target:'#roleView'});
-   }catch(err){showFounderResult('REGISTRATION DENIED',String(err.message||err),false)}
+  const controller=new AbortController(),reader=new NDEFReader();
+  await reader.scan({signal:controller.signal});
+  let handling=false;
+  reader.onreadingerror=()=>{
+   if(handling)return;
+   controller.abort();
+   if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
+   showFounderResult('NFC FEHLER','Node-Tag konnte nicht gelesen werden.',false);
   };
- }catch(err){showFounderResult('NFC ERROR',String(err.message||err),false)}
+  reader.onreading=async e=>{
+   if(handling)return;
+   handling=true;
+   controller.abort();
+   const uid=e&&typeof e.serialNumber==='string'?e.serialNumber.trim():'';
+   if(!uid){
+    if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
+    showFounderResult('UID FEHLT','Node-Tag konnte nicht eindeutig gelesen werden.',false);
+    return;
+   }
+   try{
+    showFounderResult('NODE WIRD GEPRÜFT','NODIV prüft UID und reserviert die nächste freie Node-ID.',true);
+    const r=await apiRequest({action:'provisionnode',token:sessionToken,uid});
+    if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'REGISTRIERUNG FEHLGESCHLAGEN');
+    showFounderResult('NODE REGISTRIERT',(r.node?.id||'NODE')+' // '+(r.node?.status||'AVAILABLE'),true);
+    emitNodiv('IDENTITY_VERIFIED',{target:'#roleView'});
+    window.dispatchEvent(new CustomEvent('nodiv-founder-status'));
+   }catch(err){
+    showFounderResult('REGISTRIERUNG ABGEWIESEN',String(err.message||err),false);
+   }finally{
+    if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
+   }
+  };
+ }catch(err){
+  if(btn){btn.dataset.scanActive='0';btn.disabled=false;btn.textContent='NODE REGISTRIEREN'}
+  showFounderResult('NFC FEHLER',String(err.message||err),false);
+ }
 });
 function showFounderResult(title,detail,ok){
  let el=document.querySelector('#founderResult');
