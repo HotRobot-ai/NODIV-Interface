@@ -197,11 +197,17 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   const r=await apiRequest({action:'eventreadiness',token:sessionToken});
   if(!r?.ok)throw new Error(r?.message||r?.error||'READINESS CHECK FEHLGESCHLAGEN');
   const failed=Array.isArray(r.checks)?r.checks.filter(x=>!x.ok):[];
+  const coreDiagnostics=Array.isArray(r.coreDiagnostics)?r.coreDiagnostics:[];
+  const badCores=coreDiagnostics.filter(x=>!x.ok);
+  const summary=r.coreSummary||{};
   if(r.ready){
-   showFounderResult('BASELINE READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // '),true,btn);
+   const coreLine='N_CORES: '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen';
+   showFounderResult('BASELINE READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // ')+' // '+coreLine,true,btn);
    if(init)init.disabled=false;
   }else{
-   showFounderResult('NICHT BEREIT',failed.map(x=>x.id+': '+x.detail).join(' // ')||r.status,false,btn);
+   const blockers=failed.map(x=>x.id+': '+x.detail);
+   const coreLines=badCores.map(x=>x.id+(x.energy?' · '+x.energy+' E':'')+' → '+x.detail);
+   showFounderResult('NICHT BEREIT',blockers.concat(coreLines).join(' // ')||r.status,false,btn);
    if(init)init.disabled=true;
   }
  }catch(err){showFounderResult('READINESS FEHLER',String(err.message||err),false,btn);if(init)init.disabled=true}
