@@ -321,6 +321,10 @@ function doGet(e) {
 
       result = getEventReadiness(e);
 
+    } else if (action === 'eventreadinessrepair') {
+
+      result = repairMissingCoreOwnership(e);
+
     } else if (action === 'eventinitialize') {
 
       result = initializeEvent(e);
@@ -3398,6 +3402,60 @@ function getEventReadiness(e) {
   };
 }
 
+function repairMissingCoreOwnership(e) {
+  const lock=LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann fehlende Core-Ownership reparieren.');
+
+    const sheet=getRegisterSheet();
+    const rows=sheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
+    const repaired=[];
+
+    rows.forEach((row,index)=>{
+      const uid=normalizeUid(row[CORE_COL.UID-1]);
+      if(!uid)return;
+      const ownerType=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();
+      const ownerId=String(row[CORE_COL.OWNER_ID-1]||'').trim().toUpperCase();
+      if(ownerType||ownerId)return;
+
+      const coreId=String(row[CORE_COL.ID-1]||'').trim().toUpperCase();
+      if(!/^NC-\d{3}$/.test(coreId))return;
+      const state=readCoreState(coreId);
+      const transactionId=appendTransactionLog({
+        eventType:'CORE_OWNERSHIP_REPAIRED',
+        actorId:actor.identity,
+        actorRole:actor.role,
+        coreId:coreId,
+        fromType:'NONE',
+        fromId:'',
+        toType:'NODIV_RESERVE',
+        toId:'HQ',
+        visibleEnergy:state.visibleEnergy,
+        hiddenEnergy:state.hiddenEnergy,
+        actualEnergy:state.actualEnergy,
+        result:'SUCCESS',
+        details:'Founder readiness repair // missing legacy ownership initialized to HQ reserve'
+      });
+      writeCoreOwnership(index+2,'NODIV_RESERVE','HQ',transactionId);
+      sheet.getRange(index+2,CORE_COL.STATUS).setValue('RESERVE');
+      repaired.push({id:coreId,energy:state.visibleEnergy});
+    });
+
+    SpreadsheetApp.flush();
+    return {
+      ok:true,authenticated:true,action:true,
+      status:repaired.length?'OWNERSHIP_REPAIRED':'NO_REPAIR_REQUIRED',
+      repaired:repaired
+    };
+  } finally {
+    try{lock.releaseLock();}catch(error){}
+  }
+}
+
 function initializeEvent(e) {
   const lock=LockService.getScriptLock();
   try{
@@ -3406,6 +3464,10 @@ function initializeEvent(e) {
     if(!session.ok)return session.response;
     const actor=session.player;
     if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann ein Event initialisieren.');
+
+    const readiness=getEventReadiness(e);
+    if(!readiness.ok||readiness.authenticated!==true)return readiness;
+    if(!readiness.ready)return gameplayActionDenied(actor,'EVENT_NOT_READY','Readiness Check blockiert die Event-Initialisierung.');
 
     const existing=readCurrentEvent();
     if(existing&&['INITIALIZED','FIELD_ACTIVE'].includes(existing.state))return gameplayActionDenied(actor,'EVENT_ALREADY_INITIALIZED','Es existiert bereits ein initialisiertes oder aktives Event.');
