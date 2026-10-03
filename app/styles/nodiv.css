@@ -149,3 +149,18 @@
  [data-role="FOUNDER"] .command-stage-top{font-size:6px}
  [data-role="FOUNDER"] .command-stage-foot{font-size:6px}
 }
+
+/* Founder provisioning console */
+.provisioner{margin-top:10px;padding:14px;border:1px solid #24627d;background:linear-gradient(145deg,#071923,#02090e);box-shadow:inset 0 0 30px #39c8ff09}
+.provisioner[hidden]{display:none}
+.provisioner-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:11px;border-bottom:1px solid #39c8ff25}
+.provisioner-head small,.provisioner label{display:block;color:#6f94a6;font:800 8px ui-monospace,monospace;letter-spacing:.14em}
+.provisioner-head strong{display:block;margin-top:5px;color:#a9ecff;font:900 16px ui-monospace,monospace;letter-spacing:.08em}
+.provisioner-head button{width:44px;height:44px;border:1px solid #39c8ff44;background:#031018;color:#9de7ff;font-size:22px}
+.provisioner label{margin-top:14px}
+.energy-input{display:grid;grid-template-columns:1fr 44px;margin-top:7px;border:1px solid #39c8ff55;background:#02080d}
+.energy-input input{min-width:0;height:58px;border:0;outline:0;background:transparent;color:#effbff;padding:0 14px;font:900 26px ui-monospace,monospace}
+.energy-input span{display:grid;place-items:center;border-left:1px solid #39c8ff33;color:#6edcff;font:900 14px ui-monospace,monospace}
+.provisioner p{min-height:32px;margin:10px 0 0;color:#7595a5;font:700 9px/1.5 ui-monospace,monospace;letter-spacing:.04em}
+.provisioner .role-action{margin-top:4px}
+@media(min-width:700px){.provisioner{max-width:620px;margin-left:auto;margin-right:auto}}
