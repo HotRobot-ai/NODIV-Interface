@@ -3354,21 +3354,61 @@ function getEventPreflightSheet() {
   let sheet=ss.getSheetByName(EVENT_PREFLIGHT_SHEET_NAME);
   if(!sheet){
     sheet=ss.insertSheet(EVENT_PREFLIGHT_SHEET_NAME);
-    sheet.appendRow(['CHECK ID','CONFIRMED','CONFIRMED BY','CONFIRMED AT','UPDATED AT']);
+    sheet.appendRow(['CHECK ID','CONFIRMED','CONFIRMED BY','CONFIRMED AT','UPDATED AT','CONFIG FINGERPRINT']);
   }
+  if(!sheet.getRange(1,6).getDisplayValue())sheet.getRange(1,6).setValue('CONFIG FINGERPRINT');
   return sheet;
+}
+
+function getEventConfigurationFingerprint() {
+  const nodes=listProvisionedNodeIds().slice().sort();
+
+  const coreSheet=getRegisterSheet();
+  const coreRows=coreSheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
+  const cores=coreRows.map(row=>({
+    uid:normalizeUid(row[CORE_COL.UID-1]),
+    id:String(row[CORE_COL.ID-1]||'').trim().toUpperCase(),
+    energy:Number(row[CORE_COL.VISIBLE_ENERGY-1]||0),
+    status:String(row[CORE_COL.STATUS-1]||'').trim().toUpperCase(),
+    ownerType:String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase(),
+    ownerId:String(row[CORE_COL.OWNER_ID-1]||'').trim().toUpperCase()
+  })).filter(x=>x.uid).sort((a,b)=>a.id.localeCompare(b.id)||a.uid.localeCompare(b.uid));
+
+  const accessSheet=getAccessCardRegisterSheet();
+  const accessLast=Math.max(accessSheet.getLastRow(),1);
+  const identities=(accessLast>1?accessSheet.getRange(2,1,accessLast-1,12).getValues():[]).map(row=>({
+    identity:String(row[1]||'').trim().toUpperCase(),
+    role:String(row[2]||'').trim().toUpperCase(),
+    uid:normalizeUid(row[3]),
+    status:String(row[4]||'').trim().toUpperCase()
+  })).filter(x=>x.uid&&x.status==='ACTIVE').sort((a,b)=>a.identity.localeCompare(b.identity)||a.uid.localeCompare(b.uid));
+
+  const uploadSheet=findUploadTerminalSheet();
+  const uploads=[];
+  if(uploadSheet&&uploadSheet.getLastRow()>1){
+    uploadSheet.getRange(2,1,uploadSheet.getLastRow()-1,6).getValues().forEach(row=>{
+      const uid=normalizeUid(row[2]);
+      const status=String(row[3]||'').trim().toUpperCase();
+      if(uid&&status==='ACTIVE')uploads.push({type:String(row[1]||'').trim().toUpperCase(),uid:uid,status:status});
+    });
+  }
+  uploads.sort((a,b)=>a.type.localeCompare(b.type)||a.uid.localeCompare(b.uid));
+
+  const payload=JSON.stringify({nodes:nodes,cores:cores,identities:identities,uploads:uploads});
+  const digest=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,payload,Utilities.Charset.UTF_8);
+  return digest.map(b=>(b<0?b+256:b).toString(16).padStart(2,'0')).join('');
 }
 
 function readEventPreflight() {
   const ids=['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'];
   const state={};
-  ids.forEach(id=>state[id]={id:id,confirmed:false,confirmedBy:'',confirmedAt:''});
+  ids.forEach(id=>state[id]={id:id,confirmed:false,confirmedBy:'',confirmedAt:'',configFingerprint:''});
   const sheet=getEventPreflightSheet();
   if(sheet.getLastRow()>1){
-    sheet.getRange(2,1,sheet.getLastRow()-1,5).getValues().forEach(row=>{
+    sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues().forEach(row=>{
       const id=String(row[0]||'').trim().toUpperCase();
       if(!state[id])return;
-      state[id]={id:id,confirmed:String(row[1]||'').toUpperCase()==='TRUE'||row[1]===true,confirmedBy:String(row[2]||''),confirmedAt:row[3]||''};
+      state[id]={id:id,confirmed:String(row[1]||'').toUpperCase()==='TRUE'||row[1]===true,confirmedBy:String(row[2]||''),confirmedAt:row[3]||'',configFingerprint:String(row[5]||'')};
     });
   }
   return ids.map(id=>state[id]);
@@ -3398,8 +3438,14 @@ function confirmEventPreflight(e) {
   const sheet=getEventPreflightSheet(),now=new Date();
   const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,1).getDisplayValues().flat():[];
   const idx=rows.findIndex(v=>String(v).trim().toUpperCase()===checkId);
-  if(idx>=0)sheet.getRange(idx+2,1,1,5).setValues([[checkId,true,actor.identity,now,now]]);
-  else sheet.appendRow([checkId,true,actor.identity,now,now]);
+  const fingerprint=checkId==='EVENT_CONFIGURATION'?getEventConfigurationFingerprint():'';
+  if(idx>=0)sheet.getRange(idx+2,1,1,6).setValues([[checkId,true,actor.identity,now,now,fingerprint]]);
+  else sheet.appendRow([checkId,true,actor.identity,now,now,fingerprint]);
+
+  if(checkId==='EVENT_CONFIGURATION'){
+    const finalIdx=rows.findIndex(v=>String(v).trim().toUpperCase()==='FINAL_FOUNDER_CONFIRMATION');
+    if(finalIdx>=0)sheet.getRange(finalIdx+2,2,1,5).setValues([[false,'','',now,'']]);
+  }
 
   appendTransactionLog({eventType:'EVENT_PREFLIGHT_CONFIRMED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:checkId});
   SpreadsheetApp.flush();
@@ -3487,6 +3533,15 @@ function getEventReadiness(e) {
   const blocking=checks.filter(x=>!x.ok);
   const systemReady=blocking.length===0;
   const preflight=readEventPreflight();
+  const currentFingerprint=getEventConfigurationFingerprint();
+  const configCheck=preflight.find(x=>x.id==='EVENT_CONFIGURATION');
+  const finalCheck=preflight.find(x=>x.id==='FINAL_FOUNDER_CONFIRMATION');
+  const configurationChanged=Boolean(configCheck&&configCheck.confirmed&&configCheck.configFingerprint!==currentFingerprint);
+  if(configurationChanged){
+    configCheck.confirmed=false;
+    configCheck.invalidated=true;
+    if(finalCheck){finalCheck.confirmed=false;finalCheck.invalidated=true;}
+  }
   const preflightReady=preflight.every(x=>x.confirmed);
   const eventReady=systemReady&&preflightReady;
   return {
