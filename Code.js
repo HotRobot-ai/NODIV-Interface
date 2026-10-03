@@ -1306,7 +1306,11 @@ function registerUploadTerminal(e) {
     const actor=session.player; if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Upload-Terminals provisionieren.');
     const type=String(e.parameter.type||'').trim().toUpperCase(); if(!['UPLOAD_HQ','UPLOAD_FOP'].includes(type))throw new Error('Ungültiger Upload-Terminal-Typ.');
     const uid=normalizeUid(e.parameter.uid||''); if(!uid)throw new Error('NFC UID fehlt.');
-    const sheet=getUploadTerminalSheet(),last=Math.max(sheet.getLastRow(),1);\n    const existingRows=last>1?sheet.getRange(2,1,last-1,6).getDisplayValues():[];\n    const bayNumbers=existingRows.map(r=>/^UPLOAD-HQ-BAY-(\\d{2})$/.exec(String(r[0]||'').trim().toUpperCase())).filter(Boolean).map(m=>Number(m[1]));\n    const nextBay=bayNumbers.length?Math.max(...bayNumbers)+1:1;\n    const terminalId=type==='UPLOAD_HQ'?'UPLOAD-HQ-BAY-'+String(nextBay).padStart(2,'0'):'UPLOAD-FOP-001';
+    const sheet=getUploadTerminalSheet(),last=Math.max(sheet.getLastRow(),1);
+    const existingRows=last>1?sheet.getRange(2,1,last-1,6).getDisplayValues():[];
+    const bayNumbers=existingRows.map(r=>/^UPLOAD-HQ-BAY-(\d{2})$/.exec(String(r[0]||'').trim().toUpperCase())).filter(Boolean).map(m=>Number(m[1]));
+    const nextBay=bayNumbers.length?Math.max(...bayNumbers)+1:1;
+    const terminalId=type==='UPLOAD_HQ'?'UPLOAD-HQ-BAY-'+String(nextBay).padStart(2,'0'):'UPLOAD-FOP-001';
     const rows=existingRows,existing=rows.find(r=>normalizeUid(r[2])===uid);
     if(existing){
       const oldUid=normalizeUid(existing[2]);
