@@ -3350,6 +3350,7 @@ function getEventReadiness(e) {
   if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Event Readiness prüfen.');
 
   const nodes=listProvisionedNodeIds();
+
   const coreSheet=getRegisterSheet();
   const coreRows=coreSheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
   let registeredCores=0, reserveCores=0, invalidOwnership=0, assignedCores=0;
@@ -3358,7 +3359,6 @@ function getEventReadiness(e) {
   coreRows.forEach(row=>{
     const uid=normalizeUid(row[CORE_COL.UID-1]);
     if(!uid)return;
-
     registeredCores++;
     const coreId=String(row[CORE_COL.ID-1]||'').trim().toUpperCase();
     const visibleEnergy=Number(row[CORE_COL.VISIBLE_ENERGY-1]||0);
@@ -3384,21 +3384,56 @@ function getEventReadiness(e) {
     });
   });
 
+  const accessSheet=getAccessCardRegisterSheet();
+  const accessLast=Math.max(accessSheet.getLastRow(),1);
+  const accessRows=accessLast>1?accessSheet.getRange(2,1,accessLast-1,12).getValues():[];
+  const activeRoles={FOUNDER:0,FOP:0,PIONEER:0,LOCAL:0,UNBOUND:0};
+  accessRows.forEach(row=>{
+    const role=String(row[2]||'').trim().toUpperCase();
+    const status=String(row[4]||'').trim().toUpperCase();
+    const uid=normalizeUid(row[3]);
+    if(uid&&status==='ACTIVE'&&Object.prototype.hasOwnProperty.call(activeRoles,role))activeRoles[role]++;
+  });
+  const activePlayers=activeRoles.PIONEER+activeRoles.LOCAL+activeRoles.UNBOUND;
+
+  const uploadSheet=findUploadTerminalSheet();
+  let activeHqUploads=0,activeFopUploads=0;
+  if(uploadSheet&&uploadSheet.getLastRow()>1){
+    uploadSheet.getRange(2,1,uploadSheet.getLastRow()-1,6).getValues().forEach(row=>{
+      const type=String(row[1]||'').trim().toUpperCase();
+      const uid=normalizeUid(row[2]);
+      const status=String(row[3]||'').trim().toUpperCase();
+      if(!uid||status!=='ACTIVE')return;
+      if(type==='UPLOAD_HQ')activeHqUploads++;
+      if(type==='UPLOAD_FOP')activeFopUploads++;
+    });
+  }
+
+  const codeCapacityRequired=nodes.length*5;
+  const accessSecurityOk=nodes.length>0&&codeCapacityRequired<=10000;
+
   const checks=[
     {id:'NODES',ok:nodes.length>0,value:nodes.length,detail:nodes.length+' provisioniert'},
     {id:'N_CORES',ok:registeredCores>0&&invalidOwnership===0,value:registeredCores,detail:registeredCores+' registriert // '+reserveCores+' HQ Reserve // '+assignedCores+' zugewiesen'},
-    {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?(invalidOwnership+' Core(s) ohne Ownership'):'sauber'}
+    {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?(invalidOwnership+' Core(s) ohne Ownership'):'sauber'},
+    {id:'PLAYERS',ok:activePlayers>0,value:activePlayers,detail:activePlayers+' aktive Feld-Identität(en) // '+activeRoles.PIONEER+' Pioneer // '+activeRoles.LOCAL+' Local // '+activeRoles.UNBOUND+' Unbound'},
+    {id:'FOP',ok:activeRoles.FOP>0,value:activeRoles.FOP,detail:activeRoles.FOP?activeRoles.FOP+' Field Operator aktiv':'keine aktive FOP Access Card'},
+    {id:'UPLOAD_SYSTEM',ok:activeHqUploads>0,value:activeHqUploads,detail:activeHqUploads?activeHqUploads+' HQ Upload Bay(s) aktiv':'keine aktive HQ Upload Bay'},
+    {id:'ACCESS_SECURITY',ok:accessSecurityOk,value:codeCapacityRequired,detail:accessSecurityOk?(codeCapacityRequired+' frische mechanische Codes für '+nodes.length+' Node(s) reservierbar'):'Code-Set kann nicht sicher vorbereitet werden'}
   ];
   const blocking=checks.filter(x=>!x.ok);
   return {
     ok:true,
     authenticated:true,
-    status:blocking.length?'NOT_READY':'BASELINE_READY',
+    status:blocking.length?'NOT_READY':'SYSTEM_BASELINE_READY',
     ready:blocking.length===0,
     checks:checks,
     provisionedNodes:nodes,
     coreSummary:{registered:registeredCores,hqReserve:reserveCores,assigned:assignedCores,invalidOwnership:invalidOwnership},
-    coreDiagnostics:coreDiagnostics
+    identitySummary:activeRoles,
+    uploadSummary:{hq:activeHqUploads,fop:activeFopUploads},
+    coreDiagnostics:coreDiagnostics,
+    manualChecksPending:['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION']
   };
 }
 
