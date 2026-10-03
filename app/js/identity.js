@@ -201,10 +201,22 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   const badCores=coreDiagnostics.filter(x=>!x.ok);
   const summary=r.coreSummary||{};
   if(repair)repair.hidden=(summary.invalidOwnership||0)===0;
+  const preflightBox=document.querySelector('#eventPreflight');
+  const preflight=Array.isArray(r.preflight)?r.preflight:[];
+  const preflightMap=Object.fromEntries(preflight.map(x=>[x.id,x]));
+  if(preflightBox)preflightBox.hidden=!r.systemReady;
+  const physical=document.querySelector('#confirmPhysicalEquipment'),config=document.querySelector('#confirmEventConfiguration'),finalConfirm=document.querySelector('#confirmFounderFinal');
+  if(physical){physical.disabled=!r.systemReady||!!preflightMap.PHYSICAL_EQUIPMENT?.confirmed;physical.textContent=preflightMap.PHYSICAL_EQUIPMENT?.confirmed?'PHYSICAL EQUIPMENT ✓':'PHYSICAL EQUIPMENT BESTÄTIGEN'}
+  if(config){config.disabled=!preflightMap.PHYSICAL_EQUIPMENT?.confirmed||!!preflightMap.EVENT_CONFIGURATION?.confirmed;config.textContent=preflightMap.EVENT_CONFIGURATION?.confirmed?'EVENT CONFIGURATION ✓':'EVENT CONFIGURATION BESTÄTIGEN'}
+  if(finalConfirm){finalConfirm.disabled=!preflightMap.EVENT_CONFIGURATION?.confirmed||!!preflightMap.FINAL_FOUNDER_CONFIRMATION?.confirmed;finalConfirm.textContent=preflightMap.FINAL_FOUNDER_CONFIRMATION?.confirmed?'FINAL FOUNDER CONFIRMATION ✓':'FINAL FOUNDER CONFIRMATION'}
   if(r.ready){
    const coreLine='N_CORES: '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen';
-   showFounderResult('BASELINE READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // ')+' // '+coreLine,true,btn);
+   showFounderResult('EVENT READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // ')+' // PRE-FLIGHT ✓ // '+coreLine,true,btn);
    if(init)init.disabled=false;
+  }else if(r.systemReady){
+   const pending=(r.manualChecksPending||[]).join(' // ');
+   showFounderResult('BASELINE READY','SYSTEM CHECKS ✓ // PRE-FLIGHT AUSSTEHEND: '+pending,true,btn);
+   if(init)init.disabled=true;
   }else{
    const blockers=failed.map(x=>x.id+': '+x.detail);
    const coreLines=badCores.map(x=>x.id+(x.energy?' · '+x.energy+' E':'')+' → '+x.detail);
@@ -232,6 +244,20 @@ window.addEventListener('nodiv-founder-ownership-repair',async()=>{
   document.querySelector('#checkEventReadiness')?.click();
  }catch(err){showFounderResult('REPARATUR FEHLER',String(err.message||err),false,btn)}
  finally{if(btn){btn.disabled=false;btn.textContent='OWNERSHIP REPARIEREN'}}
+});
+window.addEventListener('nodiv-founder-preflight',async e=>{
+ if(!sessionToken)return;
+ const check=String(e.detail?.check||'').toUpperCase();
+ const ids={PHYSICAL_EQUIPMENT:'#confirmPhysicalEquipment',EVENT_CONFIGURATION:'#confirmEventConfiguration',FINAL_FOUNDER_CONFIRMATION:'#confirmFounderFinal'};
+ const btn=document.querySelector(ids[check]||'');
+ if(!btn)return;
+ btn.disabled=true;
+ try{
+  const r=await apiRequest({action:'eventpreflightconfirm',token:sessionToken,check});
+  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'PRE-FLIGHT BESTÄTIGUNG FEHLGESCHLAGEN');
+  showFounderResult('PRE-FLIGHT BESTÄTIGT',check.replaceAll('_',' '),true,btn);
+  document.querySelector('#checkEventReadiness')?.click();
+ }catch(err){showFounderResult('PRE-FLIGHT GESPERRT',String(err.message||err),false,btn);btn.disabled=false}
 });
 window.addEventListener('nodiv-founder-event-initialize',async()=>{
  if(!sessionToken)return;
