@@ -271,6 +271,10 @@ function doGet(e) {
 
       result = depositOwnedCoreToReserve(e);
 
+    } else if (action === 'playerstate') {
+
+      result = getPlayerState(e);
+
     } else if (action === 'energybalance') {
 
       result = getPlayerEnergyBalance(e);
@@ -2691,6 +2695,37 @@ function bookPlayerEnergy(data) {
   const entryId = 'EN-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') + '-' + Utilities.getUuid().substring(0,8).toUpperCase();
   getPlayerEnergyLedgerSheet().appendRow([entryId,new Date(),identity,role,type,amount,after,String(data.reference||''),String(data.details||'')]);
   return {entryId:entryId,before:before,amount:amount,balance:after};
+}
+
+function getPlayerState(e) {
+  const session = resolvePlayerSession(e.parameter.token || '');
+  if (!session.ok) return session.response;
+  const player = session.player;
+  const ownerType = player.role;
+  const ownerId = player.identity;
+  const sheet = getRegisterSheet();
+  const rows = sheet.getRange(2, 1, 200, Math.max(CORE_COL.UPDATED_AT, CORE_COL.OWNER_ID)).getValues();
+  const cores = [];
+  rows.forEach((row, index) => {
+    const type = String(row[CORE_COL.OWNER_TYPE - 1] || '').trim().toUpperCase();
+    const id = String(row[CORE_COL.OWNER_ID - 1] || '').trim().toUpperCase();
+    if (type !== ownerType || id !== ownerId) return;
+    const visible = row[CORE_COL.VISIBLE_ENERGY - 1] === '' ? '' : Number(row[CORE_COL.VISIBLE_ENERGY - 1]);
+    const actual = row[CORE_COL.ACTUAL_ENERGY - 1] === '' ? '' : Number(row[CORE_COL.ACTUAL_ENERGY - 1]);
+    cores.push({
+      coreId: String(row[CORE_COL.ID - 1] || '').trim().toUpperCase(),
+      energy: actual === '' ? visible : actual,
+      status: String(row[CORE_COL.STATUS - 1] || '').trim().toUpperCase()
+    });
+  });
+  const carriedEnergy = cores.reduce((sum, core) => sum + (Number.isFinite(Number(core.energy)) ? Number(core.energy) : 0), 0);
+  return {
+    ok:true, authenticated:true, session:true, status:'PLAYER_STATE',
+    player:getSessionPlayerDisplay(player),
+    securedEnergy:readPlayerEnergyBalance(player.identity),
+    carriedEnergy:carriedEnergy,
+    cores:cores.slice(0, Math.max(0, Number(player.coreCapacity || 0)))
+  };
 }
 
 function getPlayerEnergyBalance(e) {
