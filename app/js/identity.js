@@ -72,12 +72,14 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
     if(!route?.ok||!route?.session)throw new Error(route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
-    const action=String(route.action||'NO_ACTION').toUpperCase();
+    const decision=route.decision||{};
+    const action=String(decision.action||route.action||'NO_ACTION').toUpperCase();
+    const allowed=decision.allowed!==undefined?Boolean(decision.allowed):route.allowed!==false;
     const status=String(object.status||route.status||'').toUpperCase();
-    const message=String(route.message||route.reason||'').trim();
+    const message=String(decision.message||decision.reason||route.message||route.reason||'').trim();
     b.textContent=(id||type)+' // '+(action==='NODE_INTERACTION'?'ACCESS READY':action.replaceAll('_',' '));
     b.title=[status,message].filter(Boolean).join(' // ');
-    emitNodiv(route.allowed===false?'ACCESS_DENIED':'IDENTITY_VERIFIED',{target:'#pioneerScan'});
+    emitNodiv(allowed?'IDENTITY_VERIFIED':'ACCESS_DENIED',{target:'#pioneerScan'});
    }catch(err){
     b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
    }finally{
