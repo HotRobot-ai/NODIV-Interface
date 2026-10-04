@@ -379,7 +379,7 @@ window.addEventListener('nodiv-founder-core-open',async()=>{
 });
 window.addEventListener('nodiv-founder-core-scan',async()=>{
  if(!sessionToken)return;
- const panel=document.querySelector('#coreProvisioner'),input=document.querySelector('#coreEnergy'),hint=document.querySelector('#coreProvisionHint'),btn=document.querySelector('#scanCoreAntenna');
+ const panel=document.querySelector('#coreProvisioner'),id=document.querySelector('#coreProvisionId'),input=document.querySelector('#coreEnergy'),hint=document.querySelector('#coreProvisionHint'),btn=document.querySelector('#scanCoreAntenna');
  const coreId=panel?.dataset.coreId||'',value=Number(String(input?.value||'').trim());
  if(!coreId){if(hint)hint.textContent='Kein freier N-Core geladen.';return} if(!Number.isFinite(value)||value<=0){if(hint)hint.textContent='Bitte einen gültigen Energiewert größer 0 eingeben.';input?.focus();return}
  if(!('NDEFReader' in window)){if(hint)hint.textContent='Web NFC nicht verfügbar // Android + Chrome erforderlich.';return}
