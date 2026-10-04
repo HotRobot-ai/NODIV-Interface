@@ -270,6 +270,8 @@ function doGet(e) {
 
       result = getGameplayRoute(e);
 
+    } else if (action === 'restore1repairreward') {
+      result = repairRestoreOneReward(e);
     } else if (action === 'restoretestsetup') {
       result = setRestoreTestSetup(e);
     } else if (action === 'restoreeligible') {
@@ -3849,6 +3851,26 @@ function cleanupInstallationOrders() {
 function nodeEnergyState(energy) {return energy>=600?'STABLE':energy>=450?'DEGRADED':'CRITICAL';}
 
 const RESTORE_TEST_SETUP_KEY='NODIV_RESTORE_TEST_NODE';
+function repairRestoreOneReward(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
+  const pioneer='P003',coreId='NC-013',player=findIdentityById(pioneer),core=readCoreState(coreId),logs=exchangeLogRows();
+  if(!player||player.role!=='PIONEER'||player.status!=='ACTIVE'||Number(player.coreCapacity)!==2)throw new Error('P003_RESTORE_STATE_INVALID');
+  if(!logs.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===pioneer))throw new Error('P003_RESTORE_1_NOT_COMPLETE');
+  if(core.ownerType==='PIONEER'&&core.ownerId===pioneer&&core.status==='FIELD')return {ok:true,session:true,action:true,status:'RESTORE_1_REWARD_ALREADY_REPAIRED',message:'P003 // NC-013 94 E // 2/3 READY'};
+  if(core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE'||Number(core.visibleEnergy)!==94)throw new Error('NC_013_NOT_EXPECTED_HQ_RESERVE_STATE');
+  if(countCoresOwnedBy('PIONEER',pioneer)!==1)throw new Error('P003_PERSONAL_CORE_COUNT_NOT_1');
+  const requests=[];
+  transferCoreOwnership({coreId,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:pioneer,eventType:'RESTORE_1_REWARD_REPAIR',
+    actorId:session.player.identity,actorRole:'FOUNDER',newStatus:'FIELD',details:'One-time repair for RESTORE #1 completed before reward-core rule',batchRequests:requests});
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  return {ok:true,session:true,action:true,status:'RESTORE_1_REWARD_REPAIRED',message:'P003 // NC-013 94 E // 2/3 READY'};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
 function setRestoreTestSetup(e){
  const lock=LockService.getScriptLock();
  try{
