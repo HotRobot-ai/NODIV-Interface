@@ -337,7 +337,7 @@ test('event/session/node/capacity/inventory revalidated; expired and cancelled e
  for(const mutate of [f=>f.sheets['Event Register'].rows[1][1]='INITIALIZED',f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.e.parameter.node='NODE-002',f=>f.sheets['Event Node Codes'].rows[1][9]='DEINSTALLED',f=>f.sheets['Access Card Register'].rows[2][6]=2,f=>f.sheets['N-Core Register'].rows[6][2]='changed']){
   const f=exchangeFixture();f.authorize();mutate(f);assert.throws(()=>f.exchangeScan(6));assert.equal(f.batches(),0);
  }
- const f=exchangeFixture();f.authorize();f.cache.delete('NODIV_SESSION_'+f.e.parameter.token);assert.equal(f.exchangeScan(6).session,false);assert.equal(f.ctx.liveExchanges().length,0);
+ const f=exchangeFixture();f.authorize();f.cache.delete('NODIV_SESSION_'+f.e.parameter.token);assert.equal(f.exchangeScan(6).session,false);assert.equal(f.ctx.liveExchanges().length,1);
  const g=exchangeFixture();g.authorize();const key='NODIV_EXCHANGE_'+g.e.parameter.exchange,order=JSON.parse(g.properties.get(key));order.expiresAt=0;g.properties.set(key,JSON.stringify(order));assert.throws(()=>g.exchangeScan(6),/EXPIRED/);assert.equal(g.ctx.liveExchanges().length,0);g.authorize();g.ctx.normalExchange(g.e,'cancel');assert.equal(g.ctx.liveExchanges().length,0);assert.equal(g.batches(),0);
 });
 test('exchange locks Node, personal inventory and cores against competing exchange/FOP/transfers',()=>{
@@ -395,11 +395,32 @@ test('Node rescan resumes own exchange at 0/0, 1/0, 1/1 without creating order o
 });
 test('recovery rejects different identity/session/Node, expired/completed orders and changed event/code/core state',()=>{
  const f=exchangeFixture();f.authorize();assert.equal(f.ctx.recoverNormalExchange(f.e,'NODE-002'),null);
- const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));assert.equal(f.ctx.recoverNormalExchange({parameter:{token}},'NODE-001'),null);
+ const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));assert.equal(f.ctx.recoverNormalExchange({parameter:{token}},'NODE-001').exchange,f.e.parameter.exchange);
  f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));assert.equal(f.ctx.recoverNormalExchange({parameter:{token}},'NODE-001'),null);
  for(const mutate of [f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.sheets['Event Register'].rows[1][1]='COMPLETED',f=>f.cache.delete('NODIV_SESSION_'+f.e.parameter.token),f=>{const key='NODIV_EXCHANGE_'+f.e.parameter.exchange,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));}]){
   const g=exchangeFixture();g.authorize();mutate(g);assert.equal(g.ctx.recoverNormalExchange(g.e,'NODE-001'),null);assert.equal(g.batches(),0);
  }
  for(const mutate of [f=>f.sheets['N-Core Register'].rows[6][15]='OTHER',f=>f.sheets['Event Node Codes'].rows[1][2]='9999']){const g=exchangeFixture();g.authorize();mutate(g);assert.throws(()=>g.ctx.recoverNormalExchange(g.e,'NODE-001'));assert.equal(g.batches(),0);}
  const g=exchangeFixture();g.authorize();g.exchangeScan(6);g.exchangeScan(1);g.finishExchange();assert.equal(g.ctx.recoverNormalExchange(g.e,'NODE-001'),null);
+});
+
+test('Session A loss and Session B login rebind same P003 exchange at every progress; scan/cancel/confirm work',()=>{
+ for(const count of [0,1,2])for(const end of ['cancel','confirm']){
+  const f=exchangeFixture();const auth=f.authorize(),oldToken=f.e.parameter.token;
+  if(count>=1)f.exchangeScan(6);if(count===2)f.exchangeScan(1);
+  const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),key='NODIV_EXCHANGE_'+auth.exchange,stored=JSON.parse(f.properties.get(key));
+  f.cache.delete('NODIV_SESSION_'+oldToken);assert.equal(f.ctx.liveExchanges().length,1);
+  const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));f.e.parameter.token=token;f.e.parameter.uid='nodeuid';
+  const r=f.ctx.getGameplayRoute(f.e).exchangeResume;assert.equal(r.exchange,auth.exchange);assert.equal(r.inCount,count>=1?1:0);assert.equal(r.outCount,count===2?1:0);assert.equal(r.canConfirm,count===2);assert.equal(r.accessCode,'0123');
+  const rebound=JSON.parse(f.properties.get(key));assert.equal(rebound.token,token);assert.deepEqual({...rebound,token:oldToken},stored);assert.equal(f.ctx.liveExchanges().length,1);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);
+  // Even if the old session becomes usable again, its token no longer controls this order.
+  f.cache.set('NODIV_SESSION_'+oldToken,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));assert.throws(()=>f.ctx.normalExchange({parameter:{...f.e.parameter,token:oldToken}},'cancel'),/MISMATCH/);
+  if(end==='cancel'){f.ctx.normalExchange(f.e,'cancel');assert.equal(f.ctx.liveExchanges().length,0);assert.equal(f.properties.has(key),false);assert.equal(f.batches(),0);}
+  else {if(count===0)f.exchangeScan(6);if(count<2)f.exchangeScan(1);assert.equal(f.finishExchange().status,'EXCHANGE_COMPLETE');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);assert.equal(f.ctx.liveExchanges().length,0);}
+ }
+});
+test('new Session B of another Identity cannot take over an orphaned reservation',()=>{
+ const f=exchangeFixture();f.authorize();const key='NODIV_EXCHANGE_'+f.e.parameter.exchange,before=f.properties.get(key);f.cache.delete('NODIV_SESSION_'+f.e.parameter.token);
+ f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));
+ const e={parameter:{token,node:'NODE-001',uid:'nodeuid',exchange:f.e.parameter.exchange}};assert.equal(f.ctx.recoverNormalExchange(e,'NODE-001'),null);assert.throws(()=>f.ctx.getGameplayRoute(e),/ALREADY_RUNNING/);assert.throws(()=>f.ctx.normalExchange(e,'cancel'),/MISMATCH/);assert.equal(f.properties.get(key),before);assert.equal(f.batches(),0);
 });

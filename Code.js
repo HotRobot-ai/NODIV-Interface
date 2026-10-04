@@ -6516,9 +6516,11 @@ function exchangeLogRows(){
 }
 function exchangeCompleted(order){return exchangeLogRows().some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
 function exchangeIsLive(order){
- if(!order||Date.now()>=order.expiresAt||exchangeCompleted(order))return false;
- const session=resolvePlayerSession(order.token),event=readCurrentEvent();
- return Boolean(session.ok&&session.player.identity===order.identity&&event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId);
+ if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt||exchangeCompleted(order))return false;
+ // Reservations belong to the authenticated Identity, not to the lifetime of a browser session.
+ // Scan/Cancel/Confirm still require the currently bound token; only recovery can rebind it.
+ const player=findIdentityById(order.identity),event=readCurrentEvent();
+ return Boolean(player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&player.nodeAccess&&event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId);
 }
 function liveExchanges(){
  const props=PropertiesService.getScriptProperties().getProperties();
@@ -6588,12 +6590,16 @@ function recoverNormalExchange(e,nodeId){
   lock.waitLock(10000);
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return null;
   const token=normalizeSessionToken(e.parameter.token);
-  const order=liveExchanges().find(order=>order.token===token&&order.identity===session.player.identity&&order.nodeId===nodeId);
+  const order=liveExchanges().find(order=>order.identity===session.player.identity&&order.nodeId===nodeId);
   if(!order)return null;
   const context=validateLiveExchange(order,session.player);
   const index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[context.eventNode.activeSlot];
   const accessCode=context.eventNode.codes[index];
   if(!/^\d{4}$/.test(accessCode))throw new Error('NODE_CODE_STATE_INVALID');
+  if(order.token!==token){
+   order.token=token;
+   PropertiesService.getScriptProperties().setProperty(EXCHANGE_PREFIX+order.id,JSON.stringify(order));
+  }
   return {...exchangeResponse(order,'EXCHANGE_RESUMED'),accessCode,totalEnergy:context.totalEnergy,nodeState:nodeEnergyState(context.totalEnergy),slotLimit:context.capacity,sizes:[order.size]};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
