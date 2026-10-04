@@ -6982,7 +6982,10 @@ function normalRestoreOne(e,action){
   if(order.incoming.length!==1||order.outgoing.length!==1)throw new Error('RESTORE_SCANS_INCOMPLETE');
   const requests=[];
   stageValidatedExchangeTransfer(context.cargo,'NODE',order.nodeId,'DEPLOYED','RESTORE_1_IN',player,order.nodeId,requests);
-  stageValidatedExchangeTransfer(context.out,'NODIV_RESERVE','HQ','RESERVE','RESTORE_1_OUT',player,order.nodeId,requests);
+  // RESTORE #1 progression reward: the replaced Node core becomes the Pioneer's
+  // second personal FIELD core. This makes the newly unlocked 2/3 capacity
+  // physically usable and enables the required subsequent 2-for-2 exchange.
+  stageValidatedExchangeTransfer(context.out,'PIONEER',player.identity,'FIELD','RESTORE_1_OUT',player,order.nodeId,requests);
   const cardSheet=getAccessCardRegisterSheet(),cardRows=cardSheet.getRange(2,1,cardSheet.getLastRow()-1,12).getValues(),cardIndex=cardRows.findIndex(row=>String(row[1])===player.identity&&String(row[0])===player.cardId);
   if(cardIndex<0||Number(cardRows[cardIndex][6])!==1)throw new Error('RESTORE_CAPACITY_CHANGED');
   requests.push(sheetCellsRequest(cardSheet,cardIndex+2,7,[[2]]));
