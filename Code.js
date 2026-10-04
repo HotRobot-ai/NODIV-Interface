@@ -3861,14 +3861,15 @@ function setRestoreTestSetup(e){
   PropertiesService.getScriptProperties().setProperty(RESTORE_TEST_SETUP_KEY,JSON.stringify({eventId:event.eventId,nodeId,createdAt:new Date().toISOString()}));
   const nodeCoreCount=countCoresOwnedBy('NODE',nodeId),available=getAvailableInstallationCores();
   let preview=null,diagnostic='ARMED // NODE CURRENTLY INSTALLED';
+  const reserveSnapshot=available.map(core=>({id:core.coreId,energy:core.visibleEnergy})).sort((a,b)=>a.energy-b.energy||a.id.localeCompare(b.id));
   if(nodeCoreCount===0){
     try{
       const loadout=selectRestoreTestLoadout(available),total=loadout.reduce((sum,core)=>sum+core.energy,0);
       preview={loadout:loadout.map(core=>({id:core.id,energy:core.energy})),totalEnergy:total,nodeState:nodeEnergyState(total)};
       diagnostic='READY // '+loadout.map(core=>core.id+' '+core.energy+'E').join(' // ')+' // '+total+'E';
-    }catch(error){diagnostic=String(error.message||error);}
+    }catch(error){diagnostic=String(error.message||error)+' // HQ RESERVE: '+reserveSnapshot.map(core=>core.id+' '+core.energy+'E').join(' | ');}
   }
-  return {ok:true,session:true,action:true,status:'RESTORE_TEST_SETUP_ARMED',nodeId,nodeCoreCount,availableReserveCores:available.length,preview,diagnostic,message:'NODE-002 // '+diagnostic};
+  return {ok:true,session:true,action:true,status:'RESTORE_TEST_SETUP_ARMED',nodeId,nodeCoreCount,availableReserveCores:available.length,reserveSnapshot,preview,diagnostic,message:'NODE-002 // '+diagnostic};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function restoreTestSetupFor(context,nodeId){
