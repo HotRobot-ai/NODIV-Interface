@@ -251,3 +251,6 @@
 #fopDeploymentCard[data-operation="DEINSTALL"] .fop-card-head small,#fopDeploymentCard[data-operation="DEINSTALL"] .fop-loadout-head small{color:#d4e7ed}
 #fopDeploymentCard[data-operation="DEINSTALL"] .fop-core.verified{background:#20343e;border-color:#d4e7ed}
 #fopDeploymentCard[data-operation="DEINSTALL"] .fop-complete{border-color:#d4e7ed;color:#d4e7ed;background:#172a32}
+
+/* Pioneer Normal Exchange uses the existing field/HQ palette. */
+#pioneerExchange{margin-top:16px}#pioneerExchange select{width:100%;min-height:48px;background:var(--bg,#081017);color:inherit;border:1px solid #315362;padding:12px;font:inherit}#pioneerExchange .role-action{width:100%;margin-top:10px}#exchangeCode{font-size:1.35rem;letter-spacing:.12em;overflow-wrap:anywhere}#exchangeProgress{font-weight:700;color:#90dcf2}#exchangeHint{overflow-wrap:anywhere}

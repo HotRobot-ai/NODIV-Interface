@@ -270,6 +270,9 @@ function doGet(e) {
 
       result = getGameplayRoute(e);
 
+    } else if (['exchangeauthorize','exchangescan','exchangeconfirm','exchangecancel'].includes(action)) {
+      result = normalExchange(e,action.replace('exchange',''));
+
     } else if (action === 'coredeposit') {
 
       result = depositOwnedCoreToReserve(e);
@@ -2685,7 +2688,7 @@ function getGameplayRoute(e) {
       authorization.allowed,
       authorization.reason,
       authorization.message,
-      authorization.allowed&&authorization.accessCode?{accessCode:authorization.accessCode}:null
+      authorization.allowed&&player.role==='PIONEER'?{exchangePreview:exchangePreview(e,player,hit.id)}:null
     );
   }
 
@@ -3046,6 +3049,7 @@ function assignCoreDeployment(e) {
 
     if(readInstallationOrders().some(order=>order.nodeId===targetNode&&installationOrderIsLive(order)))return gameplayActionDenied(actor,'NODE_OPERATION_RESERVED','Ziel-Node ist für eine FOP-Operation reserviert.');
 
+    assertExchangeUnreserved(targetNode,carrierId,core.coreId);
     const deploymentId = createDeploymentId();
     getDeploymentRegisterSheet().appendRow([
       deploymentId, core.coreId, carrier.identity, carrier.role, targetNode,
@@ -3874,6 +3878,7 @@ function getNodeOperationOrder(e,operation) {
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
+    assertExchangeUnreserved(nodeId,'','');
     cleanupInstallationOrders();
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
     if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
@@ -4045,7 +4050,7 @@ function getFopOperations(e) {
       const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId));
       const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
       ids.forEach(nodeId=>{
-        if(reserved.has(nodeId))return;
+        if(reserved.has(nodeId)||liveExchanges().some(order=>order.nodeId===nodeId))return;
         for(const type of ['INSTALL','DEINSTALL']){
           try{
             if(type==='INSTALL'){if(!stockAvailable)continue;validateNodeInstallation(actor,nodeId);}
@@ -4177,7 +4182,7 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
   const codeIndex=slotMap[eventNode.activeSlot];
   if(codeIndex===undefined)return {allowed:false,reason:'NODE_CODE_STATE_INVALID',message:'Node erkannt. Zugangscode-Status ist ungültig.'};
 
-  return {allowed:true,reason:'NODE_ACCESS_GRANTED',message:'Node erkannt. Server-seitige Freigabe erteilt.',accessCode:eventNode.codes[codeIndex]};
+  return {allowed:true,reason:'NODE_ACCESS_GRANTED',message:'Node erkannt. Exchange-Größe wählen und serverseitig autorisieren.'};
 }
 
 function provisionAccessCardFromSession(e) {
@@ -5302,6 +5307,8 @@ function transferCoreOwnership(data) {
 
 
   const depSheet=getDeploymentRegisterSheet(),depRows=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
+  assertExchangeUnreserved(fromType==='NODE'?fromId:'',fromType==='PIONEER'?fromId:'',coreId,data.exchangeId);
+  assertExchangeUnreserved(toType==='NODE'?toId:'',toType==='PIONEER'?toId:'',coreId,data.exchangeId);
   const installOrders=readInstallationOrders().filter(installationOrderIsLive);
   if(installOrders.some(order=>order.id!==data.installationId&&((fromType==='NODE'&&order.nodeId===fromId)||(toType==='NODE'&&order.nodeId===toId))))throw new Error('NODE_OPERATION_RESERVED');
   if(depRows.some(row=>String(row[1]).trim().toUpperCase()===coreId&&installationReservationIsLive(row,installOrders)&&String(row[0])!==installationDeploymentId(data.installationId,coreId)))throw new Error('CORE_RESERVED_FOR_NODE_INSTALLATION');
@@ -6496,4 +6503,125 @@ function createResponse(e, data) {
 
 
 
+}
+/* Normal Exchange V1.0: expiring session reservations, atomic transfers/log. */
+const EXCHANGE_PREFIX='NODIV_EXCHANGE_';
+const EXCHANGE_PREVIEW_PREFIX='NODIV_EXCHANGE_PREVIEW_';
+const EXCHANGE_COOLDOWN_MS=5*60*1000;
+function exchangeLogRows(){
+ const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
+ return sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,16).getValues():[];
+}
+function exchangeCompleted(order){return exchangeLogRows().some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
+function exchangeIsLive(order){
+ if(!order||Date.now()>=order.expiresAt||exchangeCompleted(order))return false;
+ const session=resolvePlayerSession(order.token),event=readCurrentEvent();
+ return Boolean(session.ok&&session.player.identity===order.identity&&event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId);
+}
+function liveExchanges(){
+ const props=PropertiesService.getScriptProperties().getProperties();
+ return Object.keys(props).filter(key=>key.startsWith(EXCHANGE_PREFIX)&&!key.startsWith(EXCHANGE_PREVIEW_PREFIX)).flatMap(key=>{
+  try{const order=JSON.parse(props[key]);return exchangeIsLive(order)?[order]:[];}catch(error){return [];}
+ });
+}
+function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId){
+ if(liveExchanges().some(order=>order.id!==exchangeId&&(
+  (nodeId&&order.nodeId===nodeId)||(identity&&order.identity===identity)||
+  (coreId&&order.inventory.concat(order.nodeCores).some(core=>core.coreId===coreId)))))throw new Error('EXCHANGE_ALREADY_RUNNING');
+}
+function exchangeOwnedCores(type,id){
+ const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+ return rows.filter(row=>String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()===type&&String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()===id).map(row=>readCoreState(row[0]));
+}
+function exchangeNodeFingerprint(nodeId,eventNode){
+ const rows=getNodeRegisterSheet().getRange(2,1,15,3).getValues();
+ const row=rows.find((row,index)=>(/^NODE-\d{3}$/.test(String(row[0]))?String(row[0]):formatNodeId(index+1))===nodeId);
+ return JSON.stringify([row?.[1],row?.[2],eventNode.activeSlot,eventNode.pendingSlot,eventNode.codes]);
+}
+function exchangeContext(player,nodeId,exchangeId){
+ if(player.role!=='PIONEER'||!player.nodeAccess)throw new Error('PIONEER_NODE_ACCESS_REQUIRED');
+ const auth=getNodeAccessAuthorization(player,nodeId,getNodeGameplayStatus(nodeId));
+ if(!auth.allowed)throw new Error(auth.reason);
+ const event=readCurrentEvent(),eventNode=findEventNodeCode(event.eventId,nodeId);
+ if(eventNode.pendingSlot)throw new Error('NODE_CODE_CHANGE_PENDING');
+ assertExchangeUnreserved(nodeId,player.identity,'',exchangeId);
+ const nodeCores=exchangeOwnedCores('NODE',nodeId),inventory=exchangeOwnedCores('PIONEER',player.identity);
+ const capacity=Number(player.coreCapacity);
+ if(!Number.isInteger(capacity)||capacity<1||capacity>3||inventory.length>capacity)throw new Error('PIONEER_SLOT_LIMIT_INVALID');
+ const eligible=core=>core.uid&&Number.isFinite(core.visibleEnergy)&&!['IN_TRANSIT','RESERVE'].includes(core.status)&&!hasOpenDeploymentForCore(core.coreId);
+ if(nodeCores.length!==3||nodeCores.some(core=>!eligible(core)))throw new Error('NODE_CORES_UNAVAILABLE');
+ const all=nodeCores.concat(inventory);
+ if(new Set(all.map(core=>core.coreId)).size!==all.length||new Set(all.filter(core=>core.uid).map(core=>core.uid)).size!==all.filter(core=>core.uid).length)throw new Error('EXCHANGE_DUPLICATE_CORE_UID');
+ const personal=inventory.filter(eligible);
+ const logs=exchangeLogRows().filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
+ const cooldownUntil=logs.reduce((until,row)=>Math.max(until,new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS||0),0);
+ if(cooldownUntil>Date.now())throw new Error('NODE_EXCHANGE_COOLDOWN // '+new Date(cooldownUntil).toISOString());
+ return {event,eventNode,nodeCores,inventory,personal,capacity,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
+}
+function exchangePreview(e,player,nodeId){
+ const context=exchangeContext(player,nodeId),preview=Utilities.getUuid();
+ PropertiesService.getScriptProperties().setProperty(EXCHANGE_PREVIEW_PREFIX+normalizeSessionToken(e.parameter.token),JSON.stringify({id:preview,nodeId,eventId:context.event.eventId,expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000}));
+ return {preview,nodeId,totalEnergy:context.totalEnergy,nodeState:nodeEnergyState(context.totalEnergy),slotLimit:context.capacity,sizes:Array.from({length:Math.min(context.capacity,context.personal.length)},(_,i)=>i+1)};
+}
+function exchangeResponse(order,status){return {ok:true,session:true,action:true,status,exchange:order.id,nodeId:order.nodeId,size:order.size,inCount:order.incoming.length,outCount:order.outgoing.length,canConfirm:order.incoming.length===order.size&&order.outgoing.length===order.size};}
+function normalExchange(e,action){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const player=session.player,token=normalizeSessionToken(e.parameter.token),nodeId=String(e.parameter.node||'').trim().toUpperCase(),props=PropertiesService.getScriptProperties();
+  if(action==='authorize'){
+   const preview=JSON.parse(props.getProperty(EXCHANGE_PREVIEW_PREFIX+token)||'null');
+   if(!preview||preview.id!==e.parameter.preview||preview.nodeId!==nodeId||Date.now()>=preview.expiresAt)throw new Error('NODE_SCAN_REQUIRED');
+   const context=exchangeContext(player,nodeId),size=Number(e.parameter.size);
+   if(context.event.eventId!==preview.eventId)throw new Error('EVENT_CHANGED');
+   if(!Number.isInteger(size)||size<1||size>Math.min(context.capacity,context.personal.length))throw new Error('EXCHANGE_SIZE_NOT_ALLOWED');
+   const index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[context.eventNode.activeSlot];
+   if(!/^\d{4}$/.test(context.eventNode.codes[index]))throw new Error('NODE_CODE_STATE_INVALID');
+   const order={id:Utilities.getUuid(),token,identity:player.identity,nodeId,eventId:context.event.eventId,size,capacity:context.capacity,inventory:context.inventory,nodeCores:context.nodeCores,nodeFingerprint:exchangeNodeFingerprint(nodeId,context.eventNode),incoming:[],outgoing:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+   props.setProperty(EXCHANGE_PREFIX+order.id,JSON.stringify(order));
+   try{props.deleteProperty(EXCHANGE_PREVIEW_PREFIX+token);}catch(error){/* Order reservation already blocks preview replay. */}
+   return {...exchangeResponse(order,'EXCHANGE_AUTHORIZED'),accessCode:context.eventNode.codes[index]};
+  }
+  const order=JSON.parse(props.getProperty(EXCHANGE_PREFIX+String(e.parameter.exchange||''))||'null');
+  if(!order)throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
+  if(order.token!==token||order.identity!==player.identity||order.nodeId!==nodeId)throw new Error('EXCHANGE_SESSION_NODE_MISMATCH');
+  if(action==='cancel'){props.deleteProperty(EXCHANGE_PREFIX+order.id);return {...exchangeResponse(order,'EXCHANGE_CANCELLED'),canConfirm:false};}
+  if(!exchangeIsLive(order))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
+  const context=exchangeContext(player,nodeId,order.id);
+  if(exchangeNodeFingerprint(nodeId,context.eventNode)!==order.nodeFingerprint)throw new Error('EXCHANGE_NODE_CHANGED');
+  if(context.event.eventId!==order.eventId||context.capacity!==order.capacity)throw new Error('EXCHANGE_EVENT_SLOT_CHANGED');
+  const snapshot=cores=>JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());
+  if(snapshot(context.inventory)!==snapshot(order.inventory)||snapshot(context.nodeCores)!==snapshot(order.nodeCores))throw new Error('EXCHANGE_CORE_STATE_CHANGED');
+  if(action==='scan'){
+   const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
+   if(!uid||!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
+   const core=readCoreState(hit.id);
+   if(order.incoming.concat(order.outgoing).includes(core.coreId))throw new Error('DUPLICATE_CORE_SCAN');
+   if(order.incoming.length<order.size){
+    if(!context.personal.some(c=>c.coreId===core.coreId&&c.uid===uid))throw new Error('CORE_NOT_OWNED_BY_PIONEER');
+    order.incoming.push(core.coreId);
+   }else{
+    if(order.outgoing.length>=order.size)throw new Error('EXCHANGE_SCAN_COMPLETE');
+    if(!context.nodeCores.some(c=>c.coreId===core.coreId&&c.uid===uid))throw new Error('CORE_NOT_IN_NODE');
+    order.outgoing.push(core.coreId);
+   }
+   props.setProperty(EXCHANGE_PREFIX+order.id,JSON.stringify(order));
+   return {...exchangeResponse(order,'EXCHANGE_CORE_SCANNED'),core:{id:core.coreId,energy:core.visibleEnergy}};
+  }
+  if(action!=='confirm')throw new Error('INVALID_EXCHANGE_ACTION');
+  if(order.incoming.length!==order.size||order.outgoing.length!==order.size||new Set(order.incoming.concat(order.outgoing)).size!==order.size*2)throw new Error('EXCHANGE_SCANS_INCOMPLETE');
+  // Revalidate scanned membership too: stored metadata cannot bypass ownership rules.
+  if(order.incoming.some(id=>!context.personal.some(c=>c.coreId===id))||order.outgoing.some(id=>!context.nodeCores.some(c=>c.coreId===id)))throw new Error('EXCHANGE_CORE_INVALID');
+  const requests=[];
+  for(const id of order.incoming)transferCoreOwnership({coreId:id,expectedFromType:'PIONEER',expectedFromId:player.identity,toType:'NODE',toId:nodeId,newStatus:'DEPLOYED',actorId:player.identity,actorRole:player.role,eventType:'NORMAL_EXCHANGE_IN',nodeId,exchangeId:order.id,batchRequests:requests});
+  for(const id of order.outgoing)transferCoreOwnership({coreId:id,expectedFromType:'NODE',expectedFromId:nodeId,toType:'PIONEER',toId:player.identity,newStatus:'FIELD',actorId:player.identity,actorRole:player.role,eventType:'NORMAL_EXCHANGE_OUT',nodeId,exchangeId:order.id,batchRequests:requests});
+  const first=order.capacity===1&&!exchangeLogRows().some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity);
+  if(first)appendTransactionLog({eventType:'RESTORE_1_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:'First normal exchange completed; eligibility marker only'},requests);
+  appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
+  SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  // Completion is durable in the same batch; stale property cannot reserve or replay.
+  try{props.deleteProperty(EXCHANGE_PREFIX+order.id);}catch(error){}
+  return {...exchangeResponse(order,'EXCHANGE_COMPLETE'),canConfirm:false,cooldownSeconds:300,restore1Eligible:first};
+ }finally{try{lock.releaseLock();}catch(error){}}
 }

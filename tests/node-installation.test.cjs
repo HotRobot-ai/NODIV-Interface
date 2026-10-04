@@ -289,3 +289,75 @@ test('shutdown requires proper deinstallation records, not merely zero Node-owne
  const f=recoveryFixture();for(const n of [6,3,4]){f.sheets['N-Core Register'].rows[n][14]='NODIV_RESERVE';f.sheets['N-Core Register'].rows[n][15]='HQ'}
  const result=f.ctx.shutdownFieldEvent(f.addFounder());assert.equal(result.status,'FIELD_SHUTDOWN_BLOCKED');assert.ok(result.blockers.includes('NODE-001: DEINSTALLATION_NOT_CONFIRMED'));
 });
+
+function exchangeFixture(capacity=1){
+ const f=fixture({legacy:true,state:'FIELD_ACTIVE',count:3}),rows=f.sheets['N-Core Register'].rows;
+ for(let n=1;n<=6;n++){rows[n][2]='uid'+n;rows[n][4]=n<=3?'DEPLOYED':'FIELD';rows[n][14]=n<=3?'NODE':'NODIV_RESERVE';rows[n][15]=n<=3?'NODE-001':'HQ';}
+ const own=[6,5,4].slice(0,capacity);for(const n of own){rows[n][14]='PIONEER';rows[n][15]='P003';}
+ rows[6][1]=341;
+ f.sheets['Access Card Register'].rows.push(['CARD-003','P003','PIONEER','p003uid','ACTIVE','',capacity,true]);
+ const token='b'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));
+ const e={parameter:{token,node:'NODE-001',uid:'nodeuid'}},player=f.ctx.findIdentityById('P003');
+ function preview(){e.parameter.uid='nodeuid';const r=f.ctx.getGameplayRoute(e);if(!r.exchangePreview)throw Error(r.decision.reason);e.parameter.preview=r.exchangePreview.preview;return r;}
+ function authorize(size=capacity){preview();e.parameter.size=size;const r=f.ctx.normalExchange(e,'authorize');e.parameter.exchange=r.exchange;return r;}
+ function scan(n){e.parameter.uid='uid'+n;return f.ctx.normalExchange(e,'scan');}
+ return {...f,e,player,preview,authorize,exchangeScan:scan,own,finishExchange:()=>f.ctx.normalExchange(e,'confirm')};
+}
+test('P003 scan never returns code; server sizes only 1 and releases code only after authorization',()=>{
+ const f=exchangeFixture(),route=f.preview();assert.equal(route.accessCode,undefined);assert.equal(f.ctx.getNodeAccessAuthorization(f.player,'NODE-001','INSTALLED').accessCode,undefined);
+ assert.deepEqual(Array.from(route.exchangePreview.sizes),[1]);assert.equal(route.exchangePreview.slotLimit,1);
+ f.e.parameter.size=2;assert.throws(()=>f.ctx.normalExchange(f.e,'authorize'),/SIZE_NOT_ALLOWED/);
+ assert.equal(f.authorize(1).accessCode,'0123');assert.equal(f.batches(),0);assert.throws(()=>f.authorize(1),/ALREADY_RUNNING/);
+});
+test('exchange rejects wrong, foreign, duplicate and wrong-phase cores; scans never change ownership',()=>{
+ const f=exchangeFixture();f.authorize();const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));
+ assert.throws(()=>f.exchangeScan(1),/NOT_OWNED_BY_PIONEER/);assert.throws(()=>f.exchangeScan(5),/NOT_OWNED_BY_PIONEER/);
+ f.exchangeScan(6);assert.throws(()=>f.exchangeScan(6),/DUPLICATE/);assert.throws(()=>f.exchangeScan(5),/NOT_IN_NODE/);
+ f.e.parameter.uid='unknown';assert.throws(()=>f.ctx.normalExchange(f.e,'scan'),/NOT_FOUND/);assert.throws(f.finishExchange,/INCOMPLETE/);
+ f.exchangeScan(1);assert.throws(()=>f.exchangeScan(1),/DUPLICATE/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);
+});
+test('atomic 1/2/3 equal exchange keeps Node exactly 3 and personal capacity, marks restore eligibility only at 1',()=>{
+ for(const capacity of [1,2,3]){
+  const f=exchangeFixture(capacity);f.authorize();for(const n of f.own)f.exchangeScan(n);for(let n=1;n<=capacity;n++)f.exchangeScan(n);
+  const r=f.finishExchange();assert.equal(r.status,'EXCHANGE_COMPLETE');assert.equal(f.batches(),1);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),capacity);
+  assert.equal(f.ctx.findIdentityById('P003').coreCapacity,capacity);assert.equal(r.restore1Eligible,capacity===1);
+  assert.equal(f.sheets['N-Core Register'].rows[6][14],'NODE');assert.equal(f.sheets['N-Core Register'].rows[1][14],'PIONEER');assert.equal(f.sheets['N-Core Register'].rows[1][4],'FIELD');assert.throws(f.finishExchange,/COMPLETED/);
+ }
+});
+test('batch failure preserves all state and retry works; durable completion cannot replay even if property survives',()=>{
+ const f=exchangeFixture();f.authorize();f.exchangeScan(6);f.exchangeScan(1);const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));f.fail();assert.throws(f.finishExchange,/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
+ const g=exchangeFixture();g.authorize();g.exchangeScan(6);g.exchangeScan(1);const key='NODIV_EXCHANGE_'+g.e.parameter.exchange,order=g.properties.get(key);g.finishExchange();g.properties.set(key,order);assert.equal(g.ctx.liveExchanges().length,0);assert.throws(g.finishExchange,/COMPLETED/);
+});
+test('5 minute cooldown is durable, blocks new authorization until exact boundary and marker does not grant slots',()=>{
+ const f=exchangeFixture();f.authorize();f.exchangeScan(6);f.exchangeScan(1);f.finishExchange();assert.throws(f.preview,/COOLDOWN/);
+ const log=f.sheets['Transaction Log'].rows.find(row=>row[2]==='NORMAL_EXCHANGE');log[1]=new Date(Date.now()-299000);assert.throws(f.preview,/COOLDOWN/);log[1]=new Date(Date.now()-300000);assert.deepEqual(Array.from(f.preview().exchangePreview.sizes),[1]);
+ f.authorize();f.exchangeScan(1);f.exchangeScan(6);assert.equal(f.finishExchange().restore1Eligible,false);
+});
+test('event/session/node/capacity/inventory revalidated; expired and cancelled exchange release locks',()=>{
+ for(const mutate of [f=>f.sheets['Event Register'].rows[1][1]='INITIALIZED',f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.e.parameter.node='NODE-002',f=>f.sheets['Event Node Codes'].rows[1][9]='DEINSTALLED',f=>f.sheets['Access Card Register'].rows[2][6]=2,f=>f.sheets['N-Core Register'].rows[6][2]='changed']){
+  const f=exchangeFixture();f.authorize();mutate(f);assert.throws(()=>f.exchangeScan(6));assert.equal(f.batches(),0);
+ }
+ const f=exchangeFixture();f.authorize();f.cache.delete('NODIV_SESSION_'+f.e.parameter.token);assert.equal(f.exchangeScan(6).session,false);assert.equal(f.ctx.liveExchanges().length,0);
+ const g=exchangeFixture();g.authorize();const key='NODIV_EXCHANGE_'+g.e.parameter.exchange,order=JSON.parse(g.properties.get(key));order.expiresAt=0;g.properties.set(key,JSON.stringify(order));assert.throws(()=>g.exchangeScan(6),/EXPIRED/);assert.equal(g.ctx.liveExchanges().length,0);g.authorize();g.ctx.normalExchange(g.e,'cancel');assert.equal(g.ctx.liveExchanges().length,0);assert.equal(g.batches(),0);
+});
+test('exchange locks Node, personal inventory and cores against competing exchange/FOP/transfers',()=>{
+ const f=exchangeFixture();f.authorize();assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-006',expectedFromType:'PIONEER',expectedFromId:'P003',toType:'NODIV_RESERVE',toId:'HQ'}),/ALREADY_RUNNING/);
+ const fop={parameter:{token:'a'.repeat(72),node:'NODE-001'}};assert.throws(()=>f.ctx.getNodeDeinstallOrder(fop),/ALREADY_RUNNING/);assert.equal(f.ctx.getFopOperations(fop).operations.length,0);
+ const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));const foreign={parameter:{...f.e.parameter,token}};assert.throws(()=>f.ctx.normalExchange(foreign,'scan'),/MISMATCH/);
+ const g=exchangeFixture();g.ctx.getNodeDeinstallOrder({parameter:{token:'a'.repeat(72),node:'NODE-001'}});assert.throws(g.authorize,/NODE_OPERATION_RESERVED/);
+});
+
+test('real P003 NC-002 341 E and NODE-001 859 E authorize only one, without fixture migration',()=>{
+ const f=exchangeFixture(),rows=f.sheets['N-Core Register'].rows;
+ rows[1][14]='NODIV_RESERVE';rows[1][15]='HQ';rows[1][4]='RESERVE';
+ for(const n of [3,4,6]){rows[n][14]='NODE';rows[n][15]='NODE-001';rows[n][4]='DEPLOYED'}
+ rows[2][14]='PIONEER';rows[2][15]='P003';rows[2][4]='FIELD';rows[2][1]=341;rows[6][1]=105;rows[3][1]=401;rows[4][1]=353;
+ const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),r=f.preview();assert.equal(r.exchangePreview.totalEnergy,859);assert.equal(r.exchangePreview.nodeState,'STABLE');assert.deepEqual(Array.from(r.exchangePreview.sizes),[1]);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
+ f.authorize();f.exchangeScan(2);f.exchangeScan(6);f.finishExchange();assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),1);
+});
+test('Node UID or mechanical slot/code changes and transit/deployment cores reject exchange',()=>{
+ for(const mutate of [f=>f.sheets['Node Register'].rows[1][1]='replaced',f=>f.sheets['Event Node Codes'].rows[1][2]='9999']){const f=exchangeFixture();f.authorize();f.exchangeScan(6);f.exchangeScan(1);mutate(f);assert.throws(f.finishExchange,/NODE_CHANGED/);assert.equal(f.batches(),0);}
+ const g=exchangeFixture();g.sheets['N-Core Register'].rows[6][4]='IN_TRANSIT';assert.deepEqual(Array.from(g.preview().exchangePreview.sizes),[]);assert.throws(g.authorize,/SIZE_NOT_ALLOWED/);
+ const h=exchangeFixture();h.sheets['Deployment Register'].rows.push(['DEP-X','NC-001','','','','DEPLOYMENT','ASSIGNED']);assert.throws(h.authorize,/CORES_UNAVAILABLE/);
+ const j=exchangeFixture();j.e.parameter.size=1;j.e.parameter.preview='invented';assert.throws(()=>j.ctx.normalExchange(j.e,'authorize'),/NODE_SCAN_REQUIRED/);
+});

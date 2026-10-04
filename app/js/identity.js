@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-ops3';
+import {routeIdentity} from './router.js?v=20261004-exchange1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -70,6 +70,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    try{
     const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
     if(!route?.ok||!route?.session)throw new Error(route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
+    if(route.exchangePreview)showPioneerExchangePreview(route.exchangePreview);
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
     const decision=route.decision||{};
@@ -83,7 +84,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    }catch(err){
     b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
    }finally{
-    setTimeout(()=>{b.disabled=false;b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
+    setTimeout(()=>{b.disabled=Boolean(pioneerExchange);b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
    }
   };
  }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
@@ -540,4 +541,68 @@ window.addEventListener('nodiv-founder-status',async()=>{
   const matrix=document.querySelector('#matrixMode');
   if(matrix)matrix.textContent=missing.length?'VORBEREITUNG // '+missing.length+' OFFEN':'STARTBEREIT';
  }catch(err){showFounderResult('STATUS UNAVAILABLE',String(err.message||err),false)}
+});
+
+let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false;
+function renderPioneerExchange(result){
+ const panel=document.querySelector('#pioneerExchange');if(!panel)return;
+ panel.hidden=false;
+ const complete=result?.status==='EXCHANGE_COMPLETE',active=Boolean(pioneerExchange)&&!complete;
+ document.querySelector('#exchangeNode').textContent=pioneerExchangePreview.nodeId+' // '+pioneerExchangePreview.totalEnergy+' E // '+pioneerExchangePreview.nodeState;
+ const sizes=document.querySelector('#exchangeSize');sizes.replaceChildren();
+ for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' CORE EXCHANGE';sizes.appendChild(option)}
+ sizes.disabled=active||complete;
+ document.querySelector('#exchangeAuthorize').hidden=active||complete;
+ document.querySelector('#exchangeAuthorize').disabled=!pioneerExchangePreview.sizes.length||pioneerExchangeBusy;
+ document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
+ document.querySelector('#exchangeScan').hidden=!active;
+ document.querySelector('#exchangeCancel').hidden=!active;
+ const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
+ document.querySelector('#exchangeScan').disabled=pioneerExchangeBusy||Boolean(result?.canConfirm);
+ document.querySelector('#exchangeProgress').textContent=complete?'EXCHANGE COMPLETE // NODE COOLDOWN 05:00':active?'IN '+result.inCount+'/'+result.size+' // OUT '+result.outCount+'/'+result.size:'Exchange-Größe wählen. Code erst nach Autorisierung.';
+ if(active)document.querySelector('#exchangeScan').textContent=result.inCount<result.size?'EIGENEN CORE SCANNEN':'ENTNOMMENEN NODE-CORE SCANNEN';
+ const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active;
+}
+function showPioneerExchangePreview(preview){
+ if(pioneerExchange)return;
+ pioneerExchangePreview=preview;renderPioneerExchange(null);
+ document.querySelector('#exchangeHint').textContent='Anzahl rein = Anzahl raus. Erst alle eigenen, dann die entnommenen Cores scannen.';
+}
+window.addEventListener('nodiv-pioneer-exchange',async e=>{
+ if(pioneerExchangeBusy||!pioneerExchangePreview||!sessionToken)return;
+ const action=e.detail?.action;
+ const hint=document.querySelector('#exchangeHint');
+ if(action==='scan'){
+  if(!pioneerExchange)return;
+  if(!('NDEFReader' in window)){hint.textContent='Web NFC benötigt Android + Chrome.';return;}
+  pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
+  try{
+   const controller=new AbortController(),reader=new NDEFReader();let handled=false;
+   await reader.scan({signal:controller.signal});
+   reader.onreadingerror=()=>{controller.abort();pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);hint.textContent='NFC LESEFEHLER // ERNEUT SCANNEN';};
+   reader.onreading=async ev=>{
+    if(handled)return;handled=true;controller.abort();
+    try{
+     const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,uid:String(ev.serialNumber||'')});
+     if(!r?.ok||r.action!==true)throw new Error(r?.error||r?.message||r?.status||'SCAN REJECTED');
+     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E // SCANNED';
+    }catch(err){hint.textContent=String(err.message||err);}
+    finally{pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);}
+   };
+  }catch(err){pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);hint.textContent=String(err.message||err);}
+  return;
+ }
+ if(!['authorize','confirm','cancel'].includes(action))return;
+ if(action!=='authorize'&&!pioneerExchange)return;
+ pioneerExchangeBusy=true;
+ try{
+  const r=await apiRequest({action:'exchange'+action,token:sessionToken,node:pioneerExchangePreview.nodeId,preview:pioneerExchangePreview.preview,size:document.querySelector('#exchangeSize').value,exchange:pioneerExchange?.exchange||''});
+  if(!r?.ok||r.action!==true)throw new Error(r?.error||r?.message||r?.status||'EXCHANGE REJECTED');
+  if(action==='authorize')pioneerExchange=r;
+  if(action==='cancel'){pioneerExchange=null;pioneerExchangePreview=null;document.querySelector('#pioneerExchange').hidden=true;document.querySelector('#pioneerScan').disabled=false;return;}
+  pioneerExchangeBusy=false;renderPioneerExchange(r);
+  if(action==='confirm'){pioneerExchange=null;pioneerExchangePreview=null;window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));}
+  hint.textContent=action==='confirm'?'Tausch atomar verbucht. Node bleibt 3/3.':'Code autorisiert. Cores physisch tauschen und scannen.';
+ }catch(err){hint.textContent=String(err.message||err);}
+ finally{pioneerExchangeBusy=false;}
 });

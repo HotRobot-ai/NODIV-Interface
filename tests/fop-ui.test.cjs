@@ -8,7 +8,7 @@ function ui({operation='INSTALL',empty=false}={}){
   replaceChildren(){this.children=[]}
   appendChild(child){this.children.push(child)}
  }
- const elements={};for(const id of ['fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness'])elements['#'+id]=new Element();
+ const elements={};for(const id of ['fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness','pioneerExchange','exchangeNode','exchangeSize','exchangeAuthorize','exchangeCode','exchangeScan','exchangeCancel','exchangeConfirm','exchangeProgress','exchangeHint','pioneerScan'])elements['#'+id]=new Element();
  const listeners={},document={querySelector:id=>elements[id]||null,createElement:()=>new Element()},requests=[];
  const ctx={document,console,AbortController,setTimeout,clearTimeout,URLSearchParams,emitNodiv(){},window:{addEventListener:(name,fn)=>listeners[name]=fn}};
  ctx.window.NDEFReader=ctx.NDEFReader=class{async scan(){ctx.reader=this}};
@@ -79,4 +79,20 @@ test('Founder initialization requires fresh strict readiness and survives standb
  await check();assert.equal(e['#initializeEvent'].disabled,false);
  for(const invalid of [false,'true',1]){ready=invalid;await check();await refresh();assert.equal(e['#initializeEvent'].disabled,true)}
  ready=true;await check();fail=true;await check();await refresh();assert.equal(e['#initializeEvent'].disabled,true);
+});
+
+test('Pioneer UI shows server size without code, authorizes before scanning, gates confirm and hides completed actions',async()=>{
+ const f=ui(),e=f.elements,requests=[];let incoming=0,outgoing=0;
+ f.ctx.apiRequest=async p=>{
+  requests.push(p);
+  if(p.action==='exchangescan'){if(p.uid==='own')incoming++;else outgoing++;}
+  return {ok:true,action:true,status:p.action==='exchangeconfirm'?'EXCHANGE_COMPLETE':'EXCHANGE_AUTHORIZED',exchange:'ex-1',size:1,inCount:incoming,outCount:outgoing,canConfirm:incoming===1&&outgoing===1,...(p.action==='exchangeauthorize'?{accessCode:'0123'}:{}),core:{id:p.uid==='own'?'NC-002':'NC-006',energy:341}};
+ };
+ f.ctx.showPioneerExchangePreview({preview:'preview-1',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
+ assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 CORE EXCHANGE');assert.equal(e['#exchangeScan'].hidden,true);
+ e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
+ await action('authorize');assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#pioneerScan'].disabled,true);
+ for(const uid of ['own','node']){await action('scan');await f.ctx.reader.onreading({serialNumber:uid});}
+ assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
+ await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'EXCHANGE COMPLETE // NODE COOLDOWN 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeScan','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
 });

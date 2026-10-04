@@ -155,3 +155,29 @@ web app; existing Sheets v4 service is reused. Column K is added only on explici
 successful shutdown. Physical Android NFC, removal/return to HQ, concurrent device
 locking, empty/eligible queue display, mobile layout, blocked shutdown and successful
 shutdown/new-event preparation require real-device checks after deployment.
+
+### Pioneer Normal Exchange V1.0
+
+A Node scan (`gameplayroute`) returns status, visible total energy, allowed sizes
+and a short-lived session-bound preview, never a mechanical code.
+`exchangeauthorize` requires `token`, `node`, `preview`, `size`; only this action
+releases the current code after validating FIELD_ACTIVE membership, confirmed
+Node state, exactly three Node cores, inventory/slot limit and reservations.
+`exchangescan` requires `token`, `node`, `exchange`, `uid`: scan all personal
+incoming cores first, then the same number of outgoing Node cores.
+`exchangeconfirm` and `exchangecancel` use `token`, `node`, `exchange`.
+
+Orders expire after 30 minutes and bind the session, event, Node/code state and
+core snapshots. They reserve the Node and Pioneer inventory against competing
+FOP orders, exchanges and ownership transfers. Cancel/expiry does not move cores.
+Only final confirmation books all ownership/status transfers and transaction
+records in one Sheets batch. A durable NORMAL_EXCHANGE transaction stores the
+completion ID and starts a server-enforced five-minute Node cooldown, including
+after cache eviction or a lost response. Completion cannot replay.
+The first successful exchange while capacity is one writes RESTORE_1_ELIGIBLE
+in the same batch; it does not grant a slot or start a restore mission.
+
+Deploy the updated Code.js to the existing Apps Script web app; the existing
+Sheets v4 service is reused. No live data migration or test-event mutation is
+performed by deployment. Physical NFC identification/selection, mechanical
+access, Android layout and real network interruptions require hardware tests.
