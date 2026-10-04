@@ -3020,7 +3020,7 @@ function hasOpenDeploymentForCore(coreId, installationId, deploymentRows, instal
   const orders=installationOrders||readInstallationOrders().filter(installationOrderIsLive);
   return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
     ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
-    (String(row[5])==='RESTORE_1'?restoreDeploymentIsLive(row):!isFopNodeDeployment(row)||
+    (isRestorePurpose(row[5])?restoreDeploymentIsLive(row):!isFopNodeDeployment(row)||
       (installationReservationIsLive(row,orders)&&String(row[0])!==installationDeploymentId(installationId,wanted))));
 }
 
@@ -3098,7 +3098,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
-    if (isFopNodeDeployment(row)||String(row[5])==='RESTORE_1') return;
+    if (isFopNodeDeployment(row)||isRestorePurpose(row[5])) return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3126,7 +3126,7 @@ function acceptCoreDeployment(e) {
     const player = session.player;
     const deployment = findDeploymentById(e.parameter.deployment || '');
     if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
-    if (['NODE_INSTALLATION','NODE_DEINSTALLATION','RESTORE_1'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
+    if (['NODE_INSTALLATION','NODE_DEINSTALLATION','RESTORE_1','RESTORE_2'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
     if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
     if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
       return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
@@ -3169,7 +3169,7 @@ function findActiveDeploymentForCarrier(identity, role) {
   const sheet=getDeploymentRegisterSheet(), lastRow=Math.max(sheet.getLastRow(),2);
   const rows=sheet.getRange(2,1,lastRow-1,11).getValues();
   for(let i=0;i<rows.length;i++){
-    if(String(rows[i][5])==='RESTORE_1'&&!restoreDeploymentIsLive(rows[i]))continue;
+    if(isRestorePurpose(rows[i][5])&&!restoreDeploymentIsLive(rows[i]))continue;
     if(String(rows[i][2]||'').trim().toUpperCase()===wantedId &&
        String(rows[i][3]||'').trim().toUpperCase()===wantedRole &&
        String(rows[i][6]||'').trim().toUpperCase()==='IN_TRANSIT'){
@@ -3210,7 +3210,7 @@ function deliverCoreDeployment(e) {
     if(!deployment)
       return gameplayActionDenied(player,'NO_MISSION_CARGO','Kein aktives Mission Cargo für diese Identität.');
 
-    if(deployment.purpose==='RESTORE_1')return gameplayActionDenied(player,'RESTORE_WORKFLOW_REQUIRED','RESTORE benötigt den dedizierten Scan-/Confirm-Ablauf.');
+    if(isRestorePurpose(deployment.purpose))return gameplayActionDenied(player,'RESTORE_WORKFLOW_REQUIRED','RESTORE benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(deployment.targetNode!==nodeId)
       return gameplayActionDenied(player,'MISSION_CARGO_WRONG_NODE','Mission Cargo ist an '+deployment.targetNode+' gebunden.');
 
@@ -6780,6 +6780,7 @@ function normalExchange(e,action){
   for(const id of order.outgoing)stageValidatedExchangeTransfer(context.nodeCores.find(core=>core.coreId===id),'PIONEER',player.identity,'FIELD','NORMAL_EXCHANGE_OUT',player,nodeId,requests);
   const first=order.capacity===1&&!context.transactionRows.some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity);
   if(first)appendTransactionLog({eventType:'RESTORE_1_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:'First normal exchange completed; eligibility marker only'},requests);
+  if(order.capacity===2&&order.size===2&&context.transactionRows.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS')&&!context.transactionRows.some(row=>['RESTORE_2_ELIGIBLE','RESTORE_2_COMPLETE'].includes(row[2])&&row[3]===player.identity))appendTransactionLog({eventType:'RESTORE_2_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
   appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   // Completion is durable in the same batch; stale property cannot reserve or replay.
@@ -6802,16 +6803,49 @@ function stageValidatedExchangeTransfer(core,toType,toId,newStatus,eventType,pla
 
 /* RESTORE #1: existing HQ-owned transit model + durable, expiring order metadata. */
 const RESTORE_PREFIX='NODIV_RESTORE_1_';
+const RESTORE_TWO_PREFIX='NODIV_RESTORE_2_';
+function isRestorePurpose(purpose){return ['RESTORE_1','RESTORE_2'].includes(String(purpose));}
+function restorePhase(order){return order.phase===2?2:1;}
+function restorePurpose(order){return 'RESTORE_'+restorePhase(order);}
+function restorePropertyKey(order){return (restorePhase(order)===2?RESTORE_TWO_PREFIX:RESTORE_PREFIX)+order.id;}
+/* Legacy atomic confirms append a contiguous IN/OUT group followed by its summary.
+ * Require exactly two distinct transfers each way, correct actor/node/directions,
+ * SUCCESS and ordered timestamps after Restore #1. Never infer size from inventory. */
+function restoreTwoExchangeEvidence(player,logs){
+ const completed=logs.map((row,index)=>({row,index})).filter(({row})=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS');
+ if(!completed.length)return null;
+ const first=completed[completed.length-1],firstTime=new Date(first.row[1]).getTime();
+ if(!Number.isFinite(firstTime))return null;
+ for(let i=first.index+1;i<logs.length;i++){
+  const summary=logs[i],time=new Date(summary[1]).getTime();
+  if(summary[2]!=='NORMAL_EXCHANGE'||summary[3]!==player.identity||summary[4]!=='PIONEER'||summary[14]!=='SUCCESS'||!summary[13]||!summary[15]||!Number.isFinite(time)||time<firstTime)continue;
+  const group=[];let j=i-1;
+  // Future eligibility marker is committed between transfers and summary.
+  if(logs[j]?.[2]==='RESTORE_2_ELIGIBLE'&&logs[j][3]===player.identity&&logs[j][15]===summary[15])j--;
+  while(j>first.index&&['NORMAL_EXCHANGE_IN','NORMAL_EXCHANGE_OUT'].includes(logs[j][2]))group.unshift(logs[j--]);
+  if(group.length!==4||new Set(group.map(row=>row[5])).size!==4||group.map(row=>row[2]).join(',')!=='NORMAL_EXCHANGE_IN,NORMAL_EXCHANGE_IN,NORMAL_EXCHANGE_OUT,NORMAL_EXCHANGE_OUT')continue;
+  if(group.some(row=>row[3]!==player.identity||row[4]!=='PIONEER'||row[13]!==summary[13]||row[14]!=='SUCCESS'||!/^NC-\d{3}$/.test(String(row[5]))||
+   !Number.isFinite(new Date(row[1]).getTime())||new Date(row[1]).getTime()<firstTime||new Date(row[1]).getTime()>time||time-new Date(row[1]).getTime()>60000))continue;
+  const incoming=group.filter(row=>row[2]==='NORMAL_EXCHANGE_IN'&&row[6]==='PIONEER'&&row[7]===player.identity&&row[8]==='NODE'&&row[9]===summary[13]);
+  const outgoing=group.filter(row=>row[2]==='NORMAL_EXCHANGE_OUT'&&row[6]==='NODE'&&row[7]===summary[13]&&row[8]==='PIONEER'&&row[9]===player.identity);
+  if(incoming.length===2&&outgoing.length===2)return {exchange:summary[15],nodeId:summary[13],size:2};
+ }
+ return null;
+}
+function restoreTwoEligible(player,logs){return Boolean(player&&player.role==='PIONEER'&&player.status==='ACTIVE'&&Number(player.coreCapacity)===2&&
+ !logs.some(row=>row[2]==='RESTORE_2_COMPLETE'&&row[3]===player.identity)&&restoreTwoExchangeEvidence(player,logs));}
+function restorePhaseEligible(player,logs,phase){return phase===2?restoreTwoEligible(player,logs):restoreEligible(player,logs);}
+
 const RESTORE_LOCK_MS=60*60*1000;
 function restoreOrderRows(){
  const props=PropertiesService.getScriptProperties().getProperties();
- return Object.keys(props).filter(key=>key.startsWith(RESTORE_PREFIX)).flatMap(key=>{try{return [JSON.parse(props[key])];}catch(error){return [];}});
+ return Object.keys(props).filter(key=>(key.startsWith(RESTORE_PREFIX)||key.startsWith(RESTORE_TWO_PREFIX))).flatMap(key=>{try{return [JSON.parse(props[key])];}catch(error){return [];}});
 }
 function restoreOrderIsLive(order){
  if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)return false;
  const event=readCurrentEvent(),player=findIdentityById(order.identity),logs=exchangeLogRows();
- return Boolean(event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId&&player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&Number(player.coreCapacity)===1&&
-  logs.some(row=>row[2]==='RESTORE_1_ASSIGNED'&&row[15]===order.id)&&!logs.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[15]===order.id));
+ return Boolean(event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId&&player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&Number(player.coreCapacity)===restorePhase(order)&&
+  logs.some(row=>row[2]===restorePurpose(order)+'_ASSIGNED'&&row[15]===order.id)&&!logs.some(row=>row[2]===restorePurpose(order)+'_COMPLETE'&&row[15]===order.id));
 }
 function liveRestores(){return restoreOrderRows().filter(restoreOrderIsLive);}
 function restoreDeploymentIsLive(row,orders){return (orders||liveRestores()).some(order=>order.id===String(row[0]));}
@@ -6825,7 +6859,7 @@ function restoreEligible(player,logs){
 }
 function restoreNodeLock(player,nodeId){
  if(player.role!=='PIONEER')return null;
- const until=exchangeLogRows().filter(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[13]===nodeId)
+ const until=exchangeLogRows().filter(row=>['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(row[2])&&row[3]===player.identity&&row[13]===nodeId)
   .reduce((max,row)=>Math.max(max,new Date(row[1]).getTime()+RESTORE_LOCK_MS||0),0);
  return until>Date.now()?{allowed:false,reason:'RESTORE_TARGET_LOCKED',remainingSeconds:Math.ceil((until-Date.now())/1000),lockUntil:new Date(until).toISOString(),message:'RESTORE TARGET LOCK // '+Math.ceil((until-Date.now())/1000)+' S'}:null;
 }
@@ -6835,15 +6869,15 @@ function cleanupRestoreOrders(){
  for(const order of restoreOrderRows()){
   if(restoreOrderIsLive(order))continue;
   const dep=findDeploymentById(order.id),requests=[];
-  if(dep&&dep.purpose==='RESTORE_1'&&dep.status==='IN_TRANSIT'){
+  if(dep&&isRestorePurpose(dep.purpose)&&dep.status==='IN_TRANSIT'){
    const core=readCoreState(order.cargo.coreId);
    if(core.ownerType==='NODIV_RESERVE'&&core.ownerId==='HQ'&&core.status==='IN_TRANSIT'&&core.uid===order.cargo.uid)
     requests.push(sheetCellsRequest(getRegisterSheet(),core.row,CORE_COL.STATUS,[['RESERVE']]));
    requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['EXPIRED']]));
-   appendTransactionLog({eventType:'RESTORE_1_EXPIRED',actorId:order.identity,actorRole:'PIONEER',coreId:order.cargo.coreId,nodeId:order.nodeId,result:'EXPIRED',details:order.id},requests);
+   appendTransactionLog({eventType:restorePurpose(order)+'_EXPIRED',actorId:order.identity,actorRole:'PIONEER',coreId:order.cargo.coreId,nodeId:order.nodeId,result:'EXPIRED',details:order.id},requests);
   }
   if(requests.length)Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-  PropertiesService.getScriptProperties().deleteProperty(RESTORE_PREFIX+order.id);
+  PropertiesService.getScriptProperties().deleteProperty(restorePropertyKey(order));
  }
 }
 function selectRestoreCore(nodeCores,reserve){
@@ -6862,21 +6896,21 @@ function getRestoreEligibility(e){
  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
  const logs=exchangeLogRows();mark('logsMs');
  const props=PropertiesService.getScriptProperties().getProperties();mark('propertiesMs');
- const restoreProps=Object.keys(props).filter(key=>key.startsWith(RESTORE_PREFIX));
+ const restoreProps=Object.keys(props).filter(key=>(key.startsWith(RESTORE_PREFIX)||key.startsWith(RESTORE_TWO_PREFIX))),currentEvent=readCurrentEvent();
  // Eligibility only needs to exclude Pioneers already assigned an unexpired Restore.
  // Do not recursively validate every Restore through event/log/access-card reads here.
  const assigned=new Set(restoreProps.flatMap(key=>{try{
   const order=JSON.parse(props[key]);
-  return order&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt&&order.identity?[String(order.identity).trim().toUpperCase()]:[];
+  return order&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt&&order.identity&&currentEvent&&currentEvent.state==='FIELD_ACTIVE'&&order.eventId===currentEvent.eventId&&logs.some(row=>row[2]===restorePurpose(order)+'_ASSIGNED'&&row[15]===order.id)&&!logs.some(row=>row[2]===restorePurpose(order)+'_COMPLETE'&&row[15]===order.id)?[String(order.identity).trim().toUpperCase()]:[];
  }catch(error){return []}}));mark('ordersMs');
  const sheet=getAccessCardRegisterSheet(),lastRow=sheet.getLastRow();
  const rows=lastRow>1?sheet.getRange(2,1,lastRow-1,12).getValues():[];mark('cardsMs');
  const pioneers=rows.flatMap(row=>{
   const identity=String(row[1]||'').trim().toUpperCase();
   const player={identity,role:String(row[2]||'').trim().toUpperCase(),status:String(row[4]||'').trim().toUpperCase(),coreCapacity:Number(row[6]||0)};
-  return restoreEligible(player,logs)&&!assigned.has(identity)?[{identity,capacity:1}]:[];
+  const phase=Number(player.coreCapacity);return [1,2].includes(phase)&&restorePhaseEligible(player,logs,phase)&&!assigned.has(identity)?[{identity,capacity:phase,phase}]:[];
  });mark('filterMs');
- return {ok:true,session:true,action:true,status:pioneers.length?'RESTORE_1_ELIGIBLE':'NO_ELIGIBLE_PIONEERS',pioneers,diagnostics:{stage:'COMPLETE',timing,totalMs:Date.now()-started,restorePropertyCount:restoreProps.length,cardRows:rows.length,logRows:logs.length}};
+ return {ok:true,session:true,action:true,status:pioneers.length?(pioneers.some(player=>player.phase===2)?'RESTORE_ELIGIBLE':'RESTORE_1_ELIGIBLE'):'NO_ELIGIBLE_PIONEERS',pioneers,diagnostics:{stage:'COMPLETE',timing,totalMs:Date.now()-started,restorePropertyCount:restoreProps.length,cardRows:rows.length,logRows:logs.length}};
 }
 function assignRestoreOne(e){
  const lock=LockService.getScriptLock();
@@ -6885,7 +6919,7 @@ function assignRestoreOne(e){
   if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
   cleanupRestoreOrders();const player=findIdentityById(String(e.parameter.pioneer||'').trim().toUpperCase()),logs=exchangeLogRows(),event=readCurrentEvent();
   if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
-  if(!restoreEligible(player,logs))throw new Error('RESTORE_1_NOT_ELIGIBLE');
+  const phase=Number(e.parameter.phase||1);if(![1,2].includes(phase)||!restorePhaseEligible(player,logs,phase))throw new Error('RESTORE_'+phase+'_NOT_ELIGIBLE');
   assertRestoreUnreserved('',player.identity,'');assertExchangeUnreserved('',player.identity,'');
   if(findActiveDeploymentForCarrier(player.identity,player.role))throw new Error('MISSION_CARGO_ALREADY_ACTIVE');
   const register=getRegisterSheet(),coreRows=register.getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),reserve=getAvailableInstallationCores();
@@ -6905,22 +6939,22 @@ function assignRestoreOne(e){
   }
   candidates.sort((a,b)=>a.totalEnergy-b.totalEnergy||a.nodeId.localeCompare(b.nodeId));
   if(!candidates.length)return {ok:true,session:true,action:false,status:'NO_SUITABLE_RESTORE_TARGET_OR_CORE',message:'Kein freier DEGRADED/CRITICAL Event-Node mit geeignetem HQ-Reserve-Core.'};
-  const selected=candidates[0],cargo=readCoreState(selected.core.coreId),id='RST-'+Utilities.getUuid().toUpperCase(),props=PropertiesService.getScriptProperties(),now=new Date();
-  const order={id,identity:player.identity,eventId:event.eventId,nodeId:selected.nodeId,nodeFingerprint:exchangeNodeFingerprint(selected.nodeId,selected.eventNode),nodeCores:selected.nodeCores,
+  const selected=candidates[0],cargo=readCoreState(selected.core.coreId),id=(phase===2?'RST2-':'RST-')+Utilities.getUuid().toUpperCase(),props=PropertiesService.getScriptProperties(),now=new Date();
+  const order={id,phase,identity:player.identity,eventId:event.eventId,nodeId:selected.nodeId,nodeFingerprint:exchangeNodeFingerprint(selected.nodeId,selected.eventNode),nodeCores:selected.nodeCores,
    cargo:{...cargo,status:'IN_TRANSIT'},out:selected.out.coreId,projectedEnergy:selected.projectedEnergy,incoming:[],outgoing:[],authorized:false,token:'',expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
-  const requests=[],tx=appendTransactionLog({eventType:'RESTORE_1_ASSIGNED',actorId:session.player.identity,actorRole:'FOUNDER',coreId:cargo.coreId,nodeId:order.nodeId,result:'SUCCESS',details:id},requests),dep=getDeploymentRegisterSheet();
+  const requests=[],tx=appendTransactionLog({eventType:restorePurpose(order)+'_ASSIGNED',actorId:session.player.identity,actorRole:'FOUNDER',coreId:cargo.coreId,nodeId:order.nodeId,result:'SUCCESS',details:id},requests),dep=getDeploymentRegisterSheet();
   requests.push(sheetCellsRequest(register,cargo.row,CORE_COL.STATUS,[['IN_TRANSIT']]));
-  requests.push({appendCells:{sheetId:dep.getSheetId(),rows:sheetCellsRequest(dep,1,1,[[id,cargo.coreId,player.identity,'PIONEER',order.nodeId,'RESTORE_1','IN_TRANSIT',now,now,'',tx]]).updateCells.rows,fields:'userEnteredValue'}});
-  props.setProperty(RESTORE_PREFIX+id,JSON.stringify(order));
+  requests.push({appendCells:{sheetId:dep.getSheetId(),rows:sheetCellsRequest(dep,1,1,[[id,cargo.coreId,player.identity,'PIONEER',order.nodeId,restorePurpose(order),'IN_TRANSIT',now,now,'',tx]]).updateCells.rows,fields:'userEnteredValue'}});
+  props.setProperty(restorePropertyKey(order),JSON.stringify(order));
   // A property without the atomic assignment log is not live; ambiguous failures can recover if the batch committed.
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-  return restoreResponse(order,'RESTORE_1_ASSIGNED',false);
+  return restoreResponse(order,restorePurpose(order)+'_ASSIGNED',false);
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function restoreSnapshot(cores){return JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());}
 function validateRestore(order,player){
  if(!restoreOrderIsLive(order))throw new Error('RESTORE_EXPIRED_OR_COMPLETED');
- if(player.identity!==order.identity||!restoreEligible(player,exchangeLogRows()))throw new Error('RESTORE_IDENTITY_NOT_ELIGIBLE');
+ if(player.identity!==order.identity||!restorePhaseEligible(player,exchangeLogRows(),restorePhase(order)))throw new Error('RESTORE_IDENTITY_NOT_ELIGIBLE');
  const auth=getNodeAccessAuthorization(player,order.nodeId,getNodeGameplayStatus(order.nodeId),order.id);if(!auth.allowed)throw new Error(auth.reason);
  const restores=liveRestores(),exchanges=liveExchanges();
  assertRestoreUnreserved(order.nodeId,'','',order.id,restores);assertExchangeUnreserved(order.nodeId,'','',undefined,exchanges);
@@ -6931,16 +6965,16 @@ function validateRestore(order,player){
  if(new Set([cargo,...nodeCores].map(core=>core.coreId)).size!==4||new Set([cargo,...nodeCores].map(core=>core.uid)).size!==4)throw new Error('RESTORE_DUPLICATE_CORE_UID');
  const lowest=nodeCores.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId))[0];
  if(nodeCores.length!==3||lowest.coreId!==order.out||cargo.ownerType!=='NODIV_RESERVE'||cargo.ownerId!=='HQ'||cargo.status!=='IN_TRANSIT'||
-  !dep||dep.status!=='IN_TRANSIT'||dep.purpose!=='RESTORE_1'||dep.coreId!==cargo.coreId||dep.targetNode!==order.nodeId||dep.carrierId!==player.identity||dep.carrierRole!=='PIONEER')throw new Error('RESTORE_ASSIGNMENT_INVALID');
+  !dep||dep.status!=='IN_TRANSIT'||dep.purpose!==restorePurpose(order)||dep.coreId!==cargo.coreId||dep.targetNode!==order.nodeId||dep.carrierId!==player.identity||dep.carrierRole!=='PIONEER')throw new Error('RESTORE_ASSIGNMENT_INVALID');
  const deployments=getDeploymentRegisterSheet(),rows=deployments.getLastRow()>1?deployments.getRange(2,1,deployments.getLastRow()-1,11).getValues():[],fopOrders=readInstallationOrders().filter(installationOrderIsLive);
  if(rows.some(row=>String(row[0])!==order.id&&[cargo.coreId,...nodeCores.map(core=>core.coreId)].includes(String(row[1]))&&['ASSIGNED','IN_TRANSIT'].includes(String(row[6]))&&
-  (isFopNodeDeployment(row)?installationReservationIsLive(row,fopOrders):String(row[5])==='RESTORE_1'?restoreDeploymentIsLive(row,restores):true)))throw new Error('RESTORE_CORE_RESERVED');
+  (isFopNodeDeployment(row)?installationReservationIsLive(row,fopOrders):isRestorePurpose(row[5])?restoreDeploymentIsLive(row,restores):true)))throw new Error('RESTORE_CORE_RESERVED');
  for(const core of [cargo,...nodeCores]){assertRestoreUnreserved('','',core.coreId,order.id,restores);assertExchangeUnreserved('','',core.coreId,undefined,exchanges);}
  if(order.incoming.some(id=>id!==cargo.coreId)||order.outgoing.some(id=>id!==order.out)||order.incoming.length>1||order.outgoing.length>1||(order.outgoing.length&&!order.incoming.length))throw new Error('RESTORE_SCANS_INVALID');
  return {cargo,nodeCores,out:lowest,dep,eventNode,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
 }
 function restoreResponse(order,status,includeCode,context){
- const totalEnergy=order.nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0),response={ok:true,session:true,action:true,status,restore:order.id,identity:order.identity,nodeId:order.nodeId,
+ const totalEnergy=order.nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0),response={ok:true,session:true,action:true,status,phase:restorePhase(order),restore:order.id,identity:order.identity,nodeId:order.nodeId,
   inCore:{id:order.cargo.coreId,energy:order.cargo.visibleEnergy},outCore:{id:order.out,energy:order.nodeCores.find(core=>core.coreId===order.out).visibleEnergy},
   totalEnergy,nodeState:nodeEnergyState(totalEnergy),projectedEnergy:order.projectedEnergy,projectedState:nodeEnergyState(order.projectedEnergy),inCount:order.incoming.length,outCount:order.outgoing.length,
   authorized:order.authorized,canConfirm:order.authorized&&order.incoming.length===1&&order.outgoing.length===1,expiresAt:new Date(order.expiresAt).toISOString()};
@@ -6954,7 +6988,7 @@ function getRestoreRoute(e,nodeId){
   const order=liveRestores().find(order=>order.identity===session.player.identity);if(!order)return null;
   if(order.nodeId!==nodeId)return {ok:true,session:true,action:false,status:'RESTORE_WRONG_NODE',message:'RESTORE TARGET // '+order.nodeId};
   const context=validateRestore(order,session.player),token=normalizeSessionToken(e.parameter.token);
-  order.token=token;order.nodeScannedToken=token;PropertiesService.getScriptProperties().setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));
+  order.token=token;order.nodeScannedToken=token;PropertiesService.getScriptProperties().setProperty(restorePropertyKey(order),JSON.stringify(order));
   return restoreResponse(order,order.authorized?'RESTORE_RESUMED':'RESTORE_TARGET_READY',order.authorized,context);
  }finally{try{lock.releaseLock();}catch(error){}}
 }
@@ -6968,11 +7002,11 @@ function normalRestoreOne(e,action){
  const lock=LockService.getScriptLock();
  try{
   lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  const player=session.player,props=PropertiesService.getScriptProperties(),order=JSON.parse(props.getProperty(RESTORE_PREFIX+String(e.parameter.restore||''))||'null'),token=normalizeSessionToken(e.parameter.token);
+  const player=session.player,props=PropertiesService.getScriptProperties(),order=JSON.parse(props.getProperty(RESTORE_PREFIX+String(e.parameter.restore||''))||props.getProperty(RESTORE_TWO_PREFIX+String(e.parameter.restore||''))||'null'),token=normalizeSessionToken(e.parameter.token);
   if(!order)throw new Error('RESTORE_EXPIRED_OR_COMPLETED');
   if(order.identity!==player.identity||order.token!==token||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase()||order.nodeScannedToken!==token)throw new Error('RESTORE_SESSION_NODE_MISMATCH');
   const context=validateRestore(order,player);
-  if(action==='authorize'){order.authorized=true;const result=restoreResponse(order,'RESTORE_AUTHORIZED',true,context);props.setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));return result;}
+  if(action==='authorize'){order.authorized=true;const result=restoreResponse(order,'RESTORE_AUTHORIZED',true,context);props.setProperty(restorePropertyKey(order),JSON.stringify(order));return result;}
   if(!order.authorized)throw new Error('RESTORE_AUTHORIZATION_REQUIRED');
   if(action==='scan'){
    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);if(!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
@@ -6982,23 +7016,24 @@ function normalRestoreOne(e,action){
    if((phase==='IN'&&(core.coreId!==order.cargo.coreId||uid!==order.cargo.uid))||(phase==='OUT'&&(core.coreId!==order.out||uid!==context.out.uid)))throw new Error(phase==='IN'?'RESTORE_TRANSIT_CORE_REQUIRED':'RESTORE_LOWEST_NODE_CORE_REQUIRED');
    if(acceptedIn||acceptedOut)return {...restoreResponse(order,'RESTORE_CORE_SCANNED',false),replayed:true};
    if(phase!==(order.incoming.length?'OUT':'IN'))throw new Error('RESTORE_SCAN_PHASE_MISMATCH');
-   if(phase==='IN')order.incoming=[core.coreId];else order.outgoing=[core.coreId];props.setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));return restoreResponse(order,'RESTORE_CORE_SCANNED',false);
+   if(phase==='IN')order.incoming=[core.coreId];else order.outgoing=[core.coreId];props.setProperty(restorePropertyKey(order),JSON.stringify(order));return restoreResponse(order,'RESTORE_CORE_SCANNED',false);
   }
   if(action!=='confirm')throw new Error('INVALID_RESTORE_ACTION');
   if(order.incoming.length!==1||order.outgoing.length!==1)throw new Error('RESTORE_SCANS_INCOMPLETE');
   const requests=[];
-  stageValidatedExchangeTransfer(context.cargo,'NODE',order.nodeId,'DEPLOYED','RESTORE_1_IN',player,order.nodeId,requests);
+  stageValidatedExchangeTransfer(context.cargo,'NODE',order.nodeId,'DEPLOYED',restorePurpose(order)+'_IN',player,order.nodeId,requests);
   // RESTORE #1 progression reward: the replaced Node core becomes the Pioneer's
   // second personal FIELD core. This makes the newly unlocked 2/3 capacity
   // physically usable and enables the required subsequent 2-for-2 exchange.
-  stageValidatedExchangeTransfer(context.out,'PIONEER',player.identity,'FIELD','RESTORE_1_OUT',player,order.nodeId,requests);
+  if(restorePhase(order)===1)stageValidatedExchangeTransfer(context.out,'PIONEER',player.identity,'FIELD','RESTORE_1_OUT',player,order.nodeId,requests);
+  else stageValidatedExchangeTransfer(context.out,'NODIV_RESERVE','HQ','RESERVE','RESTORE_2_OUT',player,order.nodeId,requests);
   const cardSheet=getAccessCardRegisterSheet(),cardRows=cardSheet.getRange(2,1,cardSheet.getLastRow()-1,12).getValues(),cardIndex=cardRows.findIndex(row=>String(row[1])===player.identity&&String(row[0])===player.cardId);
-  if(cardIndex<0||Number(cardRows[cardIndex][6])!==1)throw new Error('RESTORE_CAPACITY_CHANGED');
-  requests.push(sheetCellsRequest(cardSheet,cardIndex+2,7,[[2]]));
-  const tx=appendTransactionLog({eventType:'RESTORE_1_COMPLETE',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,result:'SUCCESS',details:order.id},requests);
+  if(cardIndex<0||Number(cardRows[cardIndex][6])!==restorePhase(order))throw new Error('RESTORE_CAPACITY_CHANGED');
+  requests.push(sheetCellsRequest(cardSheet,cardIndex+2,7,[[restorePhase(order)+1]]));
+  const tx=appendTransactionLog({eventType:restorePurpose(order)+'_COMPLETE',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,result:'SUCCESS',details:order.id},requests);
   requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,7,[['COMPLETED',context.dep.createdAt,context.dep.acceptedAt,new Date(),tx]]));
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-  try{props.deleteProperty(RESTORE_PREFIX+order.id);}catch(error){}
-  return {...restoreResponse(order,'RESTORE_1_COMPLETE',false),authorized:false,canConfirm:false,capacity:2,totalEnergy:order.projectedEnergy,nodeState:nodeEnergyState(order.projectedEnergy),targetLockSeconds:3600};
+  try{props.deleteProperty(restorePropertyKey(order));}catch(error){}
+  return {...restoreResponse(order,restorePurpose(order)+'_COMPLETE',false),authorized:false,canConfirm:false,capacity:restorePhase(order)+1,totalEnergy:order.projectedEnergy,nodeState:nodeEnergyState(order.projectedEnergy),targetLockSeconds:3600};
  }finally{try{lock.releaseLock();}catch(error){}}
 }

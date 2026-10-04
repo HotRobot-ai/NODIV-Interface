@@ -263,3 +263,37 @@ Deploy a new Apps Script Web App version and the updated frontend/cache assets.
 Real Android/NFC validation remains necessary for login, both physical Access
 Cards, duplicate NFC callbacks, actual handover and recovery from interrupted
 network responses. No physical cards or live event data are changed by deployment.
+
+### RESTORE #2 — capacity 2/3 → 3/3
+
+The existing `restoreeligible` response includes each eligible Pioneer's `phase`
+and current `capacity`. Founder assignment uses the existing `restoreassign`
+action with `phase=2`; omitted phase retains the RESTORE #1 API contract. Target
+scan, authorization, NFC scans and confirmation reuse the existing Restore APIs,
+server guards and UI. No test/repair action is part of RESTORE #2 production flow.
+
+Eligibility requires an ACTIVE PIONEER at capacity 2, a successful RESTORE #1,
+a later successful two-Core Normal Exchange, and no RESTORE_2_COMPLETE. Old logs
+are read without edits: the NORMAL_EXCHANGE summary must immediately follow a
+contiguous group of exactly two NORMAL_EXCHANGE_IN and two NORMAL_EXCHANGE_OUT
+SUCCESS records, four distinct Core IDs, matching actor/role/Node and ownership
+directions. Ordered timestamps must be after RESTORE #1 and within 60 seconds
+of the summary. Unrelated/interleaved, incomplete, wrong-actor or ambiguous data
+is rejected. Inventory size, energy totals and a standalone eligibility marker
+are never treated as proof. Future qualifying confirms append RESTORE_2_ELIGIBLE
+in the same atomic batch, linked to the Exchange ID; the complete transfer group
+remains the authoritative evidence.
+
+RESTORE #2 uses `RST2-` IDs, `NODIV_RESTORE_2_` Properties and Deployment purpose
+RESTORE_2. All existing reservation/mission-cargo guards cover both phases.
+Selection and recovery reuse RESTORE #1 helpers. Completion atomically transfers
+HQ cargo to Node/DEPLOYED and the lowest Node Core to NODIV_RESERVE/HQ/RESERVE,
+sets capacity exactly 2→3, completes the deployment and logs RESTORE_2_COMPLETE.
+Personal ownership is unchanged and the Node remains exactly 3/3. Both Restore
+completion types enforce the existing one-hour target-only access lock. Expiry
+logs RESTORE_2_EXPIRED and releases matching HQ-owned transit cargo without
+changing ownership. RESTORE #1 completion behavior is preserved.
+
+No migration or live event/core edits run at deployment. Deploy the updated Apps
+Script Web App and frontend. Real-device NFC, Apps Script latency and the actual
+P003 historical log evidence still require verification in the live environment.

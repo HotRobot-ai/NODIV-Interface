@@ -611,3 +611,53 @@ test('CATCH does not grant Pioneer rights: P003 2/3 with NC-008 remains intact, 
  f.sheets['Access Card Register'].rows[2][8]=true;rows[7][2]='uid7';rows[7][1]=100;rows[7][4]='FIELD';rows[7][14]='PIONEER';rows[7][15]='P009';const personal=JSON.stringify(rows[8]),order=f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'preview',targetUid:'catcheruid'}});
  f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'confirm',catchId:order.catchId}});assert.equal(JSON.stringify(rows[8]),personal);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),2);assert.deepEqual(Array.from(f.ctx.exchangePreview(f.e,f.ctx.findIdentityById('P003'),'NODE-001').sizes),[1,2]);assert.equal(f.sheets['Transaction Log'].rows.filter(r=>r[2]==='RESTORE_1_COMPLETE').length,1);
 });
+
+function restoreTwoFixture(){
+ const f=restoreFixture(),logs=f.sheets['Transaction Log'].rows,rows=f.sheets['N-Core Register'].rows;
+ f.sheets['Access Card Register'].rows[2][6]=2;rows[12][2]='uid12';rows[12][1]=210;rows[12][4]='FIELD';rows[12][14]='PIONEER';rows[12][15]='P003';
+ const restoreTime=new Date(Date.now()-120000),time=new Date(Date.now()-60000);
+ logs.push(['R1',restoreTime,'RESTORE_1_COMPLETE','P003','PIONEER','','','','','','','','','NODE-001','SUCCESS','old-r1']);
+ for(const [type,core,fromType,fromId,toType,toId]of [['IN','NC-006','PIONEER','P003','NODE','NODE-001'],['IN','NC-013','PIONEER','P003','NODE','NODE-001'],['OUT','NC-008','NODE','NODE-001','PIONEER','P003'],['OUT','NC-012','NODE','NODE-001','PIONEER','P003']])logs.push(['TX-'+core,time,'NORMAL_EXCHANGE_'+type,'P003','PIONEER',core,fromType,fromId,toType,toId,200,0,200,'NODE-001','SUCCESS','']);
+ logs.push(['SUMMARY',time,'NORMAL_EXCHANGE','P003','PIONEER','','','','','','','','','NODE-001','SUCCESS','legacy-2-core-exchange']);f.founder.parameter.phase=2;
+ return f;
+}
+test('Restore #2 reconstructs legacy 2-for-2 operation after Restore #1 without writes or explicit eligibility marker',()=>{
+ const f=restoreTwoFixture(),before=JSON.stringify(f.sheets);const eligible=f.ctx.getRestoreEligibility(f.founder).pioneers;assert.equal(eligible[0].identity,'P003');assert.equal(eligible[0].phase,2);assert.equal(eligible[0].capacity,2);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.restoreTwoExchangeEvidence(f.ctx.findIdentityById('P003'),f.ctx.exchangeLogRows()).exchange,'legacy-2-core-exchange');
+ for(const mutate of [f=>f.sheets['Access Card Register'].rows[2][6]=1,f=>f.sheets['Transaction Log'].rows.splice(-5),f=>f.sheets['Transaction Log'].rows.at(-3)[3]='P004',f=>f.sheets['Transaction Log'].rows.at(-4)[13]='NODE-002',f=>f.sheets['Transaction Log'].rows.at(-2)[14]='FAILED',f=>f.sheets['Transaction Log'].rows.at(-1)[1]=new Date(Date.now()-300000),f=>f.sheets['Transaction Log'].rows.splice(-2,0,['OTHER',new Date(),'UPLOAD'])]){
+  const g=restoreTwoFixture();mutate(g);assert.equal(g.ctx.restoreTwoEligible(g.ctx.findIdentityById('P003'),g.ctx.exchangeLogRows()),false);assert.throws(g.assign,/RESTORE_2_NOT_ELIGIBLE/);assert.equal(g.batches(),0);
+ }
+});
+test('future successful 2-Core Exchange after Restore #1 writes RESTORE_2_ELIGIBLE atomically and remains detectable',()=>{
+ const f=exchangeFixture(2);f.sheets['Transaction Log'].rows.push(['R1',new Date(Date.now()-1000),'RESTORE_1_COMPLETE','P003','PIONEER','','','','','','','','','NODE-OTHER','SUCCESS','r1']);f.authorize(2);for(const n of [6,5,1,2])f.exchangeScan(n);const r=f.finishExchange();assert.equal(r.status,'EXCHANGE_COMPLETE');const logs=f.ctx.exchangeLogRows();assert.equal(logs.filter(row=>row[2]==='RESTORE_2_ELIGIBLE').length,1);assert.equal(f.ctx.restoreTwoEligible(f.ctx.findIdentityById('P003'),logs),true);
+ const g=exchangeFixture(2);g.sheets['Transaction Log'].rows.push(['R1',new Date(Date.now()-1000),'RESTORE_1_COMPLETE','P003','PIONEER','','','','','','','','','NODE-OTHER','SUCCESS','r1']);g.authorize(1);g.exchangeScan(6);g.exchangeScan(1);g.finishExchange();assert.equal(g.ctx.exchangeLogRows().some(row=>row[2]==='RESTORE_2_ELIGIBLE'),false);assert.equal(g.ctx.restoreTwoEligible(g.ctx.findIdentityById('P003'),g.ctx.exchangeLogRows()),false);
+});
+test('Restore #2 chooses smallest STABLE/fallback DEGRADED cargo, keeps distinct orders, protects transit',()=>{
+ const f=restoreTwoFixture(),r=f.assign();assert.equal(r.phase,2);assert.equal(r.status,'RESTORE_2_ASSIGNED');assert.equal(r.nodeId,'NODE-002');assert.equal(r.inCore.id,'NC-009');assert.equal(r.projectedState,'STABLE');assert.ok(f.properties.has('NODIV_RESTORE_2_'+r.restore));assert.equal(f.sheets['Deployment Register'].rows[1][5],'RESTORE_2');
+ assert.equal(f.ctx.liveRestores().length,1);assert.equal(f.ctx.getPioneerRestoreState(f.restoreE).phase,2);assert.equal(f.ctx.routeCoreGameplay(f.ctx.findIdentityById('P003'),f.ctx.readCoreState('NC-009')).decision.allowed,false);assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-009',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003'}),/RESTORE_OPERATION_RESERVED/);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),2);
+ const g=restoreTwoFixture();for(const n of [9,10,11])g.sheets['N-Core Register'].rows[n][1]=200;assert.equal(g.assign().projectedState,'DEGRADED');
+ const h=restoreTwoFixture();for(const n of [4,5,7])h.sheets['N-Core Register'].rows[n][1]=200;assert.equal(h.assign().status,'NO_SUITABLE_RESTORE_TARGET_OR_CORE');
+});
+test('Restore #2 wrong Node/IN/OUT rejected; scan retries idempotent and rebind works at all progress states',()=>{
+ for(const count of [0,1,2]){
+  const f=restoreTwoFixture();f.assign();assert.equal(f.ctx.getGameplayRoute({...f.restoreE,parameter:{...f.restoreE.parameter,uid:'nodeuid'}}).decision.reason,'RESTORE_WRONG_NODE');f.restoreAuthorize();assert.throws(()=>f.restoreScan(8,'IN'),/TRANSIT_CORE_REQUIRED/);if(count)f.restoreScan(9,'IN');if(count===2)f.restoreScan(4,'OUT');
+  const token='f'.repeat(72);f.cache.delete('NODIV_SESSION_'+f.restoreE.parameter.token);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));f.restoreE.parameter.token=token;const r=f.target();assert.equal(r.phase,2);assert.equal(r.inCount,count?1:0);assert.equal(r.outCount,count===2?1:0);assert.match(r.accessCode,/^\d{4}$/);
+  if(!count)f.restoreScan(9,'IN');assert.equal(f.restoreScan(9,'IN').replayed,true);assert.throws(()=>f.restoreScan(5,'OUT'),/LOWEST_NODE_CORE_REQUIRED/);if(count<2)f.restoreScan(4,'OUT');assert.equal(f.restoreScan(4,'OUT').replayed,true);assert.throws(()=>f.restoreScan(9,'OUT'),/DUPLICATE_CORE_SCAN/);assert.equal(f.restoreFinish().capacity,3);
+ }
+});
+test('Restore #2 atomic completion leaves personal ownership unchanged, Node 3/3, OUT HQ, capacity 3, marker and 1h target lock',()=>{
+ const f=restoreTwoFixture(),rows=f.sheets['N-Core Register'].rows,personal=JSON.stringify([rows[8],rows[12]]);f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const b=f.batches(),r=f.restoreFinish();assert.equal(f.batches(),b+1);assert.equal(r.status,'RESTORE_2_COMPLETE');assert.equal(r.capacity,3);assert.equal(r.totalEnergy,600);assert.equal(JSON.stringify([rows[8],rows[12]]),personal);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),2);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);assert.equal(rows[4][14],'NODIV_RESERVE');assert.equal(rows[4][15],'HQ');assert.equal(rows[4][4],'RESERVE');assert.equal(rows[9][14],'NODE');assert.equal(rows[9][4],'DEPLOYED');assert.equal(f.ctx.findIdentityById('P003').coreCapacity,3);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='RESTORE_2_COMPLETE').length,1);assert.equal(f.ctx.liveRestores().length,0);assert.throws(f.restoreFinish,/EXPIRED_OR_COMPLETED/);assert.throws(f.assign,/NOT_ELIGIBLE/);assert.equal(f.ctx.getNodeAccessAuthorization(f.ctx.findIdentityById('P003'),'NODE-002','INSTALLED').reason,'RESTORE_TARGET_LOCKED');
+ const one=f.ctx.exchangeLogRows().find(row=>row[2]==='RESTORE_1_COMPLETE');one[1]=new Date(Date.now()-4000000);f.sheets['Transaction Log'].rows.find(row=>row[2]==='RESTORE_1_COMPLETE')[1]=one[1];assert.equal(f.ctx.getNodeAccessAuthorization(f.ctx.findIdentityById('P003'),'NODE-001','INSTALLED').allowed,true);
+});
+test('Restore #2 batch failure preserves ownership/capacity and expired order releases only matching HQ transit',()=>{
+ const f=restoreTwoFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const before=JSON.stringify(f.sheets);f.fail();assert.throws(f.restoreFinish,/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.target().inCount,1);
+ const g=restoreTwoFixture(),r=g.assign(),key='NODIV_RESTORE_2_'+r.restore,order=JSON.parse(g.properties.get(key));order.expiresAt=0;g.properties.set(key,JSON.stringify(order));assert.equal(g.ctx.liveRestores().length,0);g.ctx.cleanupRestoreOrders();assert.equal(g.ctx.readCoreState('NC-009').status,'RESERVE');assert.equal(g.ctx.readCoreState('NC-009').ownerId,'HQ');assert.equal(g.sheets['Deployment Register'].rows[1][6],'EXPIRED');assert.ok(g.ctx.exchangeLogRows().some(row=>row[2]==='RESTORE_2_EXPIRED'));
+});
+test('Restore #1/#2 shared reservations block second assignments, Exchange and FOP',()=>{
+ const f=restoreTwoFixture();f.assign();assert.throws(f.assign,/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.getNodeDeinstallOrder({parameter:{token:'a'.repeat(72),node:'NODE-002'}}),/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.exchangePreview(f.restoreE,f.ctx.findIdentityById('P003'),'NODE-002'),/RESTORE_OPERATION_RESERVED/);
+ f.sheets['Access Card Register'].rows.push(['CARD-4','P004','PIONEER','p4','ACTIVE','',1,true]);f.sheets['Transaction Log'].rows.push(['eligible',new Date(),'RESTORE_1_ELIGIBLE','P004','PIONEER','','','','','','','','','NODE-001','SUCCESS','e']);const result=f.ctx.assignRestoreOne({parameter:{token:f.founder.parameter.token,pioneer:'P004',phase:1}});assert.equal(result.action,false);assert.equal(f.ctx.liveRestores().length,1);
+});
+test('Restore #2 revalidates phase capacity, Event, UID, Node fingerprint and foreign sessions before any final mutation',()=>{
+ for(const mutate of [f=>f.sheets['Access Card Register'].rows[2][6]=3,f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.sheets['N-Core Register'].rows[9][2]='replaced',f=>f.sheets['Node Register'].rows[2][1]='replaced-node',f=>f.restoreE.parameter.token='a'.repeat(72)]){
+  const f=restoreTwoFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');mutate(f);const before=JSON.stringify(f.sheets),b=f.batches();assert.throws(f.restoreFinish);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),b);
+ }
+});

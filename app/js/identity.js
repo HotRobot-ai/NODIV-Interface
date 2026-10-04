@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-catch1';
+import {routeIdentity} from './router.js?v=20261004-restore2';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -86,7 +86,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    }catch(err){
     b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
    }finally{
-    setTimeout(()=>{b.disabled=Boolean(pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&pioneerRestore?.status!=='RESTORE_1_COMPLETE'));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
+    setTimeout(()=>{b.disabled=Boolean(pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore?.status)));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
    }
   };
  }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
@@ -618,8 +618,9 @@ let pioneerRestore=null,pioneerRestoreBusy=false,founderRestoreOptions=[];
 function renderPioneerRestore(result,atNode=false){
  pioneerRestore={...result,atNode};
  const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount'),panel=document.querySelector('#pioneerRestore');
- const complete=result.status==='RESTORE_1_COMPLETE',active=result.restore&&!complete;
- if(board)board.textContent=active?'RESTORE #1 // '+result.nodeId+' // '+result.inCore.id+' / '+result.inCore.energy+' E // IN TRANSIT (MISSION CARGO)':'NO ACTIVE RESTORE';
+ const phase=Number(result.phase||1),complete=['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(result.status),active=result.restore&&!complete;
+ const missionLabel=document.querySelector('#restoreMissionLabel');if(missionLabel)missionLabel.textContent='RESTORE #'+phase;
+ if(board)board.textContent=active?'RESTORE #'+phase+' // '+result.nodeId+' // '+result.inCore.id+' / '+result.inCore.energy+' E // IN TRANSIT (MISSION CARGO)':'NO ACTIVE RESTORE';
  if(count)count.textContent=active?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
  if(!panel)return;panel.hidden=!result.restore;
  document.querySelector('#restoreNode').textContent=result.nodeId+' // '+result.nodeState;
@@ -635,12 +636,12 @@ function renderPioneerRestore(result,atNode=false){
  const badge=document.querySelector('#restoreStateBadge');if(badge){badge.textContent=complete?'COMPLETE':result.authorized?'AUTHORIZED':atNode?'AT NODE':'IN TRANSIT';badge.dataset.state=complete?'done':result.authorized?'active':'pending';}
  document.querySelector('#restoreProjection').textContent=result.nodeState+' → '+result.projectedState;
  document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE  '+result.accessCode:'';
- document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY 2/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1   //   OUT '+result.outCount+'/1';
+ document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY '+(result.capacity||phase+1)+'/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1   //   OUT '+result.outCount+'/1';
  const auth=document.querySelector('#restoreAuthorize'),scan=document.querySelector('#restoreScan'),confirm=document.querySelector('#restoreConfirm');
  auth.hidden=!active||!atNode||result.authorized;auth.disabled=pioneerRestoreBusy;
  scan.hidden=!active||!atNode||!result.authorized;scan.disabled=pioneerRestoreBusy||Boolean(result.canConfirm);scan.textContent=result.inCount?'VORGESCHRIEBENEN NODE-CORE SCANNEN':'TRANSIT-CORE SCANNEN';
  confirm.hidden=!active||!atNode||!result.authorized;confirm.disabled=pioneerRestoreBusy||!result.canConfirm;
- document.querySelector('#restoreHint').textContent=complete?'Persönlicher Besitz unverändert. Zweiter Slot freigeschaltet.':atNode?'Nur den zugewiesenen Transit-Core und den vorgeschriebenen niedrigsten Node-Core scannen.':'Transport-Core am HQ übernehmen und Ziel-Node per NFC scannen.';
+ document.querySelector('#restoreHint').textContent=complete?(phase===2?'Persönlicher Besitz unverändert. Dritter Slot freigeschaltet.':'Zweiter Slot freigeschaltet.'):atNode?'Nur den zugewiesenen Transit-Core und den vorgeschriebenen niedrigsten Node-Core scannen.':'Transport-Core am HQ übernehmen und Ziel-Node per NFC scannen.';
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=Boolean(active&&atNode&&result.authorized);
 }
 window.addEventListener('nodiv-pioneer-restore-status',async()=>{
@@ -656,7 +657,7 @@ window.addEventListener('nodiv-pioneer-restore',async e=>{
   const r=await apiRequest({action:'restore'+action,token:sessionToken,node:pioneerRestore.nodeId,restore:pioneerRestore.restore,phase:pioneerRestore.inCount?'OUT':'IN',uid:uid||''});
   if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE REJECTED');
   pioneerRestoreBusy=false;renderPioneerRestore({...pioneerRestore,...r},true);
-  if(r.status==='RESTORE_1_COMPLETE')window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+  if(['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(r.status))window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
  };
  if(action==='scan'){
   if(!pioneerRestore.authorized)return;
@@ -693,15 +694,16 @@ window.addEventListener('nodiv-founder-restore',async e=>{
  if(!sessionToken)return;
  const select=document.querySelector('#restorePioneerSelect'),hint=document.querySelector('#founderRestoreHint'),button=document.querySelector('#assignRestore');
  if(!select)return;
+ if(e.detail?.action==='select'){const option=founderRestoreOptions.find(player=>player.identity===select.value);if(button)button.textContent=option?'RESTORE #'+(option.phase||1)+' VERGEBEN':'RESTORE VERGEBEN';return;}
  try{
   let assignmentMessage='';
   if(e.detail?.action==='assign'){
    if(!founderRestoreOptions.some(player=>player.identity===select.value))return;
-   const pioneer=select.value;button.disabled=true;
-   const assigned=await apiRequest({action:'restoreassign',token:sessionToken,pioneer});
+   const pioneer=select.value,phase=founderRestoreOptions.find(player=>player.identity===pioneer)?.phase||1;button.disabled=true;
+   const assigned=await apiRequest({action:'restoreassign',token:sessionToken,pioneer,phase});
    if(!assigned?.ok)throw Error(assigned?.error||assigned?.message||assigned?.status||'RESTORE ASSIGN FAILED');
    if(assigned.action===true){
-    assignmentMessage=assigned.identity+' // '+assigned.nodeId+' // '+assigned.inCore.id+' / '+assigned.inCore.energy+' E // PROJECTED '+assigned.projectedEnergy+' E / '+assigned.projectedState;
+    assignmentMessage='RESTORE #'+(assigned.phase||phase)+' // '+assigned.identity+' // '+assigned.nodeId+' // '+assigned.inCore.id+' / '+assigned.inCore.energy+' E // PROJECTED '+assigned.projectedEnergy+' E / '+assigned.projectedState;
    }else if(assigned.status==='NO_SUITABLE_RESTORE_TARGET_OR_CORE'){
     assignmentMessage=pioneer+' // KEIN RESTORE-ZIEL // Kein DEGRADED/CRITICAL Node mit geeignetem HQ-Core';
    }else{
@@ -711,7 +713,7 @@ window.addEventListener('nodiv-founder-restore',async e=>{
   const r=await apiRequest({action:'restoreeligible',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE LIST FAILED');
   founderRestoreOptions=Array.isArray(r.pioneers)?r.pioneers:[];select.replaceChildren();
   const empty=document.createElement('option');empty.value='';empty.textContent=founderRestoreOptions.length?'ELIGIBLE PIONEER AUSWÄHLEN':'NO ELIGIBLE PIONEERS';select.appendChild(empty);
-  for(const player of founderRestoreOptions){const option=document.createElement('option');option.value=player.identity;option.textContent=player.identity+' // 1/3 // RESTORE #1';select.appendChild(option);}
+  for(const player of founderRestoreOptions){const option=document.createElement('option');option.value=player.identity;option.textContent=player.identity+' // '+(player.capacity||1)+'/3 // RESTORE #'+(player.phase||1);select.appendChild(option);}
   select.disabled=!founderRestoreOptions.length;button.disabled=!founderRestoreOptions.length;
   if(assignmentMessage)hint.textContent=assignmentMessage;
  }catch(err){hint.textContent=String(err.message||err);if(button)button.disabled=false;}
