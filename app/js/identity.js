@@ -667,17 +667,25 @@ window.addEventListener('nodiv-founder-restore',async e=>{
  const select=document.querySelector('#restorePioneerSelect'),hint=document.querySelector('#founderRestoreHint'),button=document.querySelector('#assignRestore');
  if(!select)return;
  try{
+  let assignmentMessage='';
   if(e.detail?.action==='assign'){
    if(!founderRestoreOptions.some(player=>player.identity===select.value))return;
-   button.disabled=true;
-   const r=await apiRequest({action:'restoreassign',token:sessionToken,pioneer:select.value});
-   if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE ASSIGN FAILED');
-   hint.textContent=r.identity+' // '+r.nodeId+' // '+r.inCore.id+' / '+r.inCore.energy+' E // PROJECTED '+r.projectedEnergy+' E / '+r.projectedState;
+   const pioneer=select.value;button.disabled=true;
+   const assigned=await apiRequest({action:'restoreassign',token:sessionToken,pioneer});
+   if(!assigned?.ok)throw Error(assigned?.error||assigned?.message||assigned?.status||'RESTORE ASSIGN FAILED');
+   if(assigned.action===true){
+    assignmentMessage=assigned.identity+' // '+assigned.nodeId+' // '+assigned.inCore.id+' / '+assigned.inCore.energy+' E // PROJECTED '+assigned.projectedEnergy+' E / '+assigned.projectedState;
+   }else if(assigned.status==='NO_SUITABLE_RESTORE_TARGET_OR_CORE'){
+    assignmentMessage=pioneer+' // KEIN RESTORE-ZIEL // Kein DEGRADED/CRITICAL Node mit geeignetem HQ-Core';
+   }else{
+    assignmentMessage=pioneer+' // RESTORE NICHT VERGEBEN // '+String(assigned.message||assigned.status||'UNBEKANNTER STATUS');
+   }
   }
   const r=await apiRequest({action:'restoreeligible',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE LIST FAILED');
   founderRestoreOptions=Array.isArray(r.pioneers)?r.pioneers:[];select.replaceChildren();
   const empty=document.createElement('option');empty.value='';empty.textContent=founderRestoreOptions.length?'ELIGIBLE PIONEER AUSWÄHLEN':'NO ELIGIBLE PIONEERS';select.appendChild(empty);
   for(const player of founderRestoreOptions){const option=document.createElement('option');option.value=player.identity;option.textContent=player.identity+' // 1/3 // RESTORE #1';select.appendChild(option);}
   select.disabled=!founderRestoreOptions.length;button.disabled=!founderRestoreOptions.length;
+  if(assignmentMessage)hint.textContent=assignmentMessage;
  }catch(err){hint.textContent=String(err.message||err);if(button)button.disabled=false;}
 });
