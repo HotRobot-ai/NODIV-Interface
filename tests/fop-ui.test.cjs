@@ -96,3 +96,21 @@ test('Pioneer UI shows server size without code, authorizes before scanning, gat
  assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
  await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'EXCHANGE COMPLETE // NODE COOLDOWN 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeScan','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
 });
+
+test('Pioneer adopts accepted retry server counts after lost response and ignores repeated NFC callbacks',async()=>{
+ const f=ui(),e=f.elements,requests=[];let scans=0;
+ f.ctx.apiRequest=async p=>{requests.push(p);if(p.action==='exchangeauthorize')return {ok:true,action:true,exchange:'ex-1',size:1,inCount:0,outCount:0,accessCode:'0123'};
+  scans++;if(scans===1)throw Error('NODIV CORE TIMEOUT');
+  return {ok:true,action:true,exchange:'ex-1',size:1,inCount:1,outCount:p.phase==='OUT'?1:0,canConfirm:p.phase==='OUT',replayed:true,core:{id:p.uid,energy:341}};
+ };
+ f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';
+ const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});await action('authorize');
+ await action('scan');const firstReader=f.ctx.reader;await firstReader.onreading({serialNumber:'NC-002'});await firstReader.onreading({serialNumber:'NC-002'});assert.equal(scans,1);assert.equal(e['#exchangeProgress'].textContent,'IN 0/1 // OUT 0/1');
+ await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests.at(-1).phase,'IN');assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 0/1');assert.equal(e['#exchangeConfirm'].disabled,true);
+ await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-006'});assert.equal(requests.at(-1).phase,'OUT');assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);
+});
+test('NFC read error closes that reader before a delayed reading can send a request',async()=>{
+ const f=ui(),e=f.elements;f.ctx.apiRequest=async()=>({ok:true,action:true,exchange:'ex-1',size:1,inCount:0,outCount:0,accessCode:'0123'});
+ f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});await action('authorize');await action('scan');
+ let requests=0;f.ctx.apiRequest=async()=>{requests++;};f.ctx.reader.onreadingerror();await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests,0);assert.equal(e['#exchangeScan'].disabled,false);
+});

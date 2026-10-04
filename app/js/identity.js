@@ -579,11 +579,11 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
   try{
    const controller=new AbortController(),reader=new NDEFReader();let handled=false;
    await reader.scan({signal:controller.signal});
-   reader.onreadingerror=()=>{controller.abort();pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);hint.textContent='NFC LESEFEHLER // ERNEUT SCANNEN';};
+   reader.onreadingerror=()=>{if(handled)return;handled=true;controller.abort();pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);hint.textContent='NFC LESEFEHLER // ERNEUT SCANNEN';};
    reader.onreading=async ev=>{
     if(handled)return;handled=true;controller.abort();
     try{
-     const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,uid:String(ev.serialNumber||'')});
+     const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,phase:pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT',uid:String(ev.serialNumber||'')});
      if(!r?.ok||r.action!==true)throw new Error(r?.error||r?.message||r?.status||'SCAN REJECTED');
      pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E // SCANNED';
     }catch(err){hint.textContent=String(err.message||err);}

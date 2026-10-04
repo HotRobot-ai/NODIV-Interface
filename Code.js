@@ -6597,8 +6597,19 @@ function normalExchange(e,action){
    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
    if(!uid||!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
    const core=readCoreState(hit.id);
-   if(order.incoming.concat(order.outgoing).includes(core.coreId))throw new Error('DUPLICATE_CORE_SCAN');
-   if(order.incoming.length<order.size){
+   const acceptedIn=order.incoming.includes(core.coreId),acceptedOut=order.outgoing.includes(core.coreId);
+   // Older callers omit phase; an accepted Core retains its original phase.
+   // Explicit phase binds retries and rejects attempts to reuse IN as OUT (or vice versa).
+   const phase=String(e.parameter.phase||(acceptedIn?'IN':acceptedOut?'OUT':order.incoming.length<order.size?'IN':'OUT')).toUpperCase();
+   if(!['IN','OUT'].includes(phase))throw new Error('EXCHANGE_SCAN_PHASE_INVALID');
+   if((acceptedIn&&phase!=='IN')||(acceptedOut&&phase!=='OUT')||(acceptedIn&&acceptedOut))throw new Error('DUPLICATE_CORE_SCAN');
+   if(acceptedIn||acceptedOut){
+    const valid=phase==='IN'?context.personal:context.nodeCores;
+    if(!valid.some(c=>c.coreId===core.coreId&&c.uid===uid))throw new Error('EXCHANGE_CORE_INVALID');
+    return {...exchangeResponse(order,'EXCHANGE_CORE_SCANNED'),phase,replayed:true,core:{id:core.coreId,energy:core.visibleEnergy}};
+   }
+   if(phase!==(order.incoming.length<order.size?'IN':'OUT'))throw new Error('EXCHANGE_SCAN_PHASE_MISMATCH');
+   if(phase==='IN'){
     if(!context.personal.some(c=>c.coreId===core.coreId&&c.uid===uid))throw new Error('CORE_NOT_OWNED_BY_PIONEER');
     order.incoming.push(core.coreId);
    }else{
@@ -6607,7 +6618,7 @@ function normalExchange(e,action){
     order.outgoing.push(core.coreId);
    }
    props.setProperty(EXCHANGE_PREFIX+order.id,JSON.stringify(order));
-   return {...exchangeResponse(order,'EXCHANGE_CORE_SCANNED'),core:{id:core.coreId,energy:core.visibleEnergy}};
+   return {...exchangeResponse(order,'EXCHANGE_CORE_SCANNED'),phase,replayed:false,core:{id:core.coreId,energy:core.visibleEnergy}};
   }
   if(action!=='confirm')throw new Error('INVALID_EXCHANGE_ACTION');
   if(order.incoming.length!==order.size||order.outgoing.length!==order.size||new Set(order.incoming.concat(order.outgoing)).size!==order.size*2)throw new Error('EXCHANGE_SCANS_INCOMPLETE');

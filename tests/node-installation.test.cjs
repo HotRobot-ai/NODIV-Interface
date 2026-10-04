@@ -312,9 +312,9 @@ test('P003 scan never returns code; server sizes only 1 and releases code only a
 test('exchange rejects wrong, foreign, duplicate and wrong-phase cores; scans never change ownership',()=>{
  const f=exchangeFixture();f.authorize();const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));
  assert.throws(()=>f.exchangeScan(1),/NOT_OWNED_BY_PIONEER/);assert.throws(()=>f.exchangeScan(5),/NOT_OWNED_BY_PIONEER/);
- f.exchangeScan(6);assert.throws(()=>f.exchangeScan(6),/DUPLICATE/);assert.throws(()=>f.exchangeScan(5),/NOT_IN_NODE/);
+ f.exchangeScan(6);f.e.parameter.phase='OUT';assert.throws(()=>f.exchangeScan(6),/DUPLICATE/);delete f.e.parameter.phase;assert.throws(()=>f.exchangeScan(5),/NOT_IN_NODE/);
  f.e.parameter.uid='unknown';assert.throws(()=>f.ctx.normalExchange(f.e,'scan'),/NOT_FOUND/);assert.throws(f.finishExchange,/INCOMPLETE/);
- f.exchangeScan(1);assert.throws(()=>f.exchangeScan(1),/DUPLICATE/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);
+ f.exchangeScan(1);f.e.parameter.phase='IN';assert.throws(()=>f.exchangeScan(1),/DUPLICATE/);delete f.e.parameter.phase;assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);
 });
 test('atomic 1/2/3 equal exchange keeps Node exactly 3 and personal capacity, marks restore eligibility only at 1',()=>{
  for(const capacity of [1,2,3]){
@@ -360,4 +360,24 @@ test('Node UID or mechanical slot/code changes and transit/deployment cores reje
  const g=exchangeFixture();g.sheets['N-Core Register'].rows[6][4]='IN_TRANSIT';assert.deepEqual(Array.from(g.preview().exchangePreview.sizes),[]);assert.throws(g.authorize,/SIZE_NOT_ALLOWED/);
  const h=exchangeFixture();h.sheets['Deployment Register'].rows.push(['DEP-X','NC-001','','','','DEPLOYMENT','ASSIGNED']);assert.throws(h.authorize,/CORES_UNAVAILABLE/);
  const j=exchangeFixture();j.e.parameter.size=1;j.e.parameter.preview='invented';assert.throws(()=>j.ctx.normalExchange(j.e,'authorize'),/NODE_SCAN_REQUIRED/);
+});
+
+test('identical accepted IN and OUT requests are idempotent, even after later progress, without writes',()=>{
+ const f=exchangeFixture();f.authorize();const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));
+ f.e.parameter.phase='IN';const first=f.exchangeScan(6),stored=f.properties.get('NODIV_EXCHANGE_'+f.e.parameter.exchange);
+ assert.equal(first.inCount,1);assert.equal(first.outCount,0);assert.equal(first.replayed,false);
+ const retry=f.exchangeScan(6);assert.equal(retry.inCount,1);assert.equal(retry.outCount,0);assert.equal(retry.replayed,true);assert.equal(f.properties.get('NODIV_EXCHANGE_'+f.e.parameter.exchange),stored);
+ f.e.parameter.phase='OUT';const out=f.exchangeScan(1);assert.equal(out.outCount,1);assert.equal(out.canConfirm,true);
+ const outRetry=f.exchangeScan(1);assert.equal(outRetry.inCount,1);assert.equal(outRetry.outCount,1);assert.equal(outRetry.replayed,true);
+ assert.throws(()=>f.exchangeScan(6),/DUPLICATE/);f.e.parameter.phase='IN';assert.throws(()=>f.exchangeScan(1),/DUPLICATE/);
+ const late=f.exchangeScan(6);assert.equal(late.inCount,1);assert.equal(late.outCount,1);assert.equal(late.canConfirm,true);
+ delete f.e.parameter.phase;assert.equal(f.exchangeScan(6).replayed,true);
+ assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);
+ f.finishExchange();assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
+});
+test('retry cannot bypass current session, core ownership, phase or snapshot validation',()=>{
+ for(const mutate of [f=>f.sheets['N-Core Register'].rows[6][15]='OTHER',f=>f.sheets['N-Core Register'].rows[6][2]='replaced',f=>f.sheets['Event Register'].rows[1][1]='COMPLETED']){
+  const f=exchangeFixture();f.authorize();f.e.parameter.phase='IN';f.exchangeScan(6);mutate(f);assert.throws(()=>f.exchangeScan(6));assert.equal(f.batches(),0);
+ }
+ const f=exchangeFixture();f.authorize();f.e.parameter.phase='OUT';assert.throws(()=>f.exchangeScan(1),/PHASE_MISMATCH/);f.e.parameter.phase='INVALID';assert.throws(()=>f.exchangeScan(6),/PHASE_INVALID/);
 });
