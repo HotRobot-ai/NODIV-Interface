@@ -662,6 +662,15 @@ window.addEventListener('nodiv-pioneer-restore',async e=>{
  pioneerRestoreBusy=true;renderPioneerRestore(pioneerRestore,true);
  try{await request();}catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}
 });
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('#armRestoreTest');if(!button||!sessionToken)return;
+ const hint=document.querySelector('#founderRestoreHint');button.disabled=true;
+ try{
+  const r=await apiRequest({action:'restoretestsetup',token:sessionToken});
+  if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE TEST SETUP FAILED');
+  hint.textContent=r.message||'NODE-002 // RESTORE TEST LOADOUT ARMED';
+ }catch(err){hint.textContent=String(err.message||err);button.disabled=false;}
+});
 window.addEventListener('nodiv-founder-restore',async e=>{
  if(!sessionToken)return;
  const select=document.querySelector('#restorePioneerSelect'),hint=document.querySelector('#founderRestoreHint'),button=document.querySelector('#assignRestore');
