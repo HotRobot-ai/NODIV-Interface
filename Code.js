@@ -6775,16 +6775,15 @@ function selectRestoreCore(nodeCores,reserve){
  return core?{core,out:sorted[0],totalEnergy:total,projectedEnergy:total-sorted[0].visibleEnergy+core.visibleEnergy}:null;
 }
 function getRestoreEligibility(e){
- const lock=LockService.getScriptLock();
- try{
-  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
-  cleanupRestoreOrders();const logs=exchangeLogRows(),orders=liveRestores(),sheet=getAccessCardRegisterSheet();
-  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues():[];
-  const pioneers=rows.map(row=>findIdentityById(row[1])).filter(player=>restoreEligible(player,logs)&&!orders.some(order=>order.identity===player.identity))
-   .map(player=>({identity:player.identity,capacity:1}));
-  return {ok:true,session:true,action:true,status:pioneers.length?'RESTORE_1_ELIGIBLE':'NO_ELIGIBLE_PIONEERS',pioneers};
- }finally{try{lock.releaseLock();}catch(error){}}
+ const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+ if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
+ // Read-only Founder query: never wait behind gameplay mutations. liveRestores()
+ // already ignores expired orders, so cleanup is not required to answer eligibility.
+ const logs=exchangeLogRows(),orders=liveRestores(),sheet=getAccessCardRegisterSheet();
+ const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues():[];
+ const pioneers=rows.map(row=>findIdentityById(row[1])).filter(player=>restoreEligible(player,logs)&&!orders.some(order=>order.identity===player.identity))
+  .map(player=>({identity:player.identity,capacity:1}));
+ return {ok:true,session:true,action:true,status:pioneers.length?'RESTORE_1_ELIGIBLE':'NO_ELIGIBLE_PIONEERS',pioneers};
 }
 function assignRestoreOne(e){
  const lock=LockService.getScriptLock();
