@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-exchange1';
+import {routeIdentity} from './router.js?v=20261004-restore1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -53,7 +53,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
 });
 window.addEventListener('nodiv-pioneer-scan',async()=>{
  const b=document.querySelector('#pioneerScan');
- if(!b||b.dataset.scanActive==='1')return;
+ if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
@@ -70,7 +70,8 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    try{
     const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
     if(!route?.ok||!route?.session)throw new Error(route?.error||route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
-    if(route.exchangeResume)resumePioneerExchange(route.exchangeResume);
+    if(route.restoreMission)renderPioneerRestore(route.restoreMission,true);
+    else if(route.exchangeResume)resumePioneerExchange(route.exchangeResume);
     else if(route.exchangePreview)showPioneerExchangePreview(route.exchangePreview);
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
@@ -85,7 +86,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    }catch(err){
     b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
    }finally{
-    setTimeout(()=>{b.disabled=Boolean(pioneerExchange);b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
+    setTimeout(()=>{b.disabled=Boolean(pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&pioneerRestore?.status!=='RESTORE_1_COMPLETE'));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
    }
   };
  }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
@@ -575,7 +576,7 @@ function showPioneerExchangePreview(preview){
  document.querySelector('#exchangeHint').textContent='Anzahl rein = Anzahl raus. Erst alle eigenen, dann die entnommenen Cores scannen.';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
- if(pioneerExchangeBusy||!pioneerExchangePreview||!sessionToken)return;
+ if(pioneerExchangeBusy||pioneerRestoreBusy||!pioneerExchangePreview||!sessionToken)return;
  const action=e.detail?.action;
  const hint=document.querySelector('#exchangeHint');
  if(action==='scan'){
@@ -611,4 +612,72 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
   hint.textContent=action==='confirm'?'Tausch atomar verbucht. Node bleibt 3/3.':'Code autorisiert. Cores physisch tauschen und scannen.';
  }catch(err){hint.textContent=String(err.message||err);}
  finally{pioneerExchangeBusy=false;}
+});
+
+let pioneerRestore=null,pioneerRestoreBusy=false,founderRestoreOptions=[];
+function renderPioneerRestore(result,atNode=false){
+ pioneerRestore={...result,atNode};
+ const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount'),panel=document.querySelector('#pioneerRestore');
+ const complete=result.status==='RESTORE_1_COMPLETE',active=result.restore&&!complete;
+ if(board)board.textContent=active?'RESTORE #1 // '+result.nodeId+' // '+result.inCore.id+' / '+result.inCore.energy+' E // IN TRANSIT (MISSION CARGO)':'NO ACTIVE RESTORE';
+ if(count)count.textContent=active?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
+ if(!panel)return;panel.hidden=!result.restore;
+ document.querySelector('#restoreNode').textContent='RESTORE #1 // '+result.nodeId+' // '+result.totalEnergy+' E // '+result.nodeState;
+ document.querySelector('#restoreLoadout').textContent='IN // '+result.inCore.id+' / '+result.inCore.energy+' E // OUT REQUIRED // '+result.outCore.id+' / '+result.outCore.energy+' E';
+ document.querySelector('#restoreProjection').textContent='PROJECTED // '+result.projectedEnergy+' E // '+result.projectedState;
+ document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE // '+result.accessCode:'';
+ document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY 2/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1';
+ const auth=document.querySelector('#restoreAuthorize'),scan=document.querySelector('#restoreScan'),confirm=document.querySelector('#restoreConfirm');
+ auth.hidden=!active||!atNode||result.authorized;auth.disabled=pioneerRestoreBusy;
+ scan.hidden=!active||!atNode||!result.authorized;scan.disabled=pioneerRestoreBusy||Boolean(result.canConfirm);scan.textContent=result.inCount?'VORGESCHRIEBENEN NODE-CORE SCANNEN':'TRANSIT-CORE SCANNEN';
+ confirm.hidden=!active||!atNode||!result.authorized;confirm.disabled=pioneerRestoreBusy||!result.canConfirm;
+ document.querySelector('#restoreHint').textContent=complete?'Persönlicher Besitz unverändert. Zweiter Slot freigeschaltet.':atNode?'Nur den zugewiesenen Transit-Core und den vorgeschriebenen niedrigsten Node-Core scannen.':'Transport-Core am HQ übernehmen und Ziel-Node per NFC scannen.';
+ const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=Boolean(active&&atNode&&result.authorized);
+}
+window.addEventListener('nodiv-pioneer-restore-status',async()=>{
+ if(!sessionToken)return;
+ try{const r=await apiRequest({action:'restorestate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE STATE FAILED');if(r.restore)renderPioneerRestore(r,false);}
+ catch(err){const board=document.querySelector('#pioneerRestoreBoard');if(board)board.textContent=String(err.message||err);}
+});
+window.addEventListener('nodiv-pioneer-restore',async e=>{
+ const action=e.detail?.action;if(pioneerRestoreBusy||pioneerExchangeBusy||!pioneerRestore?.atNode||!sessionToken)return;
+ if(!['authorize','scan','confirm'].includes(action))return;
+ const hint=document.querySelector('#restoreHint');
+ const request=async uid=>{
+  const r=await apiRequest({action:'restore'+action,token:sessionToken,node:pioneerRestore.nodeId,restore:pioneerRestore.restore,phase:pioneerRestore.inCount?'OUT':'IN',uid:uid||''});
+  if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE REJECTED');
+  pioneerRestoreBusy=false;renderPioneerRestore({...pioneerRestore,...r},true);
+  if(r.status==='RESTORE_1_COMPLETE')window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+ };
+ if(action==='scan'){
+  if(!pioneerRestore.authorized)return;
+  if(!('NDEFReader' in window)){hint.textContent='Web NFC benötigt Android + Chrome.';return;}
+  pioneerRestoreBusy=true;renderPioneerRestore(pioneerRestore,true);
+  try{const controller=new AbortController(),reader=new NDEFReader();let handled=false;await reader.scan({signal:controller.signal});
+   reader.onreadingerror=()=>{if(handled)return;handled=true;controller.abort();pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent='NFC LESEFEHLER // ERNEUT';};
+   reader.onreading=async ev=>{if(handled)return;handled=true;controller.abort();try{await request(String(ev.serialNumber||''));}catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}};
+  }catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}
+  return;
+ }
+ pioneerRestoreBusy=true;renderPioneerRestore(pioneerRestore,true);
+ try{await request();}catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}
+});
+window.addEventListener('nodiv-founder-restore',async e=>{
+ if(!sessionToken)return;
+ const select=document.querySelector('#restorePioneerSelect'),hint=document.querySelector('#founderRestoreHint'),button=document.querySelector('#assignRestore');
+ if(!select)return;
+ try{
+  if(e.detail?.action==='assign'){
+   if(!founderRestoreOptions.some(player=>player.identity===select.value))return;
+   button.disabled=true;
+   const r=await apiRequest({action:'restoreassign',token:sessionToken,pioneer:select.value});
+   if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE ASSIGN FAILED');
+   hint.textContent=r.identity+' // '+r.nodeId+' // '+r.inCore.id+' / '+r.inCore.energy+' E // PROJECTED '+r.projectedEnergy+' E / '+r.projectedState;
+  }
+  const r=await apiRequest({action:'restoreeligible',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE LIST FAILED');
+  founderRestoreOptions=Array.isArray(r.pioneers)?r.pioneers:[];select.replaceChildren();
+  const empty=document.createElement('option');empty.value='';empty.textContent=founderRestoreOptions.length?'ELIGIBLE PIONEER AUSWÄHLEN':'NO ELIGIBLE PIONEERS';select.appendChild(empty);
+  for(const player of founderRestoreOptions){const option=document.createElement('option');option.value=player.identity;option.textContent=player.identity+' // 1/3 // RESTORE #1';select.appendChild(option);}
+  select.disabled=!founderRestoreOptions.length;button.disabled=!founderRestoreOptions.length;
+ }catch(err){hint.textContent=String(err.message||err);if(button)button.disabled=false;}
 });

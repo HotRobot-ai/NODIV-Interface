@@ -452,3 +452,90 @@ test('staging and batch failures leave no mutations or success logs; exchange re
   f.ctx.appendTransactionLog=append;f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.finishExchange().status,'EXCHANGE_COMPLETE');assert.equal(f.batches(),1);assert.equal(f.properties.has(key),false);
  }
 });
+
+function restoreFixture(){
+ const f=exchangeFixture(),rows=f.sheets['N-Core Register'].rows;
+ for(const row of rows.slice(1)){row[14]='NODIV_RESERVE';row[15]='HQ';row[4]='RESERVE';}
+ for(const [n,energy] of [[1,353],[2,341],[3,401]]){rows[n][14]='NODE';rows[n][15]='NODE-001';rows[n][4]='DEPLOYED';rows[n][1]=energy;}
+ enableNode(f,'NODE-002','F001',true);
+ for(const [n,energy] of [[4,100],[5,150],[7,170]]){rows[n][2]='uid'+n;rows[n][14]='NODE';rows[n][15]='NODE-002';rows[n][4]='DEPLOYED';rows[n][1]=energy;}
+ rows[6][1]=200;
+ rows[8][2]='uid8';rows[8][14]='PIONEER';rows[8][15]='P003';rows[8][4]='FIELD';rows[8][1]=310;
+ for(const [n,energy] of [[9,280],[10,400],[11,250]]){rows[n][2]='uid'+n;rows[n][1]=energy;}
+ f.sheets['Transaction Log'].rows.push(['eligible',new Date(),'RESTORE_1_ELIGIBLE','P003','PIONEER','','','','','','','','','NODE-001','SUCCESS','first normal exchange']);
+ f.sheets['Access Card Register'].rows.push(['CARD-ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true]);const founderToken='d'.repeat(72);f.cache.set('NODIV_SESSION_'+founderToken,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'CARD-ROOT'}));
+ const founder={parameter:{token:founderToken,pioneer:'P003'}},e={parameter:{token:f.e.parameter.token,node:'NODE-002',uid:'nodeuid2'}};
+ function assign(){const r=f.ctx.assignRestoreOne(founder);e.parameter.restore=r.restore;return r;}
+ function target(){e.parameter.uid='nodeuid2';return f.ctx.getGameplayRoute(e).restoreMission;}
+ function authorize(){target();return f.ctx.normalRestoreOne(e,'authorize');}
+ function scan(n,phase){e.parameter.uid='uid'+n;e.parameter.phase=phase;return f.ctx.normalRestoreOne(e,'scan');}
+ return {...f,founder,restoreE:e,assign,target,restoreAuthorize:authorize,restoreScan:scan,restoreFinish:()=>f.ctx.normalRestoreOne(e,'confirm')};
+}
+test('RESTORE eligibility and server selection skip real STABLE Node, minimize energy for STABLE then DEGRADED',()=>{
+ const f=restoreFixture();assert.equal(f.ctx.getRestoreEligibility(f.founder).pioneers[0].identity,'P003');const r=f.assign();assert.equal(r.nodeId,'NODE-002');assert.equal(r.inCore.id,'NC-009');assert.equal(r.outCore.id,'NC-004');assert.equal(r.projectedEnergy,600);assert.equal(r.projectedState,'STABLE');assert.equal(r.accessCode,undefined);
+ const g=restoreFixture();g.sheets['N-Core Register'].rows[9][2]='';g.sheets['N-Core Register'].rows[10][2]='';const fallback=g.assign();assert.equal(fallback.inCore.id,'NC-006');assert.equal(fallback.projectedEnergy,520);assert.equal(fallback.projectedState,'DEGRADED');
+ const h=restoreFixture();for(const n of [6,9,10,11])h.sheets['N-Core Register'].rows[n][1]=100;assert.equal(h.assign().status,'NO_SUITABLE_RESTORE_TARGET_OR_CORE');assert.equal(h.ctx.liveRestores().length,0);
+ const j=restoreFixture();j.sheets['Transaction Log'].rows.length=1;assert.throws(j.assign,/NOT_ELIGIBLE/);j.sheets['Access Card Register'].rows[2][6]=2;assert.throws(j.assign,/NOT_ELIGIBLE/);
+});
+test('Transit ownership remains HQ; cannot be personal/exchanged/caught/uploaded/generic delivered, no scan ownership writes',()=>{
+ const f=restoreFixture();f.assign();const core=f.ctx.readCoreState('NC-009');assert.equal(core.ownerType,'NODIV_RESERVE');assert.equal(core.ownerId,'HQ');assert.equal(core.status,'IN_TRANSIT');assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),1);
+ f.ctx.readPlayerEnergyBalance=()=>0;const inventory=f.ctx.getPlayerState(f.restoreE);assert.equal(inventory.cores.length,1);assert.equal(inventory.cores[0].coreId,'NC-008');
+ const player=f.ctx.findIdentityById('P003');assert.equal(f.ctx.routeCoreGameplay(player,core).decision.allowed,false);assert.equal(f.ctx.routeCoreGameplay({identity:'L001',role:'LOCAL',catchAccess:true},core).decision.allowed,false);
+ const generic={parameter:{...f.restoreE.parameter,deployment:f.restoreE.parameter.restore,uid:'nodeuid2'}};assert.equal(f.ctx.deliverCoreDeployment(generic).status,'RESTORE_WORKFLOW_REQUIRED');
+ f.restoreE.parameter.uid='nodeuid';assert.equal(f.ctx.getGameplayRoute(f.restoreE).decision.reason,'RESTORE_WRONG_NODE');
+ const before=JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows));assert.equal(f.target().accessCode,undefined);assert.throws(()=>f.restoreScan(9,'IN'),/AUTHORIZATION_REQUIRED/);assert.match(f.restoreAuthorize().accessCode,/^\d{4}$/);
+ assert.throws(()=>f.restoreScan(8,'IN'),/TRANSIT_CORE_REQUIRED/);f.restoreScan(9,'IN');assert.equal(f.restoreScan(9,'IN').replayed,true);assert.throws(()=>f.restoreScan(9,'OUT'),/DUPLICATE/);assert.throws(()=>f.restoreScan(5,'OUT'),/LOWEST_NODE_CORE_REQUIRED/);f.restoreScan(4,'OUT');assert.equal(f.restoreScan(4,'OUT').replayed,true);assert.throws(()=>f.restoreScan(4,'IN'),/DUPLICATE/);assert.equal(JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),before);
+});
+test('Restore recovery/session rebind preserves all scan phases and code authorization; no second order or ownership mutation',()=>{
+ for(const count of [0,1,2]){
+  const f=restoreFixture();const assigned=f.assign();f.restoreAuthorize();if(count>=1)f.restoreScan(9,'IN');if(count===2)f.restoreScan(4,'OUT');
+  const before=JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),old=f.restoreE.parameter.token,newToken='c'.repeat(72);f.cache.delete('NODIV_SESSION_'+old);f.cache.set('NODIV_SESSION_'+newToken,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));f.restoreE.parameter.token=newToken;
+  const r=f.target();assert.equal(r.restore,assigned.restore);assert.equal(r.inCount,count>=1?1:0);assert.equal(r.outCount,count===2?1:0);assert.equal(r.canConfirm,count===2);assert.match(r.accessCode,/^\d{4}$/);assert.equal(f.ctx.liveRestores().length,1);assert.equal(JSON.parse(f.properties.get('NODIV_RESTORE_1_'+r.restore)).token,newToken);assert.equal(JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),before);
+  if(count===0)f.restoreScan(9,'IN');if(count<2)f.restoreScan(4,'OUT');assert.equal(f.restoreFinish().capacity,2);
+ }
+});
+test('Restore final batch exchanges fixed cores, completes mission, capacity exactly 2 and locks only target for 1 hour',()=>{
+ const f=restoreFixture(),personal=JSON.stringify(f.sheets['N-Core Register'].rows[8]);f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const b=f.batches(),r=f.restoreFinish();assert.equal(f.batches(),b+1);assert.equal(r.status,'RESTORE_1_COMPLETE');assert.equal(r.totalEnergy,600);assert.equal(r.nodeState,'STABLE');
+ const rows=f.sheets['N-Core Register'].rows;assert.equal(rows[9][14],'NODE');assert.equal(rows[9][15],'NODE-002');assert.equal(rows[9][4],'DEPLOYED');assert.equal(rows[4][14],'NODIV_RESERVE');assert.equal(rows[4][15],'HQ');assert.equal(rows[4][4],'RESERVE');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),1);assert.equal(JSON.stringify(rows[8]),personal);
+ assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);assert.equal(f.sheets['Deployment Register'].rows[1][6],'COMPLETED');assert.equal(f.ctx.liveRestores().length,0);assert.equal(f.properties.has('NODIV_RESTORE_1_'+f.restoreE.parameter.restore),false);
+ const logs=f.sheets['Transaction Log'].rows.map(row=>row[2]);assert.ok(logs.includes('RESTORE_1_IN'));assert.ok(logs.includes('RESTORE_1_OUT'));assert.ok(logs.includes('RESTORE_1_COMPLETE'));assert.equal(f.ctx.getRestoreEligibility(f.founder).pioneers.length,0);assert.throws(f.restoreFinish,/COMPLETED/);assert.equal(f.batches(),b+1);
+ const player=f.ctx.findIdentityById('P003'),lock=f.ctx.getNodeAccessAuthorization(player,'NODE-002','INSTALLED');assert.equal(lock.reason,'RESTORE_TARGET_LOCKED');assert.ok(lock.remainingSeconds>3590&&lock.remainingSeconds<=3600);assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-001','INSTALLED').allowed,true);
+ const complete=f.sheets['Transaction Log'].rows.find(row=>row[2]==='RESTORE_1_COMPLETE');complete[1]=new Date(Date.now()-3600000);assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-002','INSTALLED').allowed,true);assert.deepEqual(Array.from(f.ctx.exchangePreview(f.restoreE,player,'NODE-001').sizes),[1]);
+});
+test('Restore blocks concurrent FOP/Exchange/mission/ownership and rejects changed state, foreign Identity, Node/Event or expiry',()=>{
+ const f=restoreFixture();f.assign();f.restoreAuthorize();assert.throws(()=>f.ctx.getNodeDeinstallOrder({parameter:{token:'a'.repeat(72),node:'NODE-002'}}),/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.exchangePreview(f.restoreE,f.ctx.findIdentityById('P003'),'NODE-002'),/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-009',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'FOP',toId:'F001'}),/RESTORE_OPERATION_RESERVED/);
+ for(const mutate of [f=>f.sheets['N-Core Register'].rows[5][15]='OTHER',f=>f.sheets['N-Core Register'].rows[9][2]='replaced',f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.restoreE.parameter.node='NODE-001',f=>f.restoreE.parameter.token='a'.repeat(72),f=>{const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));}]){
+  const g=restoreFixture();g.assign();g.restoreAuthorize();g.restoreScan(9,'IN');g.restoreScan(4,'OUT');const before=JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows));mutate(g);const changed=JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows));assert.throws(g.restoreFinish);assert.equal(JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows)),changed);
+ }
+});
+test('Restore batch failure leaves all state including capacity/logs/order recoverable and retry commits once',()=>{
+ const f=restoreFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const before=JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),original=f.ctx.Sheets.Spreadsheets.batchUpdate;
+ f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(f.restoreFinish,/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),before);assert.equal(f.target().canConfirm,true);f.ctx.Sheets.Spreadsheets.batchUpdate=original;assert.equal(f.restoreFinish().capacity,2);
+});
+test('expired Restore releases transit status/reservation without moving ownership; failed assignment produces no live mission',()=>{
+ const f=restoreFixture();f.assign();const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));assert.equal(f.ctx.liveRestores().length,0);f.ctx.getRestoreEligibility(f.founder);assert.equal(f.ctx.readCoreState('NC-009').status,'RESERVE');assert.equal(f.ctx.readCoreState('NC-009').ownerId,'HQ');assert.equal(f.properties.has(key),false);
+ const g=restoreFixture(),before=JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows));g.fail();assert.throws(g.assign,/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows)),before);assert.equal(g.ctx.liveRestores().length,0);
+});
+
+test('STABLE-only event creates no restore; upload inventory and catch/normal exchange exclude assigned HQ transit core',()=>{
+ const f=restoreFixture();for(const n of [4,5,7])f.sheets['N-Core Register'].rows[n][1]=200;assert.equal(f.assign().status,'NO_SUITABLE_RESTORE_TARGET_OR_CORE');assert.equal(f.batches(),0);
+ const g=restoreFixture();g.assign();g.sheets['Upload Terminal Register'].rows.push(['UPLOAD-HQ-BAY-01','UPLOAD_HQ','uploaduid','ACTIVE']);const preview=g.ctx.getHqUploadPreview({parameter:{token:g.restoreE.parameter.token,uid:'uploaduid'}});assert.deepEqual(Array.from(preview.cores,c=>c.coreId),['NC-008']);assert.throws(()=>g.ctx.exchangePreview(g.restoreE,g.ctx.findIdentityById('P003'),'NODE-001'),/RESTORE_OPERATION_RESERVED/);
+ g.sheets['Access Card Register'].rows.push(['CARD-L','L001','LOCAL','localuid','ACTIVE','',1,false,true]);assert.throws(()=>g.ctx.catchCoreTransfer({parameter:{card1Uid:'p003uid',card2Uid:'localuid',uid:'uid9'}}),/gehört nicht/);assert.equal(g.ctx.readCoreState('NC-009').ownerType,'NODIV_RESERVE');
+});
+
+test('actual first Normal Exchange marker enables Restore assignment; FOP-reserved target and shared Core cannot be used',()=>{
+ const f=restoreFixture();f.sheets['Transaction Log'].rows.length=1;assert.equal(f.ctx.getRestoreEligibility(f.founder).pioneers.length,0);
+ const e={parameter:{token:f.restoreE.parameter.token,node:'NODE-001',uid:'nodeuid',size:1}},preview=f.ctx.getGameplayRoute(e).exchangePreview;e.parameter.preview=preview.preview;const auth=f.ctx.normalExchange(e,'authorize');e.parameter.exchange=auth.exchange;e.parameter.uid='uid8';f.ctx.normalExchange(e,'scan');e.parameter.uid='uid1';f.ctx.normalExchange(e,'scan');f.ctx.normalExchange(e,'confirm');
+ assert.equal(f.ctx.getRestoreEligibility(f.founder).pioneers[0].identity,'P003');assert.equal(f.assign().nodeId,'NODE-002');
+ const g=restoreFixture();g.ctx.getNodeDeinstallOrder({parameter:{token:'a'.repeat(72),node:'NODE-002'}});assert.equal(g.assign().status,'NO_SUITABLE_RESTORE_TARGET_OR_CORE');assert.equal(g.ctx.liveRestores().length,0);
+});
+test('foreign authenticated Pioneer cannot resume Restore; unauthorized assignment/code forging and incomplete confirm fail',()=>{
+ const f=restoreFixture();f.assign();assert.throws(()=>f.ctx.assignRestoreOne({parameter:{token:f.restoreE.parameter.token,pioneer:'P003'}}),/FOUNDER_REQUIRED/);assert.throws(()=>f.ctx.normalRestoreOne(f.restoreE,'authorize'),/SESSION_NODE_MISMATCH/);
+ f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));const e={parameter:{token,uid:'nodeuid2',node:'NODE-002',restore:f.restoreE.parameter.restore}};
+ const before=JSON.stringify([...f.properties]);assert.equal(f.ctx.getGameplayRoute(e).decision.reason,'RESTORE_OPERATION_RESERVED');assert.throws(()=>f.ctx.normalRestoreOne(e,'authorize'),/SESSION_NODE_MISMATCH/);assert.equal(JSON.stringify([...f.properties]),before);
+ f.restoreAuthorize();assert.throws(f.restoreFinish,/SCANS_INCOMPLETE/);f.restoreScan(9,'IN');assert.throws(f.restoreFinish,/SCANS_INCOMPLETE/);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,1);
+});
+
+test('Restore commit uses atomic batch without flush/transfer rescans; completion marker prevents replay despite stale property',()=>{
+ const f=restoreFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=f.properties.get(key);let flushes=0;f.ctx.SpreadsheetApp.flush=()=>flushes++;f.ctx.transferCoreOwnership=()=>{throw Error('RESTORE_COMMIT_MUST_USE_VALIDATED_BATCH')};f.restoreFinish();assert.equal(flushes,0);f.properties.set(key,order);assert.throws(f.restoreFinish,/EXPIRED_OR_COMPLETED/);assert.equal(f.ctx.getPioneerRestoreState(f.restoreE).status,'NO_ACTIVE_RESTORE');assert.equal(f.sheets['Transaction Log'].rows.filter(row=>row[2]==='RESTORE_1_COMPLETE').length,1);
+});

@@ -270,6 +270,14 @@ function doGet(e) {
 
       result = getGameplayRoute(e);
 
+    } else if (action === 'restoreeligible') {
+      result = getRestoreEligibility(e);
+    } else if (action === 'restoreassign') {
+      result = assignRestoreOne(e);
+    } else if (action === 'restorestate') {
+      result = getPioneerRestoreState(e);
+    } else if (['restoreauthorize','restorescan','restoreconfirm'].includes(action)) {
+      result = normalRestoreOne(e,action.replace('restore',''));
     } else if (['exchangeauthorize','exchangescan','exchangeconfirm','exchangecancel'].includes(action)) {
       result = normalExchange(e,action.replace('exchange',''));
 
@@ -2668,6 +2676,8 @@ function getGameplayRoute(e) {
 
   if (hit.type === 'NODE') {
     const status=getNodeGameplayStatus(hit.id);
+    const restore=player.role==='PIONEER'?getRestoreRoute(e,hit.id):null;
+    if(restore)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},restore.action?'RESTORE_MISSION':'NO_ACTION',restore.action,restore.status,restore.message||'RESTORE #1 // Ziel-Node erkannt.',restore.action?{restoreMission:restore}:null);
     const recovery=player.role==='PIONEER'?recoverNormalExchange(e,hit.id):null;
     if(recovery)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},'EXCHANGE_RESUME',true,'EXCHANGE_RESUMED','Autorisierter Exchange wiederhergestellt.',{exchangeResume:recovery});
     const cargo=findActiveDeploymentForCarrier(player.identity,player.role);
@@ -2722,6 +2732,7 @@ function resolvePlayerSession(tokenValue) {
 function routeCoreGameplay(player,core) {
   const object={found:true,type:'N_CORE',id:core.coreId,status:core.status||'UNDEFINED',energy:core.actualEnergy===''?core.visibleEnergy:core.actualEnergy,ownerType:core.ownerType||'',ownerId:core.ownerId||''};
 
+  if(core.status==='IN_TRANSIT'&&liveRestores().some(order=>order.cargo.coreId===core.coreId))return gameplayDecision(player,object,'NO_ACTION',false,'RESTORE_CARGO_PROTECTED','RESTORE Mission Cargo ist nur im zugewiesenen Restore-Auftrag nutzbar.');
   if(!core.ownerType||!core.ownerId) return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_UNDEFINED','N-Core erkannt. Ownership ist nicht vollständig definiert.');
 
   if(core.ownerId===player.identity) {
@@ -2732,6 +2743,7 @@ function routeCoreGameplay(player,core) {
   }
 
   if(core.ownerType==='NODE') {
+    if(liveRestores().some(order=>order.nodeId===core.ownerId))return gameplayDecision(player,object,'NO_ACTION',false,'RESTORE_OPERATION_RESERVED','Node-Core ist für RESTORE reserviert. Ziel-Node scannen.');
     if(player.nodeAccess) return gameplayDecision(player,object,'CORE_AT_NODE',true,'NODE_CORE_ACCESS','N-Core ist einem Node zugeordnet. Node-bezogene Folgeaktion ist grundsätzlich zulässig.');
     return gameplayDecision(player,object,'NO_ACTION',false,'NODE_ACCESS_DENIED','N-Core gehört zu einem Node. Diese Rolle besitzt keinen Node-Zugriff.');
   }
@@ -3003,7 +3015,7 @@ function hasOpenDeploymentForCore(coreId, installationId, deploymentRows, instal
   const orders=installationOrders||readInstallationOrders().filter(installationOrderIsLive);
   return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
     ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
-    (!isFopNodeDeployment(row)||
+    (String(row[5])==='RESTORE_1'?restoreDeploymentIsLive(row):!isFopNodeDeployment(row)||
       (installationReservationIsLive(row,orders)&&String(row[0])!==installationDeploymentId(installationId,wanted))));
 }
 
@@ -3052,6 +3064,7 @@ function assignCoreDeployment(e) {
     if(readInstallationOrders().some(order=>order.nodeId===targetNode&&installationOrderIsLive(order)))return gameplayActionDenied(actor,'NODE_OPERATION_RESERVED','Ziel-Node ist für eine FOP-Operation reserviert.');
 
     assertExchangeUnreserved(targetNode,carrierId,core.coreId);
+    assertRestoreUnreserved(targetNode,carrierId,core.coreId);
     const deploymentId = createDeploymentId();
     getDeploymentRegisterSheet().appendRow([
       deploymentId, core.coreId, carrier.identity, carrier.role, targetNode,
@@ -3080,7 +3093,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
-    if (isFopNodeDeployment(row)) return;
+    if (isFopNodeDeployment(row)||String(row[5])==='RESTORE_1') return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3108,7 +3121,7 @@ function acceptCoreDeployment(e) {
     const player = session.player;
     const deployment = findDeploymentById(e.parameter.deployment || '');
     if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
-    if (['NODE_INSTALLATION','NODE_DEINSTALLATION'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
+    if (['NODE_INSTALLATION','NODE_DEINSTALLATION','RESTORE_1'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
     if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
     if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
       return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
@@ -3151,6 +3164,7 @@ function findActiveDeploymentForCarrier(identity, role) {
   const sheet=getDeploymentRegisterSheet(), lastRow=Math.max(sheet.getLastRow(),2);
   const rows=sheet.getRange(2,1,lastRow-1,11).getValues();
   for(let i=0;i<rows.length;i++){
+    if(String(rows[i][5])==='RESTORE_1'&&!restoreDeploymentIsLive(rows[i]))continue;
     if(String(rows[i][2]||'').trim().toUpperCase()===wantedId &&
        String(rows[i][3]||'').trim().toUpperCase()===wantedRole &&
        String(rows[i][6]||'').trim().toUpperCase()==='IN_TRANSIT'){
@@ -3191,6 +3205,7 @@ function deliverCoreDeployment(e) {
     if(!deployment)
       return gameplayActionDenied(player,'NO_MISSION_CARGO','Kein aktives Mission Cargo für diese Identität.');
 
+    if(deployment.purpose==='RESTORE_1')return gameplayActionDenied(player,'RESTORE_WORKFLOW_REQUIRED','RESTORE benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(deployment.targetNode!==nodeId)
       return gameplayActionDenied(player,'MISSION_CARGO_WRONG_NODE','Mission Cargo ist an '+deployment.targetNode+' gebunden.');
 
@@ -3881,6 +3896,7 @@ function getNodeOperationOrder(e,operation) {
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
     assertExchangeUnreserved(nodeId,'','');
+    assertRestoreUnreserved(nodeId,'','');
     cleanupInstallationOrders();
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
     if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
@@ -4052,7 +4068,7 @@ function getFopOperations(e) {
       const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId));
       const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
       ids.forEach(nodeId=>{
-        if(reserved.has(nodeId)||liveExchanges().some(order=>order.nodeId===nodeId))return;
+        if(reserved.has(nodeId)||liveExchanges().some(order=>order.nodeId===nodeId)||liveRestores().some(order=>order.nodeId===nodeId))return;
         for(const type of ['INSTALL','DEINSTALL']){
           try{
             if(type==='INSTALL'){if(!stockAvailable)continue;validateNodeInstallation(actor,nodeId);}
@@ -4161,7 +4177,7 @@ function findEventNodeCode(eventId,nodeId) {
  * AVAILABLE means physically provisioned but not commissioned for field use.
  * Access-code release will be attached here once the event/code register exists.
  */
-function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
+function getNodeAccessAuthorization(player,nodeId,nodeStatus,restoreId) {
   const id=String(nodeId||'').trim().toUpperCase();
   const status=String(nodeStatus||'UNDEFINED').trim().toUpperCase();
   if(!id)return {allowed:false,reason:'NODE_ID_INVALID',message:'Node konnte nicht eindeutig identifiziert werden.'};
@@ -4171,6 +4187,8 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
   if(!event||event.state!=='FIELD_ACTIVE')return {allowed:false,reason:'EVENT_NOT_FIELD_ACTIVE',message:'Node erkannt. Field Operations sind noch nicht aktiv.'};
 
   const eventNode=findEventNodeCode(event.eventId,id);
+  const restoreLock=restoreNodeLock(player,id);if(restoreLock)return restoreLock;
+  if(liveRestores().some(order=>order.nodeId===id&&order.id!==restoreId))return {allowed:false,reason:'RESTORE_OPERATION_RESERVED',message:'Node für RESTORE reserviert.'};
   if(!eventNode)return {allowed:false,reason:'NODE_NOT_IN_ACTIVE_EVENT',message:'Node erkannt. Dieser Node gehört nicht zum aktiven Event.'};
   if(eventNode.changeStatus!=='ACTIVE'||!eventNode.activeSlot)return {allowed:false,reason:'NODE_INSTALLATION_NOT_CONFIRMED',message:'Node erkannt. Die physische Installation ist noch nicht bestätigt.'};
 
@@ -5311,6 +5329,8 @@ function transferCoreOwnership(data) {
   const depSheet=getDeploymentRegisterSheet(),depRows=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
   assertExchangeUnreserved(fromType==='NODE'?fromId:'',fromType==='PIONEER'?fromId:'',coreId,data.exchangeId);
   assertExchangeUnreserved(toType==='NODE'?toId:'',toType==='PIONEER'?toId:'',coreId,data.exchangeId);
+  assertRestoreUnreserved(fromType==='NODE'?fromId:toType==='NODE'?toId:'','',coreId);
+  if(toType==='NODE')assertRestoreUnreserved(toId,'',coreId);
   const installOrders=readInstallationOrders().filter(installationOrderIsLive);
   if(installOrders.some(order=>order.id!==data.installationId&&((fromType==='NODE'&&order.nodeId===fromId)||(toType==='NODE'&&order.nodeId===toId))))throw new Error('NODE_OPERATION_RESERVED');
   if(depRows.some(row=>String(row[1]).trim().toUpperCase()===coreId&&installationReservationIsLive(row,installOrders)&&String(row[0])!==installationDeploymentId(data.installationId,coreId)))throw new Error('CORE_RESERVED_FOR_NODE_INSTALLATION');
@@ -6554,6 +6574,8 @@ function exchangeContext(player,nodeId,exchangeId){
  if(!auth.allowed)throw new Error(auth.reason);
  const event=readCurrentEvent(),eventNode=findEventNodeCode(event.eventId,nodeId);
  if(eventNode.pendingSlot)throw new Error('NODE_CODE_CHANGE_PENDING');
+ const restoreOrders=liveRestores();
+ assertRestoreUnreserved(nodeId,player.identity,'',undefined,restoreOrders);
  const exchangeOrders=liveExchanges();
  assertExchangeUnreserved(nodeId,player.identity,'',exchangeId,exchangeOrders);
  const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
@@ -6566,7 +6588,7 @@ function exchangeContext(player,nodeId,exchangeId){
  if(nodeCores.length!==3||nodeCores.some(core=>!eligible(core)))throw new Error('NODE_CORES_UNAVAILABLE');
  const all=nodeCores.concat(inventory);
  // Also guard every reserved Core once against the same in-memory reservation snapshot.
- all.forEach(core=>assertExchangeUnreserved('','',core.coreId,exchangeId,exchangeOrders));
+ all.forEach(core=>{assertExchangeUnreserved('','',core.coreId,exchangeId,exchangeOrders);assertRestoreUnreserved('','',core.coreId,undefined,restoreOrders);});
  if(new Set(all.map(core=>core.coreId)).size!==all.length||new Set(all.filter(core=>core.uid).map(core=>core.uid)).size!==all.filter(core=>core.uid).length)throw new Error('EXCHANGE_DUPLICATE_CORE_UID');
  const personal=inventory.filter(eligible);
  const transactionRows=exchangeLogRows(),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
@@ -6695,4 +6717,193 @@ function stageValidatedExchangeTransfer(core,toType,toId,newStatus,eventType,pla
   hiddenEnergy:core.hiddenEnergy,actualEnergy:core.actualEnergy,nodeId,result:'SUCCESS'},requests);
  writeCoreOwnership(core.row,toType,toId,transactionId,requests);
  requests.push(sheetCellsRequest(getRegisterSheet(),core.row,CORE_COL.STATUS,[[newStatus]]));
+}
+
+
+/* RESTORE #1: existing HQ-owned transit model + durable, expiring order metadata. */
+const RESTORE_PREFIX='NODIV_RESTORE_1_';
+const RESTORE_LOCK_MS=60*60*1000;
+function restoreOrderRows(){
+ const props=PropertiesService.getScriptProperties().getProperties();
+ return Object.keys(props).filter(key=>key.startsWith(RESTORE_PREFIX)).flatMap(key=>{try{return [JSON.parse(props[key])];}catch(error){return [];}});
+}
+function restoreOrderIsLive(order){
+ if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)return false;
+ const event=readCurrentEvent(),player=findIdentityById(order.identity),logs=exchangeLogRows();
+ return Boolean(event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId&&player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&Number(player.coreCapacity)===1&&
+  logs.some(row=>row[2]==='RESTORE_1_ASSIGNED'&&row[15]===order.id)&&!logs.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[15]===order.id));
+}
+function liveRestores(){return restoreOrderRows().filter(restoreOrderIsLive);}
+function restoreDeploymentIsLive(row,orders){return (orders||liveRestores()).some(order=>order.id===String(row[0]));}
+function assertRestoreUnreserved(nodeId,identity,coreId,restoreId,orders){
+ if((orders||liveRestores()).some(order=>order.id!==restoreId&&((nodeId&&order.nodeId===nodeId)||(identity&&order.identity===identity)||
+  (coreId&&(order.cargo.coreId===coreId||order.nodeCores.some(core=>core.coreId===coreId))))))throw new Error('RESTORE_OPERATION_RESERVED');
+}
+function restoreEligible(player,logs){
+ return Boolean(player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&Number(player.coreCapacity)===1&&
+  logs.some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity)&&!logs.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity));
+}
+function restoreNodeLock(player,nodeId){
+ if(player.role!=='PIONEER')return null;
+ const until=exchangeLogRows().filter(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[13]===nodeId)
+  .reduce((max,row)=>Math.max(max,new Date(row[1]).getTime()+RESTORE_LOCK_MS||0),0);
+ return until>Date.now()?{allowed:false,reason:'RESTORE_TARGET_LOCKED',remainingSeconds:Math.ceil((until-Date.now())/1000),lockUntil:new Date(until).toISOString(),message:'RESTORE TARGET LOCK // '+Math.ceil((until-Date.now())/1000)+' S'}:null;
+}
+// Called under ScriptLock; expired cargo is released only if it still matches HQ transit.
+// Event history/deployment rows are kept. No ownership is ever moved by expiry.
+function cleanupRestoreOrders(){
+ for(const order of restoreOrderRows()){
+  if(restoreOrderIsLive(order))continue;
+  const dep=findDeploymentById(order.id),requests=[];
+  if(dep&&dep.purpose==='RESTORE_1'&&dep.status==='IN_TRANSIT'){
+   const core=readCoreState(order.cargo.coreId);
+   if(core.ownerType==='NODIV_RESERVE'&&core.ownerId==='HQ'&&core.status==='IN_TRANSIT'&&core.uid===order.cargo.uid)
+    requests.push(sheetCellsRequest(getRegisterSheet(),core.row,CORE_COL.STATUS,[['RESERVE']]));
+   requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['EXPIRED']]));
+   appendTransactionLog({eventType:'RESTORE_1_EXPIRED',actorId:order.identity,actorRole:'PIONEER',coreId:order.cargo.coreId,nodeId:order.nodeId,result:'EXPIRED',details:order.id},requests);
+  }
+  if(requests.length)Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  PropertiesService.getScriptProperties().deleteProperty(RESTORE_PREFIX+order.id);
+ }
+}
+function selectRestoreCore(nodeCores,reserve){
+ const sorted=nodeCores.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
+ if(sorted.length!==3)return null;
+ const total=sorted.reduce((sum,core)=>sum+core.visibleEnergy,0);if(total>=600)return null;
+ const choices=reserve.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
+ const core=choices.find(core=>total-sorted[0].visibleEnergy+core.visibleEnergy>=600)||choices.find(core=>total-sorted[0].visibleEnergy+core.visibleEnergy>=450);
+ return core?{core,out:sorted[0],totalEnergy:total,projectedEnergy:total-sorted[0].visibleEnergy+core.visibleEnergy}:null;
+}
+function getRestoreEligibility(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
+  cleanupRestoreOrders();const logs=exchangeLogRows(),orders=liveRestores(),sheet=getAccessCardRegisterSheet();
+  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues():[];
+  const pioneers=rows.map(row=>findIdentityById(row[1])).filter(player=>restoreEligible(player,logs)&&!orders.some(order=>order.identity===player.identity))
+   .map(player=>({identity:player.identity,capacity:1}));
+  return {ok:true,session:true,action:true,status:pioneers.length?'RESTORE_1_ELIGIBLE':'NO_ELIGIBLE_PIONEERS',pioneers};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function assignRestoreOne(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
+  cleanupRestoreOrders();const player=findIdentityById(String(e.parameter.pioneer||'').trim().toUpperCase()),logs=exchangeLogRows(),event=readCurrentEvent();
+  if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  if(!restoreEligible(player,logs))throw new Error('RESTORE_1_NOT_ELIGIBLE');
+  assertRestoreUnreserved('',player.identity,'');assertExchangeUnreserved('',player.identity,'');
+  if(findActiveDeploymentForCarrier(player.identity,player.role))throw new Error('MISSION_CARGO_ALREADY_ACTIVE');
+  const register=getRegisterSheet(),coreRows=register.getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),reserve=getAvailableInstallationCores();
+  const codes=getEventNodeCodeSheet(),rows=codes.getLastRow()>1?codes.getRange(2,1,codes.getLastRow()-1,13).getValues():[],candidates=[];
+  for(const row of rows.filter(row=>String(row[0])===event.eventId)){
+   const nodeId=String(row[1]).trim().toUpperCase();
+   try{
+    const auth=getNodeAccessAuthorization(player,nodeId,getNodeGameplayStatus(nodeId));if(!auth.allowed)continue;
+    assertExchangeUnreserved(nodeId,'','');assertRestoreUnreserved(nodeId,'','');
+    const eventNode=findEventNodeCode(event.eventId,nodeId),nodeCores=exchangeOwnedCores('NODE',nodeId,coreRows);
+    const codeIndex={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[eventNode.activeSlot];
+    if(!/^\d{4}$/.test(eventNode.codes[codeIndex]))continue;
+    if(eventNode.pendingSlot||nodeCores.length!==3||nodeCores.some(core=>!core.uid||!Number.isFinite(core.visibleEnergy)||['IN_TRANSIT','RESERVE'].includes(core.status)||hasOpenDeploymentForCore(core.coreId)))continue;
+    if(new Set(nodeCores.map(core=>core.coreId)).size!==3||new Set(nodeCores.map(core=>core.uid)).size!==3)continue;
+    const selected=selectRestoreCore(nodeCores,reserve);if(selected)candidates.push({nodeId,eventNode,nodeCores,...selected});
+   }catch(error){if(!['EXCHANGE_ALREADY_RUNNING','RESTORE_OPERATION_RESERVED'].includes(String(error.message)))throw error;}
+  }
+  candidates.sort((a,b)=>a.totalEnergy-b.totalEnergy||a.nodeId.localeCompare(b.nodeId));
+  if(!candidates.length)return {ok:true,session:true,action:false,status:'NO_SUITABLE_RESTORE_TARGET_OR_CORE',message:'Kein freier DEGRADED/CRITICAL Event-Node mit geeignetem HQ-Reserve-Core.'};
+  const selected=candidates[0],cargo=readCoreState(selected.core.coreId),id='RST-'+Utilities.getUuid().toUpperCase(),props=PropertiesService.getScriptProperties(),now=new Date();
+  const order={id,identity:player.identity,eventId:event.eventId,nodeId:selected.nodeId,nodeFingerprint:exchangeNodeFingerprint(selected.nodeId,selected.eventNode),nodeCores:selected.nodeCores,
+   cargo:{...cargo,status:'IN_TRANSIT'},out:selected.out.coreId,projectedEnergy:selected.projectedEnergy,incoming:[],outgoing:[],authorized:false,token:'',expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+  const requests=[],tx=appendTransactionLog({eventType:'RESTORE_1_ASSIGNED',actorId:session.player.identity,actorRole:'FOUNDER',coreId:cargo.coreId,nodeId:order.nodeId,result:'SUCCESS',details:id},requests),dep=getDeploymentRegisterSheet();
+  requests.push(sheetCellsRequest(register,cargo.row,CORE_COL.STATUS,[['IN_TRANSIT']]));
+  requests.push({appendCells:{sheetId:dep.getSheetId(),rows:sheetCellsRequest(dep,1,1,[[id,cargo.coreId,player.identity,'PIONEER',order.nodeId,'RESTORE_1','IN_TRANSIT',now,now,'',tx]]).updateCells.rows,fields:'userEnteredValue'}});
+  props.setProperty(RESTORE_PREFIX+id,JSON.stringify(order));
+  // A property without the atomic assignment log is not live; ambiguous failures can recover if the batch committed.
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  return restoreResponse(order,'RESTORE_1_ASSIGNED',false);
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function restoreSnapshot(cores){return JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());}
+function validateRestore(order,player){
+ if(!restoreOrderIsLive(order))throw new Error('RESTORE_EXPIRED_OR_COMPLETED');
+ if(player.identity!==order.identity||!restoreEligible(player,exchangeLogRows()))throw new Error('RESTORE_IDENTITY_NOT_ELIGIBLE');
+ const auth=getNodeAccessAuthorization(player,order.nodeId,getNodeGameplayStatus(order.nodeId),order.id);if(!auth.allowed)throw new Error(auth.reason);
+ const restores=liveRestores(),exchanges=liveExchanges();
+ assertRestoreUnreserved(order.nodeId,'','',order.id,restores);assertExchangeUnreserved(order.nodeId,'','',undefined,exchanges);
+ const event=readCurrentEvent(),eventNode=findEventNodeCode(event.eventId,order.nodeId);
+ if(exchangeNodeFingerprint(order.nodeId,eventNode)!==order.nodeFingerprint||eventNode.pendingSlot)throw new Error('RESTORE_NODE_CHANGED');
+ const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),nodeCores=exchangeOwnedCores('NODE',order.nodeId,coreRows),cargo=readCoreState(order.cargo.coreId),dep=findDeploymentById(order.id);
+ if(restoreSnapshot(nodeCores)!==restoreSnapshot(order.nodeCores)||restoreSnapshot([cargo])!==restoreSnapshot([order.cargo]))throw new Error('RESTORE_CORE_STATE_CHANGED');
+ if(new Set([cargo,...nodeCores].map(core=>core.coreId)).size!==4||new Set([cargo,...nodeCores].map(core=>core.uid)).size!==4)throw new Error('RESTORE_DUPLICATE_CORE_UID');
+ const lowest=nodeCores.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId))[0];
+ if(nodeCores.length!==3||lowest.coreId!==order.out||cargo.ownerType!=='NODIV_RESERVE'||cargo.ownerId!=='HQ'||cargo.status!=='IN_TRANSIT'||
+  !dep||dep.status!=='IN_TRANSIT'||dep.purpose!=='RESTORE_1'||dep.coreId!==cargo.coreId||dep.targetNode!==order.nodeId||dep.carrierId!==player.identity||dep.carrierRole!=='PIONEER')throw new Error('RESTORE_ASSIGNMENT_INVALID');
+ const deployments=getDeploymentRegisterSheet(),rows=deployments.getLastRow()>1?deployments.getRange(2,1,deployments.getLastRow()-1,11).getValues():[],fopOrders=readInstallationOrders().filter(installationOrderIsLive);
+ if(rows.some(row=>String(row[0])!==order.id&&[cargo.coreId,...nodeCores.map(core=>core.coreId)].includes(String(row[1]))&&['ASSIGNED','IN_TRANSIT'].includes(String(row[6]))&&
+  (isFopNodeDeployment(row)?installationReservationIsLive(row,fopOrders):String(row[5])==='RESTORE_1'?restoreDeploymentIsLive(row,restores):true)))throw new Error('RESTORE_CORE_RESERVED');
+ for(const core of [cargo,...nodeCores]){assertRestoreUnreserved('','',core.coreId,order.id,restores);assertExchangeUnreserved('','',core.coreId,undefined,exchanges);}
+ if(order.incoming.some(id=>id!==cargo.coreId)||order.outgoing.some(id=>id!==order.out)||order.incoming.length>1||order.outgoing.length>1||(order.outgoing.length&&!order.incoming.length))throw new Error('RESTORE_SCANS_INVALID');
+ return {cargo,nodeCores,out:lowest,dep,eventNode,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
+}
+function restoreResponse(order,status,includeCode,context){
+ const totalEnergy=order.nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0),response={ok:true,session:true,action:true,status,restore:order.id,identity:order.identity,nodeId:order.nodeId,
+  inCore:{id:order.cargo.coreId,energy:order.cargo.visibleEnergy},outCore:{id:order.out,energy:order.nodeCores.find(core=>core.coreId===order.out).visibleEnergy},
+  totalEnergy,nodeState:nodeEnergyState(totalEnergy),projectedEnergy:order.projectedEnergy,projectedState:nodeEnergyState(order.projectedEnergy),inCount:order.incoming.length,outCount:order.outgoing.length,
+  authorized:order.authorized,canConfirm:order.authorized&&order.incoming.length===1&&order.outgoing.length===1,expiresAt:new Date(order.expiresAt).toISOString()};
+ if(includeCode){const node=context.eventNode,index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[node.activeSlot];if(!/^\d{4}$/.test(node.codes[index]))throw new Error('NODE_CODE_STATE_INVALID');response.accessCode=node.codes[index];}
+ return response;
+}
+function getRestoreRoute(e,nodeId){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return null;
+  const order=liveRestores().find(order=>order.identity===session.player.identity);if(!order)return null;
+  if(order.nodeId!==nodeId)return {ok:true,session:true,action:false,status:'RESTORE_WRONG_NODE',message:'RESTORE TARGET // '+order.nodeId};
+  const context=validateRestore(order,session.player),token=normalizeSessionToken(e.parameter.token);
+  order.token=token;order.nodeScannedToken=token;PropertiesService.getScriptProperties().setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));
+  return restoreResponse(order,order.authorized?'RESTORE_RESUMED':'RESTORE_TARGET_READY',order.authorized,context);
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function getPioneerRestoreState(e){
+ const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+ if(session.player.role!=='PIONEER')throw new Error('PIONEER_REQUIRED');
+ const order=liveRestores().find(order=>order.identity===session.player.identity);
+ return order?{...restoreResponse(order,'RESTORE_IN_TRANSIT',false),authorized:false,canConfirm:false}:{ok:true,session:true,status:'NO_ACTIVE_RESTORE'};
+}
+function normalRestoreOne(e,action){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const player=session.player,props=PropertiesService.getScriptProperties(),order=JSON.parse(props.getProperty(RESTORE_PREFIX+String(e.parameter.restore||''))||'null'),token=normalizeSessionToken(e.parameter.token);
+  if(!order)throw new Error('RESTORE_EXPIRED_OR_COMPLETED');
+  if(order.identity!==player.identity||order.token!==token||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase()||order.nodeScannedToken!==token)throw new Error('RESTORE_SESSION_NODE_MISMATCH');
+  const context=validateRestore(order,player);
+  if(action==='authorize'){order.authorized=true;const result=restoreResponse(order,'RESTORE_AUTHORIZED',true,context);props.setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));return result;}
+  if(!order.authorized)throw new Error('RESTORE_AUTHORIZATION_REQUIRED');
+  if(action==='scan'){
+   const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);if(!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
+   const core=readCoreState(hit.id),acceptedIn=order.incoming.includes(core.coreId),acceptedOut=order.outgoing.includes(core.coreId),phase=String(e.parameter.phase||(acceptedIn?'IN':acceptedOut?'OUT':order.incoming.length?'OUT':'IN')).toUpperCase();
+   if(!['IN','OUT'].includes(phase))throw new Error('RESTORE_SCAN_PHASE_INVALID');
+   if((acceptedIn&&phase!=='IN')||(acceptedOut&&phase!=='OUT'))throw new Error('DUPLICATE_CORE_SCAN');
+   if((phase==='IN'&&(core.coreId!==order.cargo.coreId||uid!==order.cargo.uid))||(phase==='OUT'&&(core.coreId!==order.out||uid!==context.out.uid)))throw new Error(phase==='IN'?'RESTORE_TRANSIT_CORE_REQUIRED':'RESTORE_LOWEST_NODE_CORE_REQUIRED');
+   if(acceptedIn||acceptedOut)return {...restoreResponse(order,'RESTORE_CORE_SCANNED',false),replayed:true};
+   if(phase!==(order.incoming.length?'OUT':'IN'))throw new Error('RESTORE_SCAN_PHASE_MISMATCH');
+   if(phase==='IN')order.incoming=[core.coreId];else order.outgoing=[core.coreId];props.setProperty(RESTORE_PREFIX+order.id,JSON.stringify(order));return restoreResponse(order,'RESTORE_CORE_SCANNED',false);
+  }
+  if(action!=='confirm')throw new Error('INVALID_RESTORE_ACTION');
+  if(order.incoming.length!==1||order.outgoing.length!==1)throw new Error('RESTORE_SCANS_INCOMPLETE');
+  const requests=[];
+  stageValidatedExchangeTransfer(context.cargo,'NODE',order.nodeId,'DEPLOYED','RESTORE_1_IN',player,order.nodeId,requests);
+  stageValidatedExchangeTransfer(context.out,'NODIV_RESERVE','HQ','RESERVE','RESTORE_1_OUT',player,order.nodeId,requests);
+  const cardSheet=getAccessCardRegisterSheet(),cardRows=cardSheet.getRange(2,1,cardSheet.getLastRow()-1,12).getValues(),cardIndex=cardRows.findIndex(row=>String(row[1])===player.identity&&String(row[0])===player.cardId);
+  if(cardIndex<0||Number(cardRows[cardIndex][6])!==1)throw new Error('RESTORE_CAPACITY_CHANGED');
+  requests.push(sheetCellsRequest(cardSheet,cardIndex+2,7,[[2]]));
+  const tx=appendTransactionLog({eventType:'RESTORE_1_COMPLETE',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,result:'SUCCESS',details:order.id},requests);
+  requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,7,[['COMPLETED',context.dep.createdAt,context.dep.acceptedAt,new Date(),tx]]));
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  try{props.deleteProperty(RESTORE_PREFIX+order.id);}catch(error){}
+  return {...restoreResponse(order,'RESTORE_1_COMPLETE',false),authorized:false,canConfirm:false,capacity:2,totalEnergy:order.projectedEnergy,nodeState:nodeEnergyState(order.projectedEnergy),targetLockSeconds:3600};
+ }finally{try{lock.releaseLock();}catch(error){}}
 }

@@ -254,3 +254,6 @@
 
 /* Pioneer Normal Exchange uses the existing field/HQ palette. */
 #pioneerExchange{margin-top:16px}#pioneerExchange select{width:100%;min-height:48px;background:var(--bg,#081017);color:inherit;border:1px solid #315362;padding:12px;font:inherit}#pioneerExchange .role-action{width:100%;margin-top:10px}#exchangeCode{font-size:1.35rem;letter-spacing:.12em;overflow-wrap:anywhere}#exchangeProgress{font-weight:700;color:#90dcf2}#exchangeHint{overflow-wrap:anywhere}
+
+/* Restore uses existing Pioneer/HQ field styling. */
+#pioneerRestore{margin-top:16px}#pioneerRestore .role-action{width:100%;margin-top:10px}#restoreCode{font-size:1.35rem;letter-spacing:.12em;overflow-wrap:anywhere}#restoreLoadout,#restoreHint,#founderRestoreHint{overflow-wrap:anywhere}#restoreProgress{font-weight:700;color:#90dcf2}#restorePioneerSelect{width:100%;min-height:48px;background:#081017;color:inherit;border:1px solid #315362;padding:12px;font:inherit}

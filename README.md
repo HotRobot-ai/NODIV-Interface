@@ -181,3 +181,49 @@ Deploy the updated Code.js to the existing Apps Script web app; the existing
 Sheets v4 service is reused. No live data migration or test-event mutation is
 performed by deployment. Physical NFC identification/selection, mechanical
 access, Android layout and real network interruptions require hardware tests.
+
+### RESTORE V1.0 — Phase 1 (capacity 1 → 2)
+
+Founder uses `restoreeligible` (token) and `restoreassign` (token, pioneer).
+Only ACTIVE PIONEER identities with capacity 1, RESTORE_1_ELIGIBLE and no prior
+RESTORE_1_COMPLETE qualify. The server selects a free, active FIELD_ACTIVE
+Event Node with exactly three registered cores and total visible energy below
+600 E. It prioritizes the lowest Node energy, then Node ID. Replacement is
+fixed to the lowest visible Node core (ties by Core ID). It chooses the least
+HQ energy that reaches STABLE, otherwise the least that reaches DEGRADED.
+If no pair qualifies, no order is created. There is no manual Node/core choice.
+
+The existing Deployment Register records purpose RESTORE_1 / IN_TRANSIT. Cargo
+retains NODIV_RESERVE/HQ ownership with status IN_TRANSIT, so it never occupies
+a personal slot and is excluded from catch, upload and normal exchange.
+Durable Script Properties retain the assigned snapshots, scans and expiration.
+Orders last 30 minutes; Founder eligibility/assignment explicitly cleans stale
+orders and returns unchanged HQ-owned cargo status to RESERVE. Expiry never
+changes ownership. Historical deployment/log rows remain. No migration or live
+data change happens merely by deploying this code.
+
+Pioneer `restorestate` returns mission information without a code. A target
+Node NFC scan via `gameplayroute` binds/resumes the existing order to the current
+authenticated session of the assigned identity. `restoreauthorize` requires
+token, restore, node and the preceding target scan; only then is the current
+mechanical code returned. `restorescan` additionally uses uid and phase IN/OUT;
+accepted retries return authoritative progress without adding another scan.
+Only the assigned HQ cargo and the fixed lowest Node core are accepted.
+The generic deployment-delivery endpoint cannot execute RESTORE.
+
+`restoreconfirm` revalidates event, identity, session, Node/code fingerprint,
+all Node core snapshots, cargo, deployment and competing reservations under
+ScriptLock. One Advanced Sheets batch moves cargo HQ → NODE / DEPLOYED, returns
+the lowest Node core NODE → HQ / RESERVE, marks the deployment COMPLETED, sets
+Access Card Register capacity to 2 and records RESTORE_1_IN, RESTORE_1_OUT and
+RESTORE_1_COMPLETE. Personal inventory is unchanged. Completion consumes
+eligibility and prevents replay, even if property cleanup fails. Failed batches
+leave all ownership, logs, capacity and scan progress intact for recovery.
+The durable completion timestamp enforces RESTORE_TARGET_LOCKED for that
+Pioneer/Node for one hour; the API reports remainingSeconds and lockUntil.
+Other Nodes remain accessible. No RESTORE #2 or additional progression is added.
+
+Deploy updated Code.js to the existing Apps Script Web App (existing Sheets v4
+service), and publish the frontend updates. Test cargo handoff, target scan,
+mechanical code, ordered NFC scans, session recovery and mobile layout with real
+Android hardware before relying on field operation.
