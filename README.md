@@ -47,37 +47,51 @@ A physical-digital urban game built around people, places and connected infrastr
 
 ## FOP initial Node installation
 
-The existing `nodeinstallorder` returns PRIMARY plus a session-bound installation
-ID. Set the mechanical lock first, then call `nodeinstallscan` for three distinct
-registered NFC UIDs. The app displays the server's Core IDs, visible energy and
-`1/3`, `2/3`, `3/3`; confirmation stays disabled until the server returns 3/3.
-`nodeinstallconfirm` rechecks the login, order, event, Node, all three UIDs,
-HQ reserve ownership/status and open deployments under the existing ScriptLock.
-It stages the existing ownership/transaction helpers and commits all Core
-transfers, audit entries and installation/code status in one atomic Sheets batch.
-Batch timestamps are stored as ISO 8601 strings including their timezone.
+`nodeinstallorder` supplies PRIMARY and a server-selected loadout of exactly three
+registered, free HQ reserve Cores. The selection considers all triples, favors
+STABLE (>=600 visible E), then minimizes distance to a per-Node energy budget
+(the smaller of the pool's average triple and available energy / remaining
+unstocked Event Nodes, with a 600 E target floor). Equal candidates prefer the
+smaller energy spread; sorted energy/ID order makes ties deterministic. If no
+STABLE triple exists, the best available total determines DEGRADED/CRITICAL.
+This is a balancing heuristic, not a guarantee of an optimal full-event partition.
 
-Orders expire after 30 minutes (or earlier if the login/cache expires). Fetching
-an order again invalidates that login's previous order and resets its scan list.
-Scanning does not reserve or transfer a Core; a competing transfer causes final
-confirmation to fail without partial writes. Fetch a new order after an ambiguous
-network timeout to reconcile safely with the authoritative Node state.
+Reservations reuse the existing Deployment Register: three ASSIGNED rows with
+purpose `NODE_INSTALLATION`, the exact Node/carrier and installation-specific
+IDs. Private Script Properties hold session/event-bound order metadata and a
+fixed 30-minute expiry. No new sheet or automatic ownership migration is used.
+The login, event state and expiry must remain valid for a reservation to count.
+Expired/revoked reservations are ignored immediately, even without a scheduler;
+the next order cleans their rows. `nodeinstallcancel` marks reservations CANCELLED;
+a new order replaces the previous order for that login. Cache eviction does not
+lose the durable order. Failed reservation publication removes its metadata.
 
-Existing ACTIVE + PRIMARY Nodes with zero owned Cores are identified explicitly
-as legacy installations. They can be completed through an explicitly fetched
-order, including during FIELD_ACTIVE, retaining their existing PRIMARY code and
-event phase. No migration or automatic Core booking runs on deployment/read.
-Nodes with 1, 2 or more than 3 owned Cores require manual investigation; their
-ownership is never auto-corrected. Already complete Nodes cannot be reinstalled.
-Event activation and gameplay access require exactly three Node-owned Cores.
+The FOP sets the physical lock, scans only those three Cores in any order and
+inserts them into the Node. The mobile deployment console shows three assigned
+Core slots, ID/visible E, total E, projected state and verification from 0/3 to
+3/3. Foreign scans return `CORE NOT ASSIGNED TO NODE-XXX`. Confirmation rechecks
+all UIDs, ownership/status, assignment and competing mission deployments under
+ScriptLock. Existing ownership/transaction helpers prepare one atomic Sheets
+batch for transfers, log entries, reservation delivery and Node/code activation.
+Other ownership transfers respect these reservations; installation rows cannot
+be accepted/displayed as mission cargo. Successful installation hides inputs,
+PRIMARY and actions and shows a compact DEPLOYMENT COMPLETE summary.
 
-Deployment: sync `Code.js` and `appsscript.json` to the existing Apps Script
-project and create a new version of its existing web-app deployment. The manifest
-enables the advanced Google Sheets v4 service for atomic `batchUpdate`; enable
-the Sheets API in the linked Cloud project if using a standard Cloud project,
-and authorize the service if prompted. Keep the existing web-app URL.
+Existing complete Nodes are rejected before selection or writes. In particular,
+no changes/migration run for NODE-001's real 859 E loadout (NC-006=105,
+NC-003=401, NC-004=353). Existing ACTIVE+PRIMARY but empty legacy Nodes still need
+an explicit order, including during FIELD_ACTIVE. Nodes with 1, 2 or more than
+3 owned Cores require manual investigation; ownership is never auto-corrected.
 
-Validation: `node --test tests/node-installation.test.cjs` and JavaScript syntax
-checks. Tests use an in-memory Apps Script/Sheets fixture; physical Android NFC,
-mechanical lock setup, actual Core insertion and the deployed Google Sheets API
-must be checked on the real hardware/deployment.
+Deployment: sync `Code.js` to the existing Apps Script project and create a new
+version of the existing web-app deployment. Keep its existing URL and the Sheets
+v4 advanced service from package 1. GitHub Pages serves the updated FOP UI.
+
+Validation: `node --test tests/*.test.cjs`; FOP DOM-state tests use simulated
+NFC/API responses and require no browser dependencies. Visual mobile-browser
+verification remains necessary; Chromium was unavailable in the execution environment.
+The backend fixture covers loadout balance, STABLE/fallback states, reservation
+isolation/expiry/cancellation, foreign and unordered scans, atomic failure,
+existing transfer behavior and preservation of the real NODE-001 fixture.
+Physical Android NFC, UID reading, lock setup, Core insertion, deployed API
+permissions and concurrent real-device operations require real-world validation.

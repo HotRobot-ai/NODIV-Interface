@@ -350,6 +350,10 @@ function doGet(e) {
 
       result = scanNodeInstallationCore(e);
 
+    } else if (action === 'nodeinstallcancel') {
+
+      result = cancelNodeInstallation(e);
+
     } else if (action === 'nodeinstallconfirm') {
 
       result = confirmNodeInstallation(e);
@@ -2964,13 +2968,14 @@ function findDeploymentById(deploymentId) {
   return null;
 }
 
-function hasOpenDeploymentForCore(coreId) {
-  const sheet = getDeploymentRegisterSheet();
-  const lastRow = Math.max(sheet.getLastRow(), 2);
-  const rows = sheet.getRange(2, 2, lastRow - 1, 6).getDisplayValues();
-  const wanted = normalizeCoreId(coreId);
-  return rows.some(r => String(r[0] || '').trim().toUpperCase() === wanted &&
-    ['ASSIGNED','IN_TRANSIT'].includes(String(r[5] || '').trim().toUpperCase()));
+function hasOpenDeploymentForCore(coreId, installationId) {
+  const sheet=getDeploymentRegisterSheet(),wanted=normalizeCoreId(coreId);
+  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
+  const orders=readInstallationOrders().filter(installationOrderIsLive);
+  return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
+    ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
+    (String(row[5]||'').toUpperCase()!=='NODE_INSTALLATION'||
+      (installationReservationIsLive(row,orders)&&String(row[0])!==installationDeploymentId(installationId,wanted))));
 }
 
 function createDeploymentId() {
@@ -3043,6 +3048,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
+    if (String(row[5]||'').toUpperCase()==='NODE_INSTALLATION') return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3070,6 +3076,7 @@ function acceptCoreDeployment(e) {
     const player = session.player;
     const deployment = findDeploymentById(e.parameter.deployment || '');
     if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
+    if (deployment.purpose === 'NODE_INSTALLATION') return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
     if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
     if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
       return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
@@ -3210,6 +3217,7 @@ function getHqLiveOperations(e) {
 
   deploymentRows.forEach(row => {
     const status = String(row[6] || '').trim().toUpperCase();
+    if (String(row[5]||'').toUpperCase()==='NODE_INSTALLATION') return;
     if (!['ASSIGNED', 'IN_TRANSIT'].includes(status)) return;
 
     const coreId = String(row[1] || '').trim().toUpperCase();
@@ -3745,6 +3753,83 @@ function validateNodeInstallation(actor, nodeId) {
   return {event,eventNode,assigned,legacy};
 }
 
+// Durable, expiring metadata extends the existing Deployment Register. No new sheet.
+const NODE_INSTALL_ORDER_PREFIX = 'NODIV_INSTALL_ORDER_';
+function installationDeploymentId(orderId,coreId) {return 'INS-'+String(orderId||'')+'-'+coreId;}
+function readInstallationOrders() {
+  const values=PropertiesService.getScriptProperties().getProperties(),orders=[];
+  Object.keys(values).filter(key=>key.startsWith(NODE_INSTALL_ORDER_PREFIX)).forEach(key=>{
+    try{orders.push(JSON.parse(values[key]));}catch(error){/* Invalid metadata cannot reserve a Core. */}
+  });
+  return orders;
+}
+function installationOrderIsLive(order) {
+  if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)return false;
+  const session=resolvePlayerSession(order.sessionToken||'');
+  if(!session.ok||session.player.identity!==order.identity)return false;
+  const event=readCurrentEvent();
+  return Boolean(event&&event.eventId===order.eventId&&event.state===order.eventState);
+}
+function installationReservationIsLive(row,orders) {
+  if(String(row[5]||'').toUpperCase()!=='NODE_INSTALLATION'||String(row[6]||'').toUpperCase()!=='ASSIGNED')return false;
+  return (orders||readInstallationOrders().filter(installationOrderIsLive)).some(order=>
+    String(row[0])===installationDeploymentId(order.id,String(row[1]).trim().toUpperCase())&&
+    order.nodeId===String(row[4]));
+}
+function releaseInstallationOrder(order,status) {
+  const sheet=getDeploymentRegisterSheet(),requests=[],now=new Date();
+  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
+  rows.forEach((row,index)=>{
+    if(String(row[5])==='NODE_INSTALLATION'&&String(row[6])==='ASSIGNED'&&
+       String(row[0])===installationDeploymentId(order.id,String(row[1])))
+      requests.push(sheetCellsRequest(sheet,index+2,7,[[status,row[7],row[8]||'',now,row[10]||'']]));
+  });
+  if(requests.length){SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());}
+  PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
+  CacheService.getScriptCache().remove(NODE_INSTALL_PREFIX+order.sessionToken);
+}
+function cleanupInstallationOrders() {
+  // Called under ScriptLock. Expired records are also ignored by every reader,
+  // so no scheduled cleanup or successfully completed cleanup is required for reuse.
+  readInstallationOrders().forEach(order=>{if(!installationOrderIsLive(order))releaseInstallationOrder(order,'EXPIRED');});
+}
+function nodeEnergyState(energy) {return energy>=600?'STABLE':energy>=450?'DEGRADED':'CRITICAL';}
+
+function selectNodeInstallationLoadout(available,remainingNodes) {
+  if(available.length<3)throw new Error('INSTALL_REQUIRES_3_AVAILABLE_RESERVE_CORES');
+  const cores=available.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
+  const nodes=Math.max(1,Number(remainingNodes)||1);
+  const poolEnergy=cores.reduce((sum,core)=>sum+core.visibleEnergy,0);
+  // Keep surplus HQ stock for later use instead of concentrating it into this Node.
+  const target=Math.max(600,Math.min(poolEnergy/nodes,3*poolEnergy/cores.length));
+  let best=null,bestStable=false,bestDistance=Infinity,bestSpread=Infinity;
+  // At most C(200,3)=1,313,400 triples; deterministic, no external optimizer.
+  for(let i=0;i<cores.length-2;i++)for(let j=i+1;j<cores.length-1;j++)for(let k=j+1;k<cores.length;k++){
+    const energy=cores[i].visibleEnergy+cores[j].visibleEnergy+cores[k].visibleEnergy;
+    const stable=energy>=600,distance=stable?Math.abs(energy-target):-energy,spread=cores[k].visibleEnergy-cores[i].visibleEnergy;
+    if(!best||(stable&&!bestStable)||(stable===bestStable&&(distance<bestDistance||(distance===bestDistance&&spread<bestSpread)))){
+      best=[cores[i],cores[j],cores[k]];bestStable=stable;bestDistance=distance;bestSpread=spread;
+    }
+  }
+  return best.map(core=>({id:core.coreId,uid:core.uid,energy:core.visibleEnergy}));
+}
+
+function buildNodeInstallationLoadout(context,nodeId) {
+  const orders=readInstallationOrders().filter(installationOrderIsLive),depSheet=getDeploymentRegisterSheet();
+  const deployments=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
+  const unavailable=new Set(deployments.filter(row=>['ASSIGNED','IN_TRANSIT'].includes(String(row[6]).toUpperCase())&&
+    (String(row[5]).toUpperCase()!=='NODE_INSTALLATION'||installationReservationIsLive(row,orders))).map(row=>String(row[1]).trim().toUpperCase()));
+  const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+  const available=rows.map(row=>({coreId:String(row[0]).trim().toUpperCase(),uid:normalizeUid(row[2]),visibleEnergy:row[1]===''?NaN:Number(row[1]),
+    status:String(row[CORE_COL.STATUS-1]).toUpperCase(),ownerType:String(row[CORE_COL.OWNER_TYPE-1]).toUpperCase(),ownerId:String(row[CORE_COL.OWNER_ID-1]).toUpperCase()}))
+    .filter(core=>/^NC-\d{3}$/.test(core.coreId)&&core.uid&&Number.isFinite(core.visibleEnergy)&&core.visibleEnergy>0&&core.status==='RESERVE'&&core.ownerType==='NODIV_RESERVE'&&core.ownerId==='HQ'&&!unavailable.has(core.coreId));
+  const reservedNodes=new Set(orders.map(order=>order.nodeId));
+  const codeSheet=getEventNodeCodeSheet(),codes=codeSheet.getLastRow()>1?codeSheet.getRange(2,1,codeSheet.getLastRow()-1,13).getValues():[];
+  const remaining=codes.filter(row=>String(row[0])===context.event.eventId&&!reservedNodes.has(String(row[1]))&&
+    countCoresOwnedBy('NODE',String(row[1]).trim().toUpperCase())===0).length;
+  return selectNodeInstallationLoadout(available,remaining);
+}
+
 function getNodeInstallOrder(e) {
   const lock=LockService.getScriptLock();
   try{
@@ -3753,46 +3838,61 @@ function getNodeInstallOrder(e) {
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     const context=validateNodeInstallation(actor,nodeId);
-    const cache=CacheService.getScriptCache();
-    // One active installation per login. Re-fetching invalidates old requests.
-    const key=NODE_INSTALL_PREFIX+normalizeSessionToken(e.parameter.token);
+    cleanupInstallationOrders();
+    const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
+    if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
+    orders.filter(order=>order.sessionToken===token).forEach(order=>releaseInstallationOrder(order,'CANCELLED'));
+    const loadout=buildNodeInstallationLoadout(context,nodeId);
     const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
-      identity:actor.identity,legacy:context.legacy,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+      identity:actor.identity,sessionToken:token,legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+    const props=PropertiesService.getScriptProperties(),sheet=getDeploymentRegisterSheet(),now=new Date();
+    const requests=[{appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,loadout.map(core=>[
+      installationDeploymentId(order.id,core.id),core.id,actor.identity,actor.role,nodeId,'NODE_INSTALLATION','ASSIGNED',now,'','',''
+    ])).updateCells.rows,fields:'userEnteredValue'}}];
     if(!context.legacy){
-      const sheet=getEventNodeCodeSheet();
-      if(!context.assigned)sheet.getRange(context.eventNode.row,11).setValue(actor.identity);
-      sheet.getRange(context.eventNode.row,13).setValue(new Date());
-      SpreadsheetApp.flush();
+      if(!context.assigned)requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,11,[[actor.identity]]));
+      requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,13,[[now]]));
     }
-    cache.put(key,JSON.stringify(order),NODE_INSTALL_TTL_SECONDS);
+    // Publish metadata before the atomic reservation rows, under the common lock.
+    // Failed/crashed publication never holds Cores beyond the fixed TTL.
+    props.setProperty(NODE_INSTALL_ORDER_PREFIX+order.id,JSON.stringify(order));
+    try{SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());}
+    catch(error){props.deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);throw error;}
+    CacheService.getScriptCache().put(NODE_INSTALL_PREFIX+token,JSON.stringify(order),NODE_INSTALL_TTL_SECONDS);
     return nodeInstallationResponse(order,context,'NODE_INSTALL_ORDER');
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
 function readNodeInstallation(e,actor) {
   const key=NODE_INSTALL_PREFIX+normalizeSessionToken(e.parameter.token||'');
-  const raw=CacheService.getScriptCache().get(key);
+  const raw=PropertiesService.getScriptProperties().getProperty(NODE_INSTALL_ORDER_PREFIX+String(e.parameter.installation||''));
   if(!raw)throw new Error('INSTALL_SESSION_EXPIRED // Auftrag erneut abrufen');
   const order=JSON.parse(raw);
-  if(order.id!==String(e.parameter.installation||'')||order.identity!==actor.identity||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
+  if(order.identity!==actor.identity||order.sessionToken!==normalizeSessionToken(e.parameter.token)||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
   if(!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)throw new Error('INSTALL_SESSION_EXPIRED');
   const context=validateNodeInstallation(actor,order.nodeId);
   if(order.eventId!==context.event.eventId||order.eventState!==context.event.state||order.legacy!==context.legacy)throw new Error('INSTALL_EVENT_STATE_CHANGED');
+  if(!Array.isArray(order.loadout)||order.loadout.length!==3||new Set(order.loadout.map(core=>core.id)).size!==3)throw new Error('INSTALL_LOADOUT_INVALID');
   return {key,order,context};
 }
 
-function validateInstallationCore(core,uid) {
+function validateInstallationCore(core,uid,order) {
   if(!uid||core.uid!==uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE')throw new Error('CORE_NOT_RESERVE // '+core.coreId);
-  if(hasOpenDeploymentForCore(core.coreId))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
-  if(core.visibleEnergy===''||!Number.isFinite(core.visibleEnergy))throw new Error('CORE_ENERGY_INVALID');
+  if(hasOpenDeploymentForCore(core.coreId,order.id))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
+  const assigned=order.loadout.find(item=>item.id===core.coreId&&item.uid===uid&&item.energy===core.visibleEnergy);
+  if(!assigned)throw new Error('CORE NOT ASSIGNED TO '+order.nodeId);
+  const deployment=findDeploymentById(installationDeploymentId(order.id,core.coreId));
+  if(!deployment||deployment.purpose!=='NODE_INSTALLATION'||deployment.status!=='ASSIGNED'||deployment.targetNode!==order.nodeId||deployment.carrierId!==order.identity)throw new Error('INSTALL_RESERVATION_INVALID');
 }
 
 function nodeInstallationResponse(order,context,status) {
-  const cores=order.cores.map(item=>{const core=readCoreState(item.id);return {id:core.coreId,energy:core.visibleEnergy};});
+  const loadout=order.loadout.map(core=>({id:core.id,energy:core.energy,scanned:order.cores.some(item=>item.id===core.id)}));
+  const totalEnergy=loadout.reduce((sum,core)=>sum+core.energy,0);
   return {ok:true,authenticated:true,session:true,action:true,status,eventId:order.eventId,
     installation:order.id,expiresAt:new Date(order.expiresAt).toISOString(),legacy:order.legacy,
-    node:{id:order.nodeId,code:context.eventNode.codes[0],slot:'PRIMARY'},cores,count:cores.length,
-    canConfirm:cores.length===3,instruction:order.legacy?'LEGACY: mechanisch bestätigt, aber leer. PRIMARY einstellen und exakt 3 Reserve-Cores scannen.':'PRIMARY am Schloss einstellen, danach exakt 3 Reserve-Cores scannen.'};
+    node:{id:order.nodeId,code:context.eventNode.codes[0],slot:'PRIMARY'},loadout,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
+    cores:loadout.filter(core=>core.scanned),count:order.cores.length,canConfirm:order.cores.length===3,
+    instruction:(order.legacy?'LEGACY: mechanisch bestätigt, aber leer. ':'')+'PRIMARY am Schloss einstellen, danach nur die drei zugewiesenen Cores scannen.'};
 }
 
 function scanNodeInstallationCore(e) {
@@ -3805,12 +3905,29 @@ function scanNodeInstallationCore(e) {
     const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
     if(!hit.found||hit.type!=='N_CORE'||!hit.id)throw new Error('CORE_NOT_FOUND');
     if(order.cores.some(core=>core.id===hit.id||core.uid===uid))throw new Error('DUPLICATE_CORE_SCAN');
+    if(!order.loadout.some(core=>core.id===hit.id&&core.uid===uid))throw new Error('CORE NOT ASSIGNED TO '+order.nodeId);
     if(order.cores.length>=3)throw new Error('INSTALL_CORE_LIMIT');
     const core=readCoreState(hit.id);
-    validateInstallationCore(core,uid);
+    validateInstallationCore(core,uid,order);
     order.cores.push({id:core.coreId,uid});
+    PropertiesService.getScriptProperties().setProperty(NODE_INSTALL_ORDER_PREFIX+order.id,JSON.stringify(order));
     CacheService.getScriptCache().put(key,JSON.stringify(order),Math.max(1,Math.floor((order.expiresAt-Date.now())/1000)));
     return nodeInstallationResponse(order,context,'INSTALL_CORE_SCANNED');
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+function cancelNodeInstallation(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const raw=PropertiesService.getScriptProperties().getProperty(NODE_INSTALL_ORDER_PREFIX+String(e.parameter.installation||''));
+    if(!raw)return {ok:true,authenticated:true,session:true,action:true,status:'INSTALLATION_CANCELLED'};
+    const order=JSON.parse(raw);
+    if(order.sessionToken!==normalizeSessionToken(e.parameter.token)||order.identity!==session.player.identity||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
+    releaseInstallationOrder(order,'CANCELLED');
+    return {ok:true,authenticated:true,session:true,action:true,status:'INSTALLATION_CANCELLED',nodeId:order.nodeId};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
@@ -3822,23 +3939,27 @@ function confirmNodeInstallation(e) {
     if(!session.ok)return session.response;
     const actor=session.player,{key,order,context}=readNodeInstallation(e,actor);
     if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('INSTALL_REQUIRES_EXACTLY_3_CORES');
-    // Revalidate ALL cores before preparing any mutation, under the shared lock.
-    order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid));
+    order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid,order));
     const requests=[],now=new Date(),nodeId=order.nodeId;
-    order.cores.forEach(item=>transferCoreOwnership({coreId:item.id,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',
-      toType:'NODE',toId:nodeId,eventType:'NODE_INSTALL_CORE',actorId:actor.identity,actorRole:actor.role,
-      nodeId,newStatus:'DEPLOYED',details:order.eventId+' // '+order.id+' // initial installation',batchRequests:requests}));
+    order.cores.forEach(item=>{
+      const result=transferCoreOwnership({coreId:item.id,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',
+        toType:'NODE',toId:nodeId,eventType:'NODE_INSTALL_CORE',actorId:actor.identity,actorRole:actor.role,
+        nodeId,newStatus:'DEPLOYED',details:order.eventId+' // '+order.id+' // initial installation',batchRequests:requests,installationId:order.id});
+      const dep=findDeploymentById(installationDeploymentId(order.id,item.id));
+      requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['DELIVERED',dep.createdAt,dep.acceptedAt||'',now,result.transactionId]]));
+    });
     const codeSheet=getEventNodeCodeSheet(),nodeSheet=getNodeRegisterSheet(),nodeRow=parseInt(nodeId.substring(5),10)+1;
     requests.push(sheetCellsRequest(codeSheet,context.eventNode.row,8,[['PRIMARY','','ACTIVE',context.assigned||actor.identity,now,now]]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,3,[['INSTALLED']]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,5,[[actor.identity,now]]));
     appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
       details:order.eventId+' // '+order.id+' // 3/3 // '+order.cores.map(core=>core.id).join(',')+(order.legacy?' // explicit legacy completion':'')},requests);
-    // Sheets validates and applies all requests atomically; no partial ownership/log/code writes.
     SpreadsheetApp.flush();
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     CacheService.getScriptCache().remove(key);
-    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,
+    PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
+    const totalEnergy=order.loadout.reduce((sum,core)=>sum+core.energy,0);
+    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
       node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
@@ -5015,6 +5136,10 @@ function transferCoreOwnership(data) {
   if (!toId && toType !== 'NONE') throw new Error('Ziel Owner ID fehlt.');
 
 
+
+  const depSheet=getDeploymentRegisterSheet(),depRows=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
+  const installOrders=readInstallationOrders().filter(installationOrderIsLive);
+  if(depRows.some(row=>String(row[1]).trim().toUpperCase()===coreId&&installationReservationIsLive(row,installOrders)&&String(row[0])!==installationDeploymentId(data.installationId,coreId)))throw new Error('CORE_RESERVED_FOR_NODE_INSTALLATION');
 
   const state = readCoreState(coreId);
 

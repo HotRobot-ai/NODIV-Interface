@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-install3';
+import {routeIdentity} from './router.js?v=20261004-loadout2';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -341,19 +341,35 @@ window.addEventListener('nodiv-founder-event-activate',async()=>{
 let fopInstallation=null,fopInstallBusy=false;
 function renderFopInstallation(result){
  const progress=document.querySelector('#fopInstallProgress'),list=document.querySelector('#fopInstallCores'),scan=document.querySelector('#fopInstallScan'),confirm=document.querySelector('#fopInstallConfirm');
+ const complete=result?.status==='NODE_INSTALLED';
+ const setText=(id,text)=>{const el=document.querySelector(id);if(el)el.textContent=text};
  if(progress)progress.textContent=String(result?.count||0)+'/3';
- if(list){list.replaceChildren();for(const core of result?.cores||[]){const item=document.createElement('li');item.textContent=core.id+' // '+core.energy+' E';list.appendChild(item)}}
- if(scan)scan.disabled=!result||result.count>=3||fopInstallBusy;
- if(confirm)confirm.disabled=!result?.canConfirm||fopInstallBusy;
+ const bar=document.querySelector('#fopProgressBar');if(bar)bar.value=result?.count||0;
+ if(list){list.replaceChildren();for(const core of result?.loadout||[]){
+  const item=document.createElement('article');item.className='fop-core'+(core.scanned?' verified':'');
+  for(const [tag,text] of [['small',core.id],['strong',core.energy+' E'],['span',core.scanned?'VERIFIED':'AWAITING SCAN']]){const el=document.createElement(tag);el.textContent=text;item.appendChild(el)}list.appendChild(item);
+ }}
+ setText('#fopDeploymentNode',result?.node?.id||'SELECT NODE');
+ setText('#fopLoadoutEnergy',result?result.totalEnergy+' E':'— E');
+ setText('#fopLoadoutState',result?.nodeState||'—');
+ const state=document.querySelector('#fopLoadoutState');if(state)state.dataset.state=result?.nodeState||'';
+ setText('#fopOperationStatus',complete?'COMPLETE':result?'DEPLOYING':'READY');
+ for(const id of ['#fopInstallControls','#fopPrimaryPanel','#fopScanProgress','#fopInstallActions']){const el=document.querySelector(id);if(el)el.hidden=complete}
+ const panel=document.querySelector('#fopInstallCode');if(panel)panel.hidden=!result||complete;
+ const summary=document.querySelector('#fopDeploymentComplete');if(summary){summary.hidden=!complete;summary.textContent=complete?'DEPLOYMENT COMPLETE // '+result.node.id+' // 3/3 // '+result.totalEnergy+' E // '+result.nodeState:''}
+ if(scan)scan.disabled=!result||complete||result.count>=3||fopInstallBusy;
+ if(confirm)confirm.disabled=complete||!result?.canConfirm||fopInstallBusy;
+ const cancel=document.querySelector('#fopInstallCancel');if(cancel)cancel.disabled=!result||complete||fopInstallBusy;
+ const order=document.querySelector('#fopInstallOrder');if(order)order.disabled=fopInstallBusy;
+ const input=document.querySelector('#fopNodeId');if(input)input.disabled=fopInstallBusy||Boolean(result&&!complete);
 }
 function fopRequestParams(action){return {action,token:sessionToken,node:fopInstallation.node.id,installation:fopInstallation.installation}}
 window.addEventListener('nodiv-fop-install-order',async()=>{
  if(!sessionToken||fopInstallBusy)return;
  const input=document.querySelector('#fopNodeId'),btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
  const node=String(input?.value||'').trim().toUpperCase();
- fopInstallation=null;renderFopInstallation(null);
  if(!/^NODE-\d{3}$/.test(node)){if(hint)hint.textContent='Gültige Node-ID eingeben, z. B. NODE-001.';return}
- fopInstallBusy=true;if(btn)btn.disabled=true;
+ fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
   const r=await apiRequest({action:'nodeinstallorder',token:sessionToken,node});
   if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
@@ -361,7 +377,7 @@ window.addEventListener('nodiv-fop-install-order',async()=>{
   if(panel)panel.hidden=false;
   if(value)value.textContent=r.node.code;
   if(hint)hint.textContent=node+' // '+r.instruction;
- }catch(err){if(panel)panel.hidden=false;if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
+ }catch(err){if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
  finally{fopInstallBusy=false;renderFopInstallation(fopInstallation);if(btn)btn.disabled=false}
 });
 window.addEventListener('nodiv-fop-install-scan',async()=>{
@@ -394,13 +410,21 @@ window.addEventListener('nodiv-fop-install-confirm',async()=>{
  try{
   const r=await apiRequest(fopRequestParams('nodeinstallconfirm'));
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'BESTÄTIGUNG FEHLGESCHLAGEN');
-  if(value)value.textContent='ACTIVE';
-  if(hint)hint.textContent=r.node.id+' // 3/3 // PRIMARY AKTIV // INSTALLATION BESTÄTIGT';
-  if(btn)btn.textContent='INSTALLIERT ✓';
-  fopInstallation.canConfirm=false;
+  fopInstallation={...fopInstallation,...r,canConfirm:false};
+  if(hint)hint.textContent='Installation serverseitig bestätigt.';
   emitNodiv('IDENTITY_VERIFIED',{target:'#fopInstallCode'});
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
  finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
+});
+
+window.addEventListener('nodiv-fop-install-cancel',async()=>{
+ if(!sessionToken||!fopInstallation||fopInstallBusy)return;
+ const hint=document.querySelector('#fopInstallHint');fopInstallBusy=true;renderFopInstallation(fopInstallation);
+ try{
+  const r=await apiRequest(fopRequestParams('nodeinstallcancel'));
+  if(!r?.ok||r.action!==true)throw new Error(r?.message||r?.status||r?.error||'ABBRUCH FEHLGESCHLAGEN');
+  fopInstallation=null;if(hint)hint.textContent='Auftrag abgebrochen // Loadout freigegeben.';
+ }catch(err){if(hint)hint.textContent=String(err.message||err)}finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
 });
 
 window.addEventListener('nodiv-founder-core-open',async()=>{

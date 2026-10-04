@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const source=fs.readFileSync('Code.js','utf8');
 function fixture({legacy=false,state='INITIALIZED',count=0}={}){
  let uuid=0,batches=0,failBatch=false;
- const cache=new Map();
+ const cache=new Map(),properties=new Map();
  class Sheet{
   constructor(id,rows){this.id=id;this.rows=rows}
   getSheetId(){return this.id}
@@ -18,7 +18,7 @@ function fixture({legacy=false,state='INITIALIZED',count=0}={}){
   }}
   appendRow(row){this.rows.push(row)}
  }
- const cores=Array.from({length:200},(_,i)=>[String('NC-'+String(i+1).padStart(3,'0')),100+i,'uid'+(i+1),'ERFASST','RESERVE','','','','','','','',0,100+i,i<count?'NODE':'NODIV_RESERVE',i<count?'NODE-001':'HQ','','']);
+ const cores=Array.from({length:200},(_,i)=>[String('NC-'+String(i+1).padStart(3,'0')),200,i<6?'uid'+(i+1):'','ERFASST','RESERVE','','','','','','','',0,200,i<count?'NODE':'NODIV_RESERVE',i<count?'NODE-001':'HQ','','']);
  const sheets={
   'N-Core Register':new Sheet(1,[[],...cores]),
   'Node Register':new Sheet(2,[[],['NODE-001','nodeuid',legacy?'INSTALLED':'AVAILABLE']]),
@@ -31,7 +31,8 @@ function fixture({legacy=false,state='INITIALIZED',count=0}={}){
  const ss={getSheetByName:name=>sheets[name],getId:()=> 'spreadsheet'};
  const ctx={console,SpreadsheetApp:{getActiveSpreadsheet:()=>ss,flush(){}},LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
   CacheService:{getScriptCache:()=>({get:key=>cache.get(key),put:(key,value)=>cache.set(key,value),remove:key=>cache.delete(key)})},
-  Utilities:{getUuid:()=>String(++uuid).padStart(36,'0'),formatDate:()=> '20261004-100000'},Session:{getScriptTimeZone:()=> 'Europe/Berlin'},
+  PropertiesService:{getScriptProperties:()=>({getProperties:()=>Object.fromEntries(properties),getProperty:key=>properties.get(key),setProperty:(key,value)=>properties.set(key,value),deleteProperty:key=>properties.delete(key)})},
+  Utilities:{getUuid:()=>String(++uuid).padEnd(36,'0'),formatDate:()=> '20261004-100000'},Session:{getScriptTimeZone:()=> 'Europe/Berlin'},
   Sheets:{Spreadsheets:{batchUpdate({requests},id){assert.equal(id,'spreadsheet');if(failBatch)throw Error('BATCH_FAILED');batches++;
    for(const request of requests){const r=request.updateCells||request.appendCells;const sheet=Object.values(sheets).find(s=>s.id===(r.sheetId??r.start.sheetId));const values=r.rows.map(row=>row.values.map(cell=>Object.values(cell.userEnteredValue)[0]));if(request.appendCells)values.forEach(row=>sheet.appendRow(row));else sheet.getRange(r.start.rowIndex+1,r.start.columnIndex+1,values.length,values[0].length).setValues(values)}
   }}}
@@ -42,36 +43,36 @@ function fixture({legacy=false,state='INITIALIZED',count=0}={}){
  const e={parameter:{token,node:'NODE-001'}};
  function order(){const result=ctx.getNodeInstallOrder(e);e.parameter.installation=result.installation;return result}
  function scan(n){e.parameter.uid='uid'+n;return ctx.scanNodeInstallationCore(e)}
- return {ctx,sheets,cache,e,order,scan,batches:()=>batches,fail:()=>failBatch=true};
+ return {ctx,sheets,cache,properties,e,order,scan,batches:()=>batches,fail:()=>failBatch=true};
 }
 test('PRIMARY order, sequential 1/3..3/3, no ownership writes before one atomic confirmation',()=>{
  const f=fixture();assert.equal(f.order().node.code,'0123');
- for(let i=1;i<=3;i++){const r=f.scan(i);assert.equal(r.count,i);assert.equal(r.cores[i-1].id,'NC-00'+i);assert.equal(r.cores[i-1].energy,99+i);assert.equal(r.canConfirm,i===3)}
+ for(let i=1;i<=3;i++){const r=f.scan(i);assert.equal(r.count,i);assert.equal(r.cores[i-1].id,'NC-00'+i);assert.equal(r.cores[i-1].energy,200);assert.equal(r.canConfirm,i===3)}
  assert.equal(f.sheets['N-Core Register'].rows[1][14],'NODIV_RESERVE');
  assert.equal(f.sheets['Transaction Log'].rows.length,1);
- assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.batches(),1);
+ assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.batches(),2);
  for(let i=1;i<=3;i++){assert.equal(f.sheets['N-Core Register'].rows[i][14],'NODE');assert.equal(f.sheets['N-Core Register'].rows[i][15],'NODE-001');assert.equal(f.sheets['N-Core Register'].rows[i][4],'DEPLOYED');assert.match(f.sheets['N-Core Register'].rows[i][16],/^TX-/)}
  assert.equal(f.sheets['Transaction Log'].rows.length,5);assert.equal(f.sheets['Event Node Codes'].rows[1][9],'ACTIVE');
  assert.throws(()=>f.ctx.confirmNodeInstallation(f.e),/EXPIRED/);
 });
 test('incomplete confirmations, duplicates, unknown UID and fourth Core rejected',()=>{
  const f=fixture();f.order();for(let n=0;n<3;n++){assert.throws(()=>f.ctx.confirmNodeInstallation(f.e),/EXACTLY_3/);f.scan(n+1)}
- assert.throws(()=>f.scan(1),/DUPLICATE/);assert.throws(()=>f.scan(4),/LIMIT/);
- f.e.parameter.uid='unknown';assert.throws(()=>f.ctx.scanNodeInstallationCore(f.e),/NOT_FOUND/);assert.equal(f.batches(),0);
+ assert.throws(()=>f.scan(1),/DUPLICATE/);assert.throws(()=>f.scan(4),/CORE NOT ASSIGNED TO NODE-001/);
+ f.e.parameter.uid='unknown';assert.throws(()=>f.ctx.scanNodeInstallationCore(f.e),/NOT_FOUND/);assert.equal(f.batches(),1);
 });
 test('reserve ownership, status and deployment checked during scan and confirmation',()=>{
  for(const mutation of [row=>row[14]='PIONEER',row=>row[15]='OTHER',row=>row[4]='IN_TRANSIT']){
   const f=fixture();f.order();mutation(f.sheets['N-Core Register'].rows[1]);assert.throws(()=>f.scan(1),/NOT_RESERVE/);
  }
  const f=fixture();f.order();f.sheets['Deployment Register'].rows.push(['DEP-1','NC-001','','','','','ASSIGNED']);assert.throws(()=>f.scan(1),/ALREADY_ASSIGNED/);
- const g=fixture();g.order();[1,2,3].forEach(g.scan);g.sheets['N-Core Register'].rows[3][15]='OTHER';assert.throws(()=>g.ctx.confirmNodeInstallation(g.e),/NOT_RESERVE/);assert.equal(g.batches(),0);assert.equal(g.sheets['N-Core Register'].rows[1][14],'NODIV_RESERVE');
+ const g=fixture();g.order();[1,2,3].forEach(g.scan);g.sheets['N-Core Register'].rows[3][15]='OTHER';assert.throws(()=>g.ctx.confirmNodeInstallation(g.e),/NOT_RESERVE/);assert.equal(g.batches(),1);assert.equal(g.sheets['N-Core Register'].rows[1][14],'NODIV_RESERVE');
 });
 test('wrong Node, changed event, expired login/order, invalid/replaced order and assigned FOP rejected',()=>{
  const f=fixture();f.order();f.e.parameter.node='NODE-002';assert.throws(()=>f.scan(1),/MISMATCH/);f.e.parameter.node='NODE-001';
  f.sheets['Event Register'].rows[1][1]='FIELD_ACTIVE';assert.throws(()=>f.scan(1),/INSTALL_ORDER_REQUIRED/);
- const g=fixture();g.order();const old=g.e.parameter.installation;g.order();g.e.parameter.installation=old;assert.throws(()=>g.scan(1),/MISMATCH/);
+ const g=fixture();g.order();const old=g.e.parameter.installation;g.order();g.e.parameter.installation=old;assert.throws(()=>g.scan(1),/EXPIRED/);
  g.cache.delete('NODIV_SESSION_'+g.e.parameter.token);assert.equal(g.scan(1).authenticated,false);
- const h=fixture();h.order();const key='NODIV_INSTALL_'+h.e.parameter.token,stored=JSON.parse(h.cache.get(key));stored.expiresAt=0;h.cache.set(key,JSON.stringify(stored));assert.throws(()=>h.scan(1),/EXPIRED/);
+ const h=fixture();h.order();const key='NODIV_INSTALL_ORDER_'+h.e.parameter.installation,stored=JSON.parse(h.properties.get(key));stored.expiresAt=0;h.properties.set(key,JSON.stringify(stored));assert.throws(()=>h.scan(1),/EXPIRED/);
  const j=fixture();j.sheets['Event Node Codes'].rows[1][10]='F002';assert.throws(j.order,/OTHER_FOP/);
 });
 test('FIELD_ACTIVE legacy empty Node explicitly completed; order never rewrites legacy data',()=>{
@@ -101,5 +102,78 @@ test('role, event membership, inactive event and UID replacement rejected',()=>{
  const f=fixture();f.sheets['Access Card Register'].rows[1][2]='PIONEER';f.cache.set('NODIV_SESSION_'+f.e.parameter.token,JSON.stringify({identity:'F001',role:'PIONEER',cardId:'CARD-001'}));assert.throws(f.order,/ROLE_DENIED/);
  const g=fixture({state:'STANDBY'});assert.throws(g.order,/EVENT_NOT_INITIALIZED/);
  const h=fixture();h.sheets['Event Node Codes'].rows[1][0]='OTHER-EVENT';assert.throws(h.order,/NODE_NOT_IN_EVENT/);
- const j=fixture();j.order();[1,2,3].forEach(j.scan);j.sheets['N-Core Register'].rows[2][2]='replaced';assert.throws(()=>j.ctx.confirmNodeInstallation(j.e),/CORE_NOT_RESERVE/);assert.equal(j.batches(),0);
+ const j=fixture();j.order();[1,2,3].forEach(j.scan);j.sheets['N-Core Register'].rows[2][2]='replaced';assert.throws(()=>j.ctx.confirmNodeInstallation(j.e),/CORE_NOT_RESERVE/);assert.equal(j.batches(),1);
+});
+function enableNode(f,id,assigned='F001',legacy=false){
+ const n=Number(id.slice(5));f.sheets['Node Register'].rows[n]=[id,'nodeuid'+n,legacy?'INSTALLED':'AVAILABLE'];
+ f.sheets['Event Node Codes'].rows.push(['EVT-1',id,'5678','1111','2222','3333','4444',legacy?'PRIMARY':'',legacy?'':'PRIMARY',legacy?'ACTIVE':'ASSIGNED_FOR_INSTALL',assigned]);
+ f.sheets['Event Register'].rows[1][6]++;
+}
+function setEnergies(f,energies){
+ f.sheets['N-Core Register'].rows.slice(1).forEach((row,i)=>{row[1]=energies[i]??100;row[2]=i<energies.length?'uid'+(i+1):'';row[13]=row[1]});
+}
+test('loadout favors STABLE balanced triples and preserves energy for future Nodes',()=>{
+ const f=fixture();enableNode(f,'NODE-002');setEnergies(f,[50,100,150,200,250,300,350,400]);
+ const first=f.order();assert.equal(first.loadout.length,3);assert.equal(first.nodeState,'STABLE');assert.ok(first.totalEnergy>=600);assert.ok(first.totalEnergy<1050);
+ assert.ok(new Set(first.loadout.map(c=>c.id)).size===3);
+ // A second operator receives a disjoint stable triple while the first is reserved.
+ f.sheets['Access Card Register'].rows.push(['CARD-002','F002','FOP','fopuid2','ACTIVE','',0,true]);
+ f.sheets['Event Node Codes'].rows[2][10]='F002';const token='b'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'F002',role:'FOP',cardId:'CARD-002'}));
+ const second=f.ctx.getNodeInstallOrder({parameter:{token,node:'NODE-002'}});
+ assert.equal(second.nodeState,'STABLE');assert.ok(second.loadout.every(c=>!first.loadout.some(other=>other.id===c.id)));
+});
+test('STABLE is preferred over a closer sub-600 triple; fallback state and deterministic ties',()=>{
+ const f=fixture(),candidate=energy=>({coreId:'NC-'+String(energy).padStart(3,'0'),uid:'u'+energy,visibleEnergy:energy});
+ const pool=[50,100,150,200,250,300].map(candidate);
+ const picked=f.ctx.selectNodeInstallationLoadout(pool,8);assert.ok(picked.reduce((s,c)=>s+c.energy,0)>=600);
+ assert.deepEqual(JSON.parse(JSON.stringify(picked)),JSON.parse(JSON.stringify(f.ctx.selectNodeInstallationLoadout(pool,8))));
+ setEnergies(f,[50,100,150,160]);const order=f.order();assert.equal(order.totalEnergy,410);assert.equal(order.nodeState,'CRITICAL');
+ const g=fixture();setEnergies(g,[150,150,150]);assert.equal(g.order().nodeState,'DEGRADED');
+});
+test('selection excludes bound, IN_TRANSIT, mission assigned, unregistered and other reserved Cores',()=>{
+ const f=fixture();setEnergies(f,[200,200,200,200,200,200,200,200]);
+ f.sheets['N-Core Register'].rows[1][14]='PIONEER';f.sheets['N-Core Register'].rows[2][4]='IN_TRANSIT';
+ f.sheets['Deployment Register'].rows.push(['DEP-OTHER','NC-003','P001','PIONEER','NODE-002','DEPLOYMENT','ASSIGNED']);
+ f.sheets['N-Core Register'].rows[4][2]='';f.sheets['N-Core Register'].rows[5][14]='NODE';f.sheets['N-Core Register'].rows[5][15]='NODE-009';
+ assert.deepEqual(Array.from(f.order().loadout,c=>c.id),['NC-006','NC-007','NC-008']);
+ const g=fixture();setEnergies(g,[200,200]);assert.throws(g.order,/3_AVAILABLE/);assert.equal(g.properties.size,0);
+});
+test('scans enforce assigned IDs in any order and final confirmation closes reservations atomically',()=>{
+ const f=fixture(),order=f.order();assert.equal(f.scan(3).count,1);
+ assert.throws(()=>f.scan(4),/CORE NOT ASSIGNED TO NODE-001/);assert.equal(f.scan(1).count,2);
+ assert.throws(()=>f.ctx.confirmNodeInstallation(f.e),/EXACTLY_3/);assert.equal(f.scan(2).count,3);
+ const result=f.ctx.confirmNodeInstallation(f.e);assert.equal(result.totalEnergy,600);assert.equal(result.nodeState,'STABLE');assert.equal(f.properties.size,0);
+ assert.equal(f.sheets['Deployment Register'].rows.slice(1).filter(r=>r[6]==='DELIVERED').length,3);
+});
+test('reservations cannot be transferred through a different ownership flow or accepted as mission cargo',()=>{
+ const f=fixture();f.order();assert.equal(f.ctx.hasOpenDeploymentForCore('NC-001'),true);
+ const before=f.sheets['Transaction Log'].rows.length;
+ assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-001',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P001'}),/RESERVED_FOR_NODE/);
+ assert.equal(f.sheets['Transaction Log'].rows.length,before);
+ const row=f.sheets['Deployment Register'].rows[1];assert.equal(f.ctx.acceptCoreDeployment({parameter:{token:f.e.parameter.token,deployment:row[0]}}).status,'INSTALL_WORKFLOW_REQUIRED');
+ assert.equal(f.ctx.getPendingPlayerDeployments(f.e).deployments.length,0);
+});
+test('abort, expiry, login revocation and failed reservation publication do not leave phantom reservations',()=>{
+ const f=fixture();const order=f.order();assert.equal(f.ctx.cancelNodeInstallation(f.e).status,'INSTALLATION_CANCELLED');assert.equal(f.properties.size,0);assert.equal(f.ctx.hasOpenDeploymentForCore(order.loadout[0].id),false);
+ assert.equal(f.sheets['Deployment Register'].rows[1][6],'CANCELLED');assert.deepEqual(Array.from(f.order().loadout,c=>c.id),Array.from(order.loadout,c=>c.id));
+ const g=fixture(),old=g.order(),key='NODIV_INSTALL_ORDER_'+old.installation,stored=JSON.parse(g.properties.get(key));stored.expiresAt=Date.now()-1;g.properties.set(key,JSON.stringify(stored));
+ assert.equal(g.ctx.hasOpenDeploymentForCore(old.loadout[0].id),false);assert.throws(()=>g.scan(1),/EXPIRED/);g.order();assert.equal(g.sheets['Deployment Register'].rows[1][6],'EXPIRED');
+ const h=fixture();h.order();h.cache.delete('NODIV_SESSION_'+h.e.parameter.token);assert.equal(h.ctx.hasOpenDeploymentForCore('NC-001'),false);
+ const j=fixture();j.fail();assert.throws(j.order,/BATCH_FAILED/);assert.equal(j.properties.size,0);assert.equal(j.sheets['Deployment Register'].rows.length,1);
+});
+test('cache eviction retains durable order; competing login cannot reserve the same Node',()=>{
+ const f=fixture(),order=f.order();f.cache.delete('NODIV_INSTALL_'+f.e.parameter.token);assert.equal(f.scan(1).count,1);
+ const token='b'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));
+ assert.throws(()=>f.ctx.getNodeInstallOrder({parameter:{token,node:'NODE-001'}}),/NODE_INSTALLATION_RESERVED/);
+ assert.equal(f.properties.size,1);assert.equal(f.ctx.hasOpenDeploymentForCore(order.loadout[0].id),true);
+});
+test('real NODE-001 fixture 006=105,003=401,004=353 stays 859 E STABLE with no migration',()=>{
+ const f=fixture({legacy:true,state:'FIELD_ACTIVE'});setEnergies(f,[200,200,401,353,200,105,200,200,200]);
+ for(const n of [6,3,4]){const row=f.sheets['N-Core Register'].rows[n];row[14]='NODE';row[15]='NODE-001';row[4]='DEPLOYED'}
+ enableNode(f,'NODE-002','F001',true);
+ const before=JSON.stringify([f.sheets['Node Register'].rows[1],f.sheets['Event Node Codes'].rows[1],...[6,3,4].map(n=>f.sheets['N-Core Register'].rows[n])]);
+ assert.throws(f.order,/ALREADY_INSTALLED/);f.e.parameter.node='NODE-002';const loadout=f.order();assert.ok(loadout.loadout.every(c=>!['NC-006','NC-003','NC-004'].includes(c.id)));
+ for(const c of loadout.loadout)f.scan(Number(c.id.slice(3)));f.ctx.confirmNodeInstallation(f.e);
+ const after=JSON.stringify([f.sheets['Node Register'].rows[1],f.sheets['Event Node Codes'].rows[1],...[6,3,4].map(n=>f.sheets['N-Core Register'].rows[n])]);
+ assert.equal(after,before);assert.equal([6,3,4].reduce((sum,n)=>sum+f.sheets['N-Core Register'].rows[n][1],0),859);assert.equal(f.ctx.nodeEnergyState(859),'STABLE');
 });
