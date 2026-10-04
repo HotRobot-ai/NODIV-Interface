@@ -240,3 +240,14 @@
 .fop-complete{margin-top:14px;padding:16px;border:1px solid var(--role-accent);border-radius:8px;color:var(--role-accent);background:#09202d;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
 [data-role="FOP"] [hidden]{display:none!important}
 @media(max-width:360px){.fop-deployment{padding:12px}.fop-primary strong{font-size:27px}.fop-core-grid{gap:5px}.fop-core strong{font-size:15px}.fop-card-head span{font-size:7px}}
+
+/* Server-authoritative operations queue and distinct technical recovery mode. */
+.fop-queue{padding:14px;margin-bottom:14px;border:1px solid #327ca766;border-radius:10px;background:#07131c}
+.fop-queue label{display:block;margin-bottom:9px;color:var(--role-accent);font-size:9px;letter-spacing:.1em}
+.fop-queue select{box-sizing:border-box;width:100%;min-width:0;min-height:48px;padding:10px 9px;background:#030a0f;border:1px solid #39779899;border-radius:7px;color:var(--role-soft);font:700 11px ui-monospace,monospace}
+.fop-queue-actions{display:grid;grid-template-columns:1fr;gap:2px}
+#fopDeploymentCard[data-operation="DEINSTALL"]{border-color:#b9d6df88;background:linear-gradient(145deg,#172129,#080d12)}
+#fopDeploymentCard[data-operation="DEINSTALL"] .fop-primary{border-left-color:#d4e7ed;background:#172a32}
+#fopDeploymentCard[data-operation="DEINSTALL"] .fop-card-head small,#fopDeploymentCard[data-operation="DEINSTALL"] .fop-loadout-head small{color:#d4e7ed}
+#fopDeploymentCard[data-operation="DEINSTALL"] .fop-core.verified{background:#20343e;border-color:#d4e7ed}
+#fopDeploymentCard[data-operation="DEINSTALL"] .fop-complete{border-color:#d4e7ed;color:#d4e7ed;background:#172a32}

@@ -342,6 +342,30 @@ function doGet(e) {
 
       result = abortEvent(e);
 
+    } else if (action === 'eventshutdown') {
+
+      result = shutdownFieldEvent(e);
+
+    } else if (action === 'fopoperations') {
+
+      result = getFopOperations(e);
+
+    } else if (action === 'nodedeinstallorder') {
+
+      result = getNodeDeinstallOrder(e);
+
+    } else if (action === 'nodedeinstallscan') {
+
+      result = scanNodeDeinstallationCore(e);
+
+    } else if (action === 'nodedeinstallcancel') {
+
+      result = cancelNodeDeinstallation(e);
+
+    } else if (action === 'nodedeinstallconfirm') {
+
+      result = confirmNodeDeinstallation(e);
+
     } else if (action === 'nodeinstallorder') {
 
       result = getNodeInstallOrder(e);
@@ -2974,7 +2998,7 @@ function hasOpenDeploymentForCore(coreId, installationId) {
   const orders=readInstallationOrders().filter(installationOrderIsLive);
   return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
     ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
-    (String(row[5]||'').toUpperCase()!=='NODE_INSTALLATION'||
+    (!isFopNodeDeployment(row)||
       (installationReservationIsLive(row,orders)&&String(row[0])!==installationDeploymentId(installationId,wanted))));
 }
 
@@ -3020,6 +3044,8 @@ function assignCoreDeployment(e) {
       return gameplayActionDenied(actor, 'TARGET_NODE_UNKNOWN', 'Ziel-Node ist nicht registriert.');
     }
 
+    if(readInstallationOrders().some(order=>order.nodeId===targetNode&&installationOrderIsLive(order)))return gameplayActionDenied(actor,'NODE_OPERATION_RESERVED','Ziel-Node ist für eine FOP-Operation reserviert.');
+
     const deploymentId = createDeploymentId();
     getDeploymentRegisterSheet().appendRow([
       deploymentId, core.coreId, carrier.identity, carrier.role, targetNode,
@@ -3048,7 +3074,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
-    if (String(row[5]||'').toUpperCase()==='NODE_INSTALLATION') return;
+    if (isFopNodeDeployment(row)) return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3076,7 +3102,7 @@ function acceptCoreDeployment(e) {
     const player = session.player;
     const deployment = findDeploymentById(e.parameter.deployment || '');
     if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
-    if (deployment.purpose === 'NODE_INSTALLATION') return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
+    if (['NODE_INSTALLATION','NODE_DEINSTALLATION'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
     if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
     if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
       return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
@@ -3217,7 +3243,7 @@ function getHqLiveOperations(e) {
 
   deploymentRows.forEach(row => {
     const status = String(row[6] || '').trim().toUpperCase();
-    if (String(row[5]||'').toUpperCase()==='NODE_INSTALLATION') return;
+    if (isFopNodeDeployment(row)) return;
     if (!['ASSIGNED', 'IN_TRANSIT'].includes(status)) return;
 
     const coreId = String(row[1] || '').trim().toUpperCase();
@@ -3755,6 +3781,9 @@ function validateNodeInstallation(actor, nodeId) {
 
 // Durable, expiring metadata extends the existing Deployment Register. No new sheet.
 const NODE_INSTALL_ORDER_PREFIX = 'NODIV_INSTALL_ORDER_';
+function isFopNodeDeployment(row) {return ['NODE_INSTALLATION','NODE_DEINSTALLATION'].includes(String(row[5]||'').trim().toUpperCase());}
+function nodeOperationType(order) {return order.operation||'INSTALL';}
+function nodeOperationPurpose(operation) {return operation==='DEINSTALL'?'NODE_DEINSTALLATION':'NODE_INSTALLATION';}
 function installationDeploymentId(orderId,coreId) {return 'INS-'+String(orderId||'')+'-'+coreId;}
 function readInstallationOrders() {
   const values=PropertiesService.getScriptProperties().getProperties(),orders=[];
@@ -3771,7 +3800,7 @@ function installationOrderIsLive(order) {
   return Boolean(event&&event.eventId===order.eventId&&event.state===order.eventState);
 }
 function installationReservationIsLive(row,orders) {
-  if(String(row[5]||'').toUpperCase()!=='NODE_INSTALLATION'||String(row[6]||'').toUpperCase()!=='ASSIGNED')return false;
+  if(!isFopNodeDeployment(row)||String(row[6]||'').toUpperCase()!=='ASSIGNED')return false;
   return (orders||readInstallationOrders().filter(installationOrderIsLive)).some(order=>
     String(row[0])===installationDeploymentId(order.id,String(row[1]).trim().toUpperCase())&&
     order.nodeId===String(row[4]));
@@ -3780,7 +3809,7 @@ function releaseInstallationOrder(order,status) {
   const sheet=getDeploymentRegisterSheet(),requests=[],now=new Date();
   const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
   rows.forEach((row,index)=>{
-    if(String(row[5])==='NODE_INSTALLATION'&&String(row[6])==='ASSIGNED'&&
+    if(isFopNodeDeployment(row)&&String(row[6])==='ASSIGNED'&&
        String(row[0])===installationDeploymentId(order.id,String(row[1])))
       requests.push(sheetCellsRequest(sheet,index+2,7,[[status,row[7],row[8]||'',now,row[10]||'']]));
   });
@@ -3814,15 +3843,20 @@ function selectNodeInstallationLoadout(available,remainingNodes) {
   return best.map(core=>({id:core.coreId,uid:core.uid,energy:core.visibleEnergy}));
 }
 
-function buildNodeInstallationLoadout(context,nodeId) {
+function getAvailableInstallationCores() {
   const orders=readInstallationOrders().filter(installationOrderIsLive),depSheet=getDeploymentRegisterSheet();
   const deployments=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
   const unavailable=new Set(deployments.filter(row=>['ASSIGNED','IN_TRANSIT'].includes(String(row[6]).toUpperCase())&&
-    (String(row[5]).toUpperCase()!=='NODE_INSTALLATION'||installationReservationIsLive(row,orders))).map(row=>String(row[1]).trim().toUpperCase()));
+    (!isFopNodeDeployment(row)||installationReservationIsLive(row,orders))).map(row=>String(row[1]).trim().toUpperCase()));
   const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
   const available=rows.map(row=>({coreId:String(row[0]).trim().toUpperCase(),uid:normalizeUid(row[2]),visibleEnergy:row[1]===''?NaN:Number(row[1]),
     status:String(row[CORE_COL.STATUS-1]).toUpperCase(),ownerType:String(row[CORE_COL.OWNER_TYPE-1]).toUpperCase(),ownerId:String(row[CORE_COL.OWNER_ID-1]).toUpperCase()}))
     .filter(core=>/^NC-\d{3}$/.test(core.coreId)&&core.uid&&Number.isFinite(core.visibleEnergy)&&core.visibleEnergy>0&&core.status==='RESERVE'&&core.ownerType==='NODIV_RESERVE'&&core.ownerId==='HQ'&&!unavailable.has(core.coreId));
+  return available;
+}
+
+function buildNodeInstallationLoadout(context,nodeId) {
+  const available=getAvailableInstallationCores(),orders=readInstallationOrders().filter(installationOrderIsLive);
   const reservedNodes=new Set(orders.map(order=>order.nodeId));
   const codeSheet=getEventNodeCodeSheet(),codes=codeSheet.getLastRow()>1?codeSheet.getRange(2,1,codeSheet.getLastRow()-1,13).getValues():[];
   const remaining=codes.filter(row=>String(row[0])===context.event.eventId&&!reservedNodes.has(String(row[1]))&&
@@ -3830,26 +3864,29 @@ function buildNodeInstallationLoadout(context,nodeId) {
   return selectNodeInstallationLoadout(available,remaining);
 }
 
-function getNodeInstallOrder(e) {
+function getNodeInstallOrder(e) {return getNodeOperationOrder(e,'INSTALL');}
+function getNodeDeinstallOrder(e) {return getNodeOperationOrder(e,'DEINSTALL');}
+function getNodeOperationOrder(e,operation) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
-    const context=validateNodeInstallation(actor,nodeId);
+    const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
     cleanupInstallationOrders();
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
     if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
     orders.filter(order=>order.sessionToken===token).forEach(order=>releaseInstallationOrder(order,'CANCELLED'));
-    const loadout=buildNodeInstallationLoadout(context,nodeId);
+    const loadout=operation==='DEINSTALL'?getNodeRemovalLoadout(nodeId):buildNodeInstallationLoadout(context,nodeId);
+    if(operation==='DEINSTALL'&&loadout.some(core=>hasOpenDeploymentForCore(core.id)))throw new Error('CORE_ALREADY_ASSIGNED');
     const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
-      identity:actor.identity,sessionToken:token,legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+      identity:actor.identity,sessionToken:token,operation,legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
     const props=PropertiesService.getScriptProperties(),sheet=getDeploymentRegisterSheet(),now=new Date();
     const requests=[{appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,loadout.map(core=>[
-      installationDeploymentId(order.id,core.id),core.id,actor.identity,actor.role,nodeId,'NODE_INSTALLATION','ASSIGNED',now,'','',''
+      installationDeploymentId(order.id,core.id),core.id,actor.identity,actor.role,nodeId,nodeOperationPurpose(operation),'ASSIGNED',now,'','',''
     ])).updateCells.rows,fields:'userEnteredValue'}}];
-    if(!context.legacy){
+    if(operation==='INSTALL'&&!context.legacy){
       if(!context.assigned)requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,11,[[actor.identity]]));
       requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,13,[[now]]));
     }
@@ -3859,30 +3896,32 @@ function getNodeInstallOrder(e) {
     try{SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());}
     catch(error){props.deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);throw error;}
     CacheService.getScriptCache().put(NODE_INSTALL_PREFIX+token,JSON.stringify(order),NODE_INSTALL_TTL_SECONDS);
-    return nodeInstallationResponse(order,context,'NODE_INSTALL_ORDER');
+    return nodeInstallationResponse(order,context,operation==='DEINSTALL'?'NODE_DEINSTALL_ORDER':'NODE_INSTALL_ORDER');
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
-function readNodeInstallation(e,actor) {
+function readNodeInstallation(e,actor,operation='INSTALL') {
   const key=NODE_INSTALL_PREFIX+normalizeSessionToken(e.parameter.token||'');
   const raw=PropertiesService.getScriptProperties().getProperty(NODE_INSTALL_ORDER_PREFIX+String(e.parameter.installation||''));
   if(!raw)throw new Error('INSTALL_SESSION_EXPIRED // Auftrag erneut abrufen');
   const order=JSON.parse(raw);
+  if(nodeOperationType(order)!==operation)throw new Error('NODE_OPERATION_TYPE_MISMATCH');
   if(order.identity!==actor.identity||order.sessionToken!==normalizeSessionToken(e.parameter.token)||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
   if(!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)throw new Error('INSTALL_SESSION_EXPIRED');
-  const context=validateNodeInstallation(actor,order.nodeId);
+  const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,order.nodeId):validateNodeInstallation(actor,order.nodeId);
   if(order.eventId!==context.event.eventId||order.eventState!==context.event.state||order.legacy!==context.legacy)throw new Error('INSTALL_EVENT_STATE_CHANGED');
   if(!Array.isArray(order.loadout)||order.loadout.length!==3||new Set(order.loadout.map(core=>core.id)).size!==3)throw new Error('INSTALL_LOADOUT_INVALID');
   return {key,order,context};
 }
 
 function validateInstallationCore(core,uid,order) {
-  if(!uid||core.uid!==uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE')throw new Error('CORE_NOT_RESERVE // '+core.coreId);
+  const removal=nodeOperationType(order)==='DEINSTALL';
+  if(!uid||core.uid!==uid||core.ownerType!==(removal?'NODE':'NODIV_RESERVE')||core.ownerId!==(removal?order.nodeId:'HQ')||(!removal&&core.status!=='RESERVE'))throw new Error((removal?'CORE_NOT_AT_NODE':'CORE_NOT_RESERVE')+' // '+core.coreId);
   if(hasOpenDeploymentForCore(core.coreId,order.id))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
   const assigned=order.loadout.find(item=>item.id===core.coreId&&item.uid===uid&&item.energy===core.visibleEnergy);
   if(!assigned)throw new Error('CORE NOT ASSIGNED TO '+order.nodeId);
   const deployment=findDeploymentById(installationDeploymentId(order.id,core.coreId));
-  if(!deployment||deployment.purpose!=='NODE_INSTALLATION'||deployment.status!=='ASSIGNED'||deployment.targetNode!==order.nodeId||deployment.carrierId!==order.identity)throw new Error('INSTALL_RESERVATION_INVALID');
+  if(!deployment||deployment.purpose!==nodeOperationPurpose(nodeOperationType(order))||deployment.status!=='ASSIGNED'||deployment.targetNode!==order.nodeId||deployment.carrierId!==order.identity)throw new Error('INSTALL_RESERVATION_INVALID');
 }
 
 function nodeInstallationResponse(order,context,status) {
@@ -3890,18 +3929,20 @@ function nodeInstallationResponse(order,context,status) {
   const totalEnergy=loadout.reduce((sum,core)=>sum+core.energy,0);
   return {ok:true,authenticated:true,session:true,action:true,status,eventId:order.eventId,
     installation:order.id,expiresAt:new Date(order.expiresAt).toISOString(),legacy:order.legacy,
-    node:{id:order.nodeId,code:context.eventNode.codes[0],slot:'PRIMARY'},loadout,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
+    operation:nodeOperationType(order),node:{id:order.nodeId,code:context.eventNode.codes[nodeOperationType(order)==='DEINSTALL'?({PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4})[context.eventNode.activeSlot]:0],slot:nodeOperationType(order)==='DEINSTALL'?context.eventNode.activeSlot:'PRIMARY'},loadout,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
     cores:loadout.filter(core=>core.scanned),count:order.cores.length,canConfirm:order.cores.length===3,
-    instruction:(order.legacy?'LEGACY: mechanisch bestätigt, aber leer. ':'')+'PRIMARY am Schloss einstellen, danach nur die drei zugewiesenen Cores scannen.'};
+    instruction:nodeOperationType(order)==='DEINSTALL'?'Node öffnen, exakt die drei Removal-Cores scannen und physisch entfernen. Erst danach Recovery bestätigen.':(order.legacy?'LEGACY: mechanisch bestätigt, aber leer. ':'')+'PRIMARY am Schloss einstellen, danach nur die drei zugewiesenen Cores scannen.'};
 }
 
-function scanNodeInstallationCore(e) {
+function scanNodeInstallationCore(e) {return scanNodeOperationCore(e,'INSTALL');}
+function scanNodeDeinstallationCore(e) {return scanNodeOperationCore(e,'DEINSTALL');}
+function scanNodeOperationCore(e,operation) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
-    const {key,order,context}=readNodeInstallation(e,session.player);
+    const {key,order,context}=readNodeInstallation(e,session.player,operation);
     const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
     if(!hit.found||hit.type!=='N_CORE'||!hit.id)throw new Error('CORE_NOT_FOUND');
     if(order.cores.some(core=>core.id===hit.id||core.uid===uid))throw new Error('DUPLICATE_CORE_SCAN');
@@ -3912,22 +3953,25 @@ function scanNodeInstallationCore(e) {
     order.cores.push({id:core.coreId,uid});
     PropertiesService.getScriptProperties().setProperty(NODE_INSTALL_ORDER_PREFIX+order.id,JSON.stringify(order));
     CacheService.getScriptCache().put(key,JSON.stringify(order),Math.max(1,Math.floor((order.expiresAt-Date.now())/1000)));
-    return nodeInstallationResponse(order,context,'INSTALL_CORE_SCANNED');
+    return nodeInstallationResponse(order,context,operation==='DEINSTALL'?'REMOVAL_CORE_SCANNED':'INSTALL_CORE_SCANNED');
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
-function cancelNodeInstallation(e) {
+function cancelNodeInstallation(e) {return cancelNodeOperation(e,'INSTALL');}
+function cancelNodeDeinstallation(e) {return cancelNodeOperation(e,'DEINSTALL');}
+function cancelNodeOperation(e,operation) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const raw=PropertiesService.getScriptProperties().getProperty(NODE_INSTALL_ORDER_PREFIX+String(e.parameter.installation||''));
-    if(!raw)return {ok:true,authenticated:true,session:true,action:true,status:'INSTALLATION_CANCELLED'};
+    if(!raw)return {ok:true,authenticated:true,session:true,action:true,status:operation==='DEINSTALL'?'DEINSTALLATION_CANCELLED':'INSTALLATION_CANCELLED'};
     const order=JSON.parse(raw);
+    if(nodeOperationType(order)!==operation)throw new Error('NODE_OPERATION_TYPE_MISMATCH');
     if(order.sessionToken!==normalizeSessionToken(e.parameter.token)||order.identity!==session.player.identity||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
     releaseInstallationOrder(order,'CANCELLED');
-    return {ok:true,authenticated:true,session:true,action:true,status:'INSTALLATION_CANCELLED',nodeId:order.nodeId};
+    return {ok:true,authenticated:true,session:true,action:true,status:operation==='DEINSTALL'?'DEINSTALLATION_CANCELLED':'INSTALLATION_CANCELLED',nodeId:order.nodeId};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
@@ -3961,6 +4005,124 @@ function confirmNodeInstallation(e) {
     const totalEnergy=order.loadout.reduce((sum,core)=>sum+core.energy,0);
     return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
       node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* FOP recovery is a technical Alpha operation, not story evacuation. */
+function getNodeRemovalLoadout(nodeId) {
+  const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+  const loadout=rows.filter(row=>String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='NODE'&&String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()===nodeId)
+    .map(row=>({id:String(row[0]).trim().toUpperCase(),uid:normalizeUid(row[2]),energy:row[1]===''?NaN:Number(row[1])}));
+  if(loadout.length!==3||new Set(loadout.map(core=>core.id)).size!==3||new Set(loadout.map(core=>core.uid)).size!==3||
+    loadout.some(core=>!/^NC-\d{3}$/.test(core.id)||!core.uid||!Number.isFinite(core.energy)))throw new Error('NODE_REMOVAL_REQUIRES_3_REGISTERED_CORES');
+  return loadout;
+}
+function validateNodeDeinstallation(actor,nodeId) {
+  if(!['FOUNDER','FOP'].includes(actor.role))throw new Error('ROLE_DENIED');
+  if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
+  const event=readCurrentEvent();
+  if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  const eventNode=findEventNodeCode(event.eventId,nodeId);
+  if(!eventNode)throw new Error('NODE_NOT_IN_EVENT');
+  if(eventNode.changeStatus!=='ACTIVE'||!['PRIMARY','RESERVE 1','RESERVE 2','RESERVE 3','RESERVE 4'].includes(eventNode.activeSlot)||eventNode.pendingSlot||
+    ['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(getNodeGameplayStatus(nodeId)))throw new Error('NODE_NOT_INSTALLED');
+  getNodeRemovalLoadout(nodeId);
+  // Prior installation attribution is historical; the new recovery order binds its own FOP.
+  return {event,eventNode,legacy:false};
+}
+function getFopOperations(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOP/FOUNDER können Operations abrufen.');
+    const event=readCurrentEvent(),operations=[];
+    if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state)){
+      const sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
+      const stockAvailable=getAvailableInstallationCores().length>=3;
+      const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId));
+      const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
+      ids.forEach(nodeId=>{
+        if(reserved.has(nodeId))return;
+        for(const type of ['INSTALL','DEINSTALL']){
+          try{
+            if(type==='INSTALL'){if(!stockAvailable)continue;validateNodeInstallation(actor,nodeId);}
+            else{validateNodeDeinstallation(actor,nodeId);if(getNodeRemovalLoadout(nodeId).some(core=>hasOpenDeploymentForCore(core.id)))continue;}
+            operations.push({id:type+':'+nodeId,type,nodeId,label:type+' // '+nodeId});
+          }catch(error){/* Unavailable operations are omitted, never repaired. */}
+        }
+      });
+    }
+    return {ok:true,authenticated:true,session:true,operations,eventId:event?event.eventId:'',status:operations.length?'OPERATIONS_AVAILABLE':'NO OPERATIONS AVAILABLE'};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+function confirmNodeDeinstallation(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player,{key,order,context}=readNodeInstallation(e,actor,'DEINSTALL');
+    if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('REMOVAL_REQUIRES_EXACTLY_3_CORES');
+    // Validate current Node inventory and every reserved scanned Core before any write.
+    order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid,order));
+    const requests=[],now=new Date(),nodeId=order.nodeId;
+    order.cores.forEach(item=>{
+      const result=transferCoreOwnership({coreId:item.id,expectedFromType:'NODE',expectedFromId:nodeId,
+        toType:'NODIV_RESERVE',toId:'HQ',eventType:'NODE_RECOVERY_CORE',actorId:actor.identity,actorRole:actor.role,
+        nodeId,newStatus:'RESERVE',details:order.eventId+' // '+order.id+' // Alpha technical recovery',batchRequests:requests,installationId:order.id});
+      const dep=findDeploymentById(installationDeploymentId(order.id,item.id));
+      requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['DELIVERED',dep.createdAt,dep.acceptedAt||'',now,result.transactionId]]));
+    });
+    // Preserve all five historical codes and INSTALLED AT; clear only active access/assignment.
+    requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,8,[['','','DEINSTALLED','']]));
+    requests.push(sheetCellsRequest(getEventNodeCodeSheet(),context.eventNode.row,13,[[now]]));
+    const nodeRow=parseInt(nodeId.substring(5),10)+1;
+    requests.push(sheetCellsRequest(getNodeRegisterSheet(),nodeRow,3,[['AVAILABLE']]));
+    requests.push(sheetCellsRequest(getNodeRegisterSheet(),nodeRow,5,[['',now]]));
+    requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,8,[[Math.max(0,context.event.activeNodes-1)]]));
+    requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,10,[[now]]));
+    appendTransactionLog({eventType:'NODE_DEINSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
+      details:order.eventId+' // '+order.id+' // 3/3 CORES RETURNED // '+order.cores.map(core=>core.id).join(',')},requests);
+    SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+    PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
+    CacheService.getScriptCache().remove(key);
+    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_DEINSTALLED',operation:'DEINSTALL',eventId:order.eventId,count:3,
+      totalEnergy:order.loadout.reduce((sum,core)=>sum+core.energy,0),node:{id:nodeId,status:'AVAILABLE',activeSlot:''},message:'RECOVERY COMPLETE // '+nodeId+' // 3/3 CORES RETURNED'};
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
+function shutdownFieldEvent(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player;
+    if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann FIELD EVENT SHUTDOWN bestätigen.');
+    const event=readCurrentEvent();
+    if(!event||event.state!=='FIELD_ACTIVE')return gameplayActionDenied(actor,'EVENT_NOT_FIELD_ACTIVE','Kein aktives Field Event.');
+    if(String(e.parameter.event||'')!==event.eventId)return gameplayActionDenied(actor,'EVENT_MISMATCH','Event-ID stimmt nicht mit dem aktuellen Field Event überein.');
+    const blockers=[],sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
+    const nodes=rows.filter(row=>String(row[0])===event.eventId);
+    if(!nodes.length||nodes.length!==event.plannedNodes||new Set(nodes.map(row=>String(row[1]).trim().toUpperCase())).size!==event.plannedNodes)blockers.push('EVENT_NODE_COUNT_MISMATCH');
+    nodes.forEach(row=>{
+      const id=String(row[1]).trim().toUpperCase();
+      if(String(row[9])!=='DEINSTALLED'||row[7]||row[8]||getNodeGameplayStatus(id)!=='AVAILABLE')blockers.push(id+': DEINSTALLATION_NOT_CONFIRMED');
+    });
+    const cores=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),owned={};
+    cores.forEach(row=>{if(String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='NODE'){const id=String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()||'UNKNOWN NODE';owned[id]=(owned[id]||0)+1;}});
+    Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
+    readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
+    if(blockers.length)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
+    const eventSheet=getEventRegisterSheet(),header=String(eventSheet.getRange(1,11).getDisplayValue()||'');
+    if(header&&header!=='COMPLETED AT')throw new Error('EVENT_COMPLETION_COLUMN_CONFLICT');
+    const now=new Date(),requests=[sheetCellsRequest(eventSheet,1,11,[['COMPLETED AT']]),
+      sheetCellsRequest(eventSheet,event.row,2,[['COMPLETED']]),sheetCellsRequest(eventSheet,event.row,8,[[0]]),sheetCellsRequest(eventSheet,event.row,10,[[now,now]])];
+    appendTransactionLog({eventType:'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered'},requests);
+    SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+    return {ok:true,authenticated:true,session:true,action:true,status:'FIELD_EVENT_COMPLETED',eventId:event.eventId,eventState:'COMPLETED',completedAt:now.toISOString()};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
@@ -4004,6 +4166,8 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
   const eventNode=findEventNodeCode(event.eventId,id);
   if(!eventNode)return {allowed:false,reason:'NODE_NOT_IN_ACTIVE_EVENT',message:'Node erkannt. Dieser Node gehört nicht zum aktiven Event.'};
   if(eventNode.changeStatus!=='ACTIVE'||!eventNode.activeSlot)return {allowed:false,reason:'NODE_INSTALLATION_NOT_CONFIRMED',message:'Node erkannt. Die physische Installation ist noch nicht bestätigt.'};
+
+  if(readInstallationOrders().some(order=>order.nodeId===id&&installationOrderIsLive(order)))return {allowed:false,reason:'NODE_OPERATION_RESERVED',message:'Node ist für eine FOP-Operation gesperrt.'};
 
   if(countCoresOwnedBy('NODE',id)!==3)return {allowed:false,reason:'NODE_CORE_COUNT_INVALID',message:'Node benötigt exakt 3 N-Cores. Legacy-Installation gegebenenfalls explizit vervollständigen.'};
 
@@ -5139,6 +5303,7 @@ function transferCoreOwnership(data) {
 
   const depSheet=getDeploymentRegisterSheet(),depRows=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
   const installOrders=readInstallationOrders().filter(installationOrderIsLive);
+  if(installOrders.some(order=>order.id!==data.installationId&&((fromType==='NODE'&&order.nodeId===fromId)||(toType==='NODE'&&order.nodeId===toId))))throw new Error('NODE_OPERATION_RESERVED');
   if(depRows.some(row=>String(row[1]).trim().toUpperCase()===coreId&&installationReservationIsLive(row,installOrders)&&String(row[0])!==installationDeploymentId(data.installationId,coreId)))throw new Error('CORE_RESERVED_FOR_NODE_INSTALLATION');
 
   const state = readCoreState(coreId);

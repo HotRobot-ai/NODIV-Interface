@@ -177,3 +177,115 @@ test('real NODE-001 fixture 006=105,003=401,004=353 stays 859 E STABLE with no m
  const after=JSON.stringify([f.sheets['Node Register'].rows[1],f.sheets['Event Node Codes'].rows[1],...[6,3,4].map(n=>f.sheets['N-Core Register'].rows[n])]);
  assert.equal(after,before);assert.equal([6,3,4].reduce((sum,n)=>sum+f.sheets['N-Core Register'].rows[n][1],0),859);assert.equal(f.ctx.nodeEnergyState(859),'STABLE');
 });
+function recoveryFixture(){
+ const f=fixture({legacy:true,state:'FIELD_ACTIVE'});setEnergies(f,[200,200,401,353,200,105]);
+ for(const n of [6,3,4]){const row=f.sheets['N-Core Register'].rows[n];row[14]='NODE';row[15]='NODE-001';row[4]='DEPLOYED'}
+ // Provisioned after event initialization: deliberately NO Event Node Codes row.
+ f.sheets['Node Register'].rows[2]=['NODE-002','nodeuid2','AVAILABLE'];
+ f.removal=()=>{const result=f.ctx.getNodeDeinstallOrder(f.e);f.e.parameter.installation=result.installation;return result};
+ f.removeScan=n=>{f.e.parameter.uid='uid'+n;return f.ctx.scanNodeDeinstallationCore(f.e)};
+ f.finish=()=>f.ctx.confirmNodeDeinstallation(f.e);
+ f.addFounder=()=>{
+  const token='c'.repeat(72);f.sheets['Access Card Register'].rows.push(['CARD-ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true]);
+  f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'CARD-ROOT'}));
+  return {parameter:{token,event:'EVT-1'}};
+ };
+ return f;
+}
+test('queue lists only actual eligible operations, never post-init NODE-002 or manufactured type',()=>{
+ const f=recoveryFixture(),before=JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows));
+ const queue=f.ctx.getFopOperations(f.e);assert.deepEqual(Array.from(queue.operations,op=>op.label),['DEINSTALL // NODE-001']);
+ assert.equal(JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),before);
+ assert.equal(queue.operations.some(op=>op.nodeId==='NODE-002'),false);
+ f.e.parameter.node='NODE-002';assert.throws(()=>f.ctx.getNodeInstallOrder(f.e),/NODE_NOT_IN_EVENT/);assert.throws(()=>f.ctx.getNodeDeinstallOrder(f.e),/NODE_NOT_IN_EVENT/);
+ const g=fixture();enableNode(g,'NODE-003','F002');g.sheets['Event Node Codes'].rows.push(['EVT-1','NODE-009','','','','','','','PRIMARY','ASSIGNED_FOR_INSTALL']);
+ assert.deepEqual(Array.from(g.ctx.getFopOperations(g.e).operations,op=>op.label),['INSTALL // NODE-001']);
+ g.order();assert.equal(g.ctx.getFopOperations(g.e).operations.length,0);
+ const h=fixture();setEnergies(h,[200,200]);assert.equal(h.ctx.getFopOperations(h.e).status,'NO OPERATIONS AVAILABLE');
+});
+test('recovery enforces exact current 006/003/004, wrong/duplicate rejection and no 1/3 or 2/3 ownership writes',()=>{
+ const f=recoveryFixture(),before=JSON.stringify(f.sheets['N-Core Register'].rows),order=f.removal();
+ assert.equal(order.operation,'DEINSTALL');assert.equal(order.totalEnergy,859);assert.equal(order.nodeState,'STABLE');assert.deepEqual(Array.from(order.loadout,c=>c.id),['NC-003','NC-004','NC-006']);assert.equal(order.node.code,'0123');
+ assert.throws(f.finish,/EXACTLY_3/);assert.throws(()=>f.removeScan(1),/CORE NOT ASSIGNED TO NODE-001/);
+ assert.equal(f.removeScan(6).count,1);assert.throws(()=>f.removeScan(6),/DUPLICATE/);assert.throws(f.finish,/EXACTLY_3/);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),before);
+ assert.equal(f.removeScan(3).count,2);assert.throws(f.finish,/EXACTLY_3/);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),before);
+ f.removeScan(4);assert.throws(()=>f.ctx.confirmNodeInstallation(f.e),/TYPE_MISMATCH/);
+ const codesBefore=f.sheets['Event Node Codes'].rows[1].slice(2,7),result=f.finish();assert.equal(result.status,'NODE_DEINSTALLED');assert.equal(result.message,'RECOVERY COMPLETE // NODE-001 // 3/3 CORES RETURNED');
+ assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),0);
+ for(const n of [6,3,4]){const row=f.sheets['N-Core Register'].rows[n];assert.equal(row[14],'NODIV_RESERVE');assert.equal(row[15],'HQ');assert.equal(row[4],'RESERVE');assert.match(row[16],/^TX-/)}
+ assert.equal(f.sheets['Node Register'].rows[1][2],'AVAILABLE');assert.equal(f.sheets['Node Register'].rows[1][4],'');
+ assert.deepEqual(f.sheets['Event Node Codes'].rows[1].slice(2,7),codesBefore);assert.deepEqual(f.sheets['Event Node Codes'].rows[1].slice(7,11),['','','DEINSTALLED','']);
+ assert.equal(f.sheets['Transaction Log'].rows.length,5);assert.equal(f.sheets['Transaction Log'].rows[1][2],'NODE_RECOVERY_CORE');assert.equal(f.sheets['Transaction Log'].rows[4][2],'NODE_DEINSTALLED');
+ assert.equal(f.sheets['Event Register'].rows[1][7],0);assert.equal(f.properties.size,0);assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
+ assert.equal(f.ctx.getNodeAccessAuthorization({nodeAccess:true},'NODE-001','AVAILABLE').allowed,false);
+});
+test('recovery failure is atomic, including ownership/log/Node/code/deployment state',()=>{
+ const f=recoveryFixture();f.removal();[3,4,6].forEach(f.removeScan);
+ const before=JSON.stringify([Object.values(f.sheets).map(s=>s.rows),Object.fromEntries(f.properties)]);f.fail();assert.throws(f.finish,/BATCH_FAILED/);
+ assert.equal(JSON.stringify([Object.values(f.sheets).map(s=>s.rows),Object.fromEntries(f.properties)]),before);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
+});
+test('recovery reserves Node and all three Cores against additions, removals, missions and other FOPs',()=>{
+ const f=recoveryFixture();f.removal();assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
+ const secondToken='b'.repeat(72);f.cache.set('NODIV_SESSION_'+secondToken,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));
+ assert.throws(()=>f.ctx.getNodeDeinstallOrder({parameter:{token:secondToken,node:'NODE-001'}}),/RESERVED/);
+ assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-003',expectedFromType:'NODE',expectedFromId:'NODE-001',toType:'NODIV_RESERVE',toId:'HQ'}),/RESERVED/);
+ assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-001',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'NODE',toId:'NODE-001'}),/RESERVED/);
+ assert.equal(f.ctx.getNodeAccessAuthorization({nodeAccess:true},'NODE-001','INSTALLED').reason,'NODE_OPERATION_RESERVED');
+ const carrier=f.sheets['Access Card Register'].rows[1];carrier[6]=3;
+ assert.equal(f.ctx.assignCoreDeployment({parameter:{token:f.e.parameter.token,uid:'uid1',carrier:'F001',targetNode:'NODE-001'}}).status,'NODE_OPERATION_RESERVED');
+ assert.equal(f.ctx.hasOpenDeploymentForCore('NC-003'),true);assert.equal(f.ctx.getPendingPlayerDeployments(f.e).deployments.length,0);
+});
+test('cancelled, expired or revoked recovery releases reservations without changing Node/Core ownership',()=>{
+ const f=recoveryFixture();f.removal();f.removeScan(3);const before=JSON.stringify(f.sheets['N-Core Register'].rows);
+ assert.equal(f.ctx.cancelNodeDeinstallation(f.e).status,'DEINSTALLATION_CANCELLED');assert.equal(f.ctx.hasOpenDeploymentForCore('NC-003'),false);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),before);assert.equal(f.ctx.getFopOperations(f.e).operations[0].type,'DEINSTALL');
+ const g=recoveryFixture();const order=g.removal(),key='NODIV_INSTALL_ORDER_'+order.installation,data=JSON.parse(g.properties.get(key));data.expiresAt=0;g.properties.set(key,JSON.stringify(data));
+ assert.throws(()=>g.removeScan(3),/EXPIRED/);assert.equal(g.ctx.hasOpenDeploymentForCore('NC-003'),false);assert.equal(g.ctx.getFopOperations(g.e).operations.length,1);g.removal();assert.equal(g.sheets['Deployment Register'].rows[1][6],'EXPIRED');
+ const h=recoveryFixture();h.removal();h.cache.delete('NODIV_SESSION_'+h.e.parameter.token);assert.equal(h.ctx.hasOpenDeploymentForCore('NC-003'),false);assert.equal(h.removeScan(3).authenticated,false);
+});
+test('queue/order reject partial, unregistered and non-FIELD_ACTIVE removal states',()=>{
+ for(const count of [0,1,2,4]){const f=fixture({legacy:true,state:'FIELD_ACTIVE',count});assert.equal(f.ctx.getFopOperations(f.e).operations.some(op=>op.type==='DEINSTALL'),false);assert.throws(()=>f.ctx.getNodeDeinstallOrder(f.e),/REQUIRES_3/)}
+ const f=recoveryFixture();f.sheets['Node Register'].rows[1][1]='';assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
+ const g=recoveryFixture();g.sheets['Event Register'].rows[1][1]='INITIALIZED';assert.equal(g.ctx.getFopOperations(g.e).operations.length,0);assert.throws(()=>g.ctx.getNodeDeinstallOrder(g.e),/NOT_FIELD_ACTIVE/);
+});
+test('FIELD_ACTIVE abort stays protected and shutdown reports installed Nodes, owned Cores and open operation',()=>{
+ const f=recoveryFixture(),e=f.addFounder(),before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));
+ assert.equal(f.ctx.abortEvent(e).status,'FIELD_ACTIVE_ABORT_DENIED');assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
+ let result=f.ctx.shutdownFieldEvent(e);assert.equal(result.status,'FIELD_SHUTDOWN_BLOCKED');assert.ok(result.blockers.some(b=>b.includes('NODE-001: DEINSTALLATION_NOT_CONFIRMED')));assert.ok(result.blockers.some(b=>b.includes('NODE-001: 3 NODE-OWNED')));
+ f.removal();result=f.ctx.shutdownFieldEvent(e);assert.ok(result.blockers.some(b=>b==='DEINSTALL // NODE-001: OPEN OPERATION'));assert.equal(f.sheets['Event Register'].rows[1][1],'FIELD_ACTIVE');
+});
+test('shutdown independently rejects a live open operation even on a recovered/empty Node',()=>{
+ const f=recoveryFixture();const order=f.removal();[3,4,6].forEach(f.removeScan);f.finish();
+ // Fault-injected unfinished order metadata: no installed Node remains to mask the operation check.
+ const stored={id:'unfinished',nodeId:'NODE-001',operation:'DEINSTALL',identity:'F001',sessionToken:f.e.parameter.token,eventId:'EVT-1',eventState:'FIELD_ACTIVE',expiresAt:Date.now()+60000,loadout:[],cores:[]};
+ f.properties.set('NODIV_INSTALL_ORDER_unfinished',JSON.stringify(stored));const result=f.ctx.shutdownFieldEvent(f.addFounder());
+ assert.equal(result.status,'FIELD_SHUTDOWN_BLOCKED');assert.deepEqual(Array.from(result.blockers),['DEINSTALL // NODE-001: OPEN OPERATION']);
+});
+test('shutdown is event-bound, Founder-only and rejects even Cores owned by out-of-event Nodes',()=>{
+ const f=recoveryFixture();f.removal();[3,4,6].forEach(f.removeScan);f.finish();
+ assert.equal(f.ctx.shutdownFieldEvent({...f.e,parameter:{...f.e.parameter,event:'EVT-1'}}).status,'ROLE_DENIED');
+ const e=f.addFounder();assert.equal(f.ctx.shutdownFieldEvent({parameter:{...e.parameter,event:'stale'}}).status,'EVENT_MISMATCH');
+ f.sheets['N-Core Register'].rows[1][14]='NODE';f.sheets['N-Core Register'].rows[1][15]='NODE-002';
+ const result=f.ctx.shutdownFieldEvent(e);assert.ok(result.blockers.includes('NODE-002: 1 NODE-OWNED CORE(S)'));assert.equal(f.sheets['Event Register'].rows[1][1],'FIELD_ACTIVE');
+});
+test('recovery then shutdown atomically completes event, preserves history and permits a fresh initialization',()=>{
+ const f=recoveryFixture();f.removal();[6,4,3].forEach(f.removeScan);f.finish();const beforeCodes=f.sheets['Event Node Codes'].rows[1].slice();const beforeNode2=f.sheets['Node Register'].rows[2].slice();
+ const e=f.addFounder(),result=f.ctx.shutdownFieldEvent(e);assert.equal(result.eventState,'COMPLETED');assert.ok(result.completedAt);assert.equal(f.sheets['Event Register'].rows[1][1],'COMPLETED');assert.equal(f.sheets['Event Register'].rows[0][10],'COMPLETED AT');assert.ok(f.sheets['Event Register'].rows[1][10]);
+ assert.equal(f.ctx.readCurrentEvent(),null);assert.deepEqual(f.sheets['Event Node Codes'].rows[1],beforeCodes);assert.deepEqual(f.sheets['Node Register'].rows[2],beforeNode2);
+ assert.equal(f.sheets['Transaction Log'].rows.at(-1)[2],'FIELD_EVENT_SHUTDOWN');assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
+ assert.equal(f.ctx.getNodeAccessAuthorization({nodeAccess:true},'NODE-001','AVAILABLE').allowed,false);
+ // Real preflight remains mandatory; isolate lifecycle eligibility in this test.
+ f.ctx.getEventReadiness=()=>({ok:true,authenticated:true,ready:true});let number=0;f.ctx.generateMechanicalCode=used=>{const code=String(++number).padStart(4,'0');used[code]=true;return code};
+ const next=f.ctx.initializeEvent({parameter:{...e.parameter,nodes:'NODE-001,NODE-002'}});assert.equal(next.status,'EVENT_INITIALIZED');assert.notEqual(next.event.eventId,'EVT-1');assert.equal(f.ctx.readCurrentEvent().state,'INITIALIZED');assert.equal(f.sheets['Event Register'].rows[1][1],'COMPLETED');assert.deepEqual(f.sheets['Event Node Codes'].rows[1],beforeCodes);
+});
+test('shutdown batch failure preserves event phase, timestamps and audit log',()=>{
+ const f=recoveryFixture();f.removal();[6,4,3].forEach(f.removeScan);f.finish();const e=f.addFounder(),before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));f.fail();assert.throws(()=>f.ctx.shutdownFieldEvent(e),/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
+});
+test('recovery final revalidation rejects changed inventory/UIDs and unknown scans without partial writes',()=>{
+ const f=recoveryFixture();f.removal();f.e.parameter.uid='unknown';assert.throws(()=>f.ctx.scanNodeDeinstallationCore(f.e),/CORE_NOT_FOUND/);[6,4,3].forEach(f.removeScan);
+ const before=f.sheets['Transaction Log'].rows.length;f.sheets['N-Core Register'].rows[3][2]='replaced';assert.throws(f.finish,/CORE_NOT_AT_NODE/);assert.equal(f.sheets['Transaction Log'].rows.length,before);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
+ const g=recoveryFixture();g.removal();[6,4,3].forEach(g.removeScan);g.sheets['N-Core Register'].rows[1][14]='NODE';g.sheets['N-Core Register'].rows[1][15]='NODE-001';assert.throws(g.finish,/REQUIRES_3/);assert.equal(g.sheets['Node Register'].rows[1][2],'INSTALLED');
+});
+test('shutdown requires proper deinstallation records, not merely zero Node-owned Cores',()=>{
+ const f=recoveryFixture();for(const n of [6,3,4]){f.sheets['N-Core Register'].rows[n][14]='NODIV_RESERVE';f.sheets['N-Core Register'].rows[n][15]='HQ'}
+ const result=f.ctx.shutdownFieldEvent(f.addFounder());assert.equal(result.status,'FIELD_SHUTDOWN_BLOCKED');assert.ok(result.blockers.includes('NODE-001: DEINSTALLATION_NOT_CONFIRMED'));
+});

@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-loadout2';
+import {routeIdentity} from './router.js?v=20261004-ops3';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -222,6 +222,7 @@ async function refreshFounderEventStatus(){
   if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S)'):(nodes.length+' provisionierte Node(s) bereit.');
   if(init)init.disabled=true;
   if(activate)activate.disabled=ev.state!=='INITIALIZED';
+  const shutdown=document.querySelector('#shutdownFieldEvent');if(shutdown){shutdown.disabled=ev.state!=='FIELD_ACTIVE';shutdown.dataset.eventId=ev.eventId||'';}
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
 }
 window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEventStatus,0)});
@@ -338,10 +339,38 @@ window.addEventListener('nodiv-founder-event-activate',async()=>{
  }catch(err){showFounderResult('AKTIVIERUNG GESPERRT',String(err.message||err),false,btn)}
  finally{if(btn)btn.textContent='FIELD OPERATIONS AKTIVIEREN';await refreshFounderEventStatus()}
 });
-let fopInstallation=null,fopInstallBusy=false;
+window.addEventListener('nodiv-founder-event-shutdown',async()=>{
+ if(!sessionToken)return;
+ const btn=document.querySelector('#shutdownFieldEvent');if(!btn?.dataset.eventId)return;
+ btn.disabled=true;
+ try{
+  const r=await apiRequest({action:'eventshutdown',token:sessionToken,event:btn.dataset.eventId});
+  if(!r?.ok||r.action!==true)throw new Error(r?.message||r?.status||r?.error||'FIELD SHUTDOWN BLOCKED');
+  showFounderResult('FIELD EVENT SHUTDOWN // ALPHA',r.eventId+' // '+r.eventState,true,btn);
+ }catch(err){showFounderResult('FIELD SHUTDOWN BLOCKED',String(err.message||err),false,btn)}finally{await refreshFounderEventStatus()}
+});
+
+let fopInstallation=null,fopInstallBusy=false,fopOperations=[],fopQueueBusy=false;
+function selectedFopOperation(){const value=document.querySelector('#fopOperationSelect')?.value;return fopOperations.find(operation=>operation.id===value)||null}
+async function refreshFopOperations(){
+ if(!sessionToken||fopInstallBusy||fopQueueBusy)return;
+ const select=document.querySelector('#fopOperationSelect'),hint=document.querySelector('#fopInstallHint');if(!select)return;
+ fopQueueBusy=true;fopOperations=[];renderFopInstallation(fopInstallation);
+ try{
+  const r=await apiRequest({action:'fopoperations',token:sessionToken});
+  if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'OPERATIONS QUEUE UNAVAILABLE');
+  fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
+  select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'OPERATION AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
+  for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value='';
+ }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='NO OPERATIONS AVAILABLE';select.appendChild(option);if(hint)hint.textContent=String(err.message||err)}
+ finally{fopQueueBusy=false;renderFopInstallation(fopInstallation)}
+}
+window.addEventListener('nodiv-fop-operations',refreshFopOperations);
+window.addEventListener('nodiv-fop-operation-select',()=>renderFopInstallation(fopInstallation));
 function renderFopInstallation(result){
  const progress=document.querySelector('#fopInstallProgress'),list=document.querySelector('#fopInstallCores'),scan=document.querySelector('#fopInstallScan'),confirm=document.querySelector('#fopInstallConfirm');
- const complete=result?.status==='NODE_INSTALLED';
+ const complete=['NODE_INSTALLED','NODE_DEINSTALLED'].includes(result?.status),removal=result?.operation==='DEINSTALL';
+ const card=document.querySelector('#fopDeploymentCard');if(card)card.dataset.operation=removal?'DEINSTALL':'INSTALL';
  const setText=(id,text)=>{const el=document.querySelector(id);if(el)el.textContent=text};
  if(progress)progress.textContent=String(result?.count||0)+'/3';
  const bar=document.querySelector('#fopProgressBar');if(bar)bar.value=result?.count||0;
@@ -349,36 +378,46 @@ function renderFopInstallation(result){
   const item=document.createElement('article');item.className='fop-core'+(core.scanned?' verified':'');
   for(const [tag,text] of [['small',core.id],['strong',core.energy+' E'],['span',core.scanned?'VERIFIED':'AWAITING SCAN']]){const el=document.createElement(tag);el.textContent=text;item.appendChild(el)}list.appendChild(item);
  }}
- setText('#fopDeploymentNode',result?.node?.id||'SELECT NODE');
+ setText('#fopDeploymentNode',result?.node?.id||'SELECT OPERATION');
  setText('#fopLoadoutEnergy',result?result.totalEnergy+' E':'— E');
  setText('#fopLoadoutState',result?.nodeState||'—');
  const state=document.querySelector('#fopLoadoutState');if(state)state.dataset.state=result?.nodeState||'';
- setText('#fopOperationStatus',complete?'COMPLETE':result?'DEPLOYING':'READY');
- for(const id of ['#fopInstallControls','#fopPrimaryPanel','#fopScanProgress','#fopInstallActions']){const el=document.querySelector(id);if(el)el.hidden=complete}
+ setText('#fopOperationStatus',complete?'COMPLETE':result?(removal?'RECOVERING':'DEPLOYING'):'READY');
+ setText('#fopOperationLabel',removal?'FIELD RECOVERY':'FIELD INSTALLATION');
+ setText('#fopDeploymentLabel',removal?'NODE DEINSTALLATION':'NODE DEPLOYMENT');
+ setText('#fopLoadoutLabel',removal?'REMOVAL LOADOUT':'ASSIGNED LOADOUT');
+ setText('#fopEnergyLabel',removal?'RECOVERABLE ENERGY':'TOTAL ENERGY');
+ setText('#fopStateLabel',removal?'CURRENT NODE STATE':'PROJECTED NODE STATE');
+ setText('#fopCodeLabel',removal?'ACTIVE LOCK CODE':result?.node?.slot||'PRIMARY CODE');
+ setText('#fopInstallConfirm',removal?'RECOVERY BESTÄTIGEN':'INSTALLATION BESTÄTIGEN');
+ if(!fopInstallBusy)setText('#fopInstallScan',removal?'REMOVAL CORE SCANNEN':'CODE EINGESTELLT // CORE SCANNEN');
+ for(const id of ['#fopPrimaryPanel','#fopScanProgress','#fopInstallActions']){const el=document.querySelector(id);if(el)el.hidden=complete}
  const panel=document.querySelector('#fopInstallCode');if(panel)panel.hidden=!result||complete;
- const summary=document.querySelector('#fopDeploymentComplete');if(summary){summary.hidden=!complete;summary.textContent=complete?'DEPLOYMENT COMPLETE // '+result.node.id+' // 3/3 // '+result.totalEnergy+' E // '+result.nodeState:''}
+ const summary=document.querySelector('#fopDeploymentComplete');if(summary){summary.hidden=!complete;summary.textContent=complete?(removal?'RECOVERY COMPLETE // '+result.node.id+' // 3/3 CORES RETURNED':'DEPLOYMENT COMPLETE // '+result.node.id+' // 3/3 // '+result.totalEnergy+' E // '+result.nodeState):''}
  if(scan)scan.disabled=!result||complete||result.count>=3||fopInstallBusy;
  if(confirm)confirm.disabled=complete||!result?.canConfirm||fopInstallBusy;
  const cancel=document.querySelector('#fopInstallCancel');if(cancel)cancel.disabled=!result||complete||fopInstallBusy;
- const order=document.querySelector('#fopInstallOrder');if(order)order.disabled=fopInstallBusy;
- const input=document.querySelector('#fopNodeId');if(input)input.disabled=fopInstallBusy||Boolean(result&&!complete);
+ const active=Boolean(result&&!complete),selected=selectedFopOperation();
+ const order=document.querySelector('#fopInstallOrder');if(order)order.disabled=fopInstallBusy||fopQueueBusy||active||!selected;
+ const select=document.querySelector('#fopOperationSelect');if(select)select.disabled=fopInstallBusy||fopQueueBusy||active||!fopOperations.length;
+ const refresh=document.querySelector('#fopQueueRefresh');if(refresh)refresh.disabled=fopInstallBusy||fopQueueBusy||active;
 }
-function fopRequestParams(action){return {action,token:sessionToken,node:fopInstallation.node.id,installation:fopInstallation.installation}}
+function fopRequestParams(action){const resolved=fopInstallation.operation==='DEINSTALL'?action.replace('nodeinstall','nodedeinstall'):action;return {action:resolved,token:sessionToken,node:fopInstallation.node.id,installation:fopInstallation.installation}}
 window.addEventListener('nodiv-fop-install-order',async()=>{
  if(!sessionToken||fopInstallBusy)return;
- const input=document.querySelector('#fopNodeId'),btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
- const node=String(input?.value||'').trim().toUpperCase();
- if(!/^NODE-\d{3}$/.test(node)){if(hint)hint.textContent='Gültige Node-ID eingeben, z. B. NODE-001.';return}
+ const btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
+ const operation=selectedFopOperation();if(!operation||fopQueueBusy||fopInstallation&&!['NODE_INSTALLED','NODE_DEINSTALLED'].includes(fopInstallation.status)){if(hint)hint.textContent='Zulässige Operation aus der Queue auswählen.';return}
+ const node=operation.nodeId;
  fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
-  const r=await apiRequest({action:'nodeinstallorder',token:sessionToken,node});
+  const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node});
   if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
   fopInstallation=r;
   if(panel)panel.hidden=false;
   if(value)value.textContent=r.node.code;
   if(hint)hint.textContent=node+' // '+r.instruction;
  }catch(err){if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
- finally{fopInstallBusy=false;renderFopInstallation(fopInstallation);if(btn)btn.disabled=false}
+ finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
 });
 window.addEventListener('nodiv-fop-install-scan',async()=>{
  if(!sessionToken||!fopInstallation||fopInstallBusy||fopInstallation.count>=3)return;
@@ -398,7 +437,7 @@ window.addEventListener('nodiv-fop-install-scan',async()=>{
     const r=await apiRequest({...fopRequestParams('nodeinstallscan'),uid});
     if(!r?.ok||r.action!==true)throw new Error(r?.message||r?.status||r?.error||'CORE ABGEWIESEN');
     fopInstallation=r;
-    if(hint)hint.textContent=r.node.id+' // '+r.count+'/3'+(r.canConfirm?' // Drei Cores physisch einsetzen, dann Installation bestätigen.':' // Nächsten Core scannen.');
+    if(hint)hint.textContent=r.node.id+' // '+r.count+'/3'+(r.canConfirm?(r.operation==='DEINSTALL'?' // Drei Cores physisch entfernen, dann Recovery bestätigen.':' // Drei Cores physisch einsetzen, dann Installation bestätigen.'):' // Nächsten zugewiesenen Core scannen.');
    }catch(err){if(hint)hint.textContent=String(err.message||err)}finally{finish()}
   };
  }catch(err){if(hint)hint.textContent=String(err.message||err);finish()}
@@ -411,10 +450,10 @@ window.addEventListener('nodiv-fop-install-confirm',async()=>{
   const r=await apiRequest(fopRequestParams('nodeinstallconfirm'));
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'BESTÄTIGUNG FEHLGESCHLAGEN');
   fopInstallation={...fopInstallation,...r,canConfirm:false};
-  if(hint)hint.textContent='Installation serverseitig bestätigt.';
+  if(hint)hint.textContent=r.status==='NODE_DEINSTALLED'?'Recovery serverseitig bestätigt.':'Installation serverseitig bestätigt.';
   emitNodiv('IDENTITY_VERIFIED',{target:'#fopInstallCode'});
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
- finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
+ finally{fopInstallBusy=false;renderFopInstallation(fopInstallation);if(['NODE_INSTALLED','NODE_DEINSTALLED'].includes(fopInstallation?.status))await refreshFopOperations()}
 });
 
 window.addEventListener('nodiv-fop-install-cancel',async()=>{
@@ -424,7 +463,7 @@ window.addEventListener('nodiv-fop-install-cancel',async()=>{
   const r=await apiRequest(fopRequestParams('nodeinstallcancel'));
   if(!r?.ok||r.action!==true)throw new Error(r?.message||r?.status||r?.error||'ABBRUCH FEHLGESCHLAGEN');
   fopInstallation=null;if(hint)hint.textContent='Auftrag abgebrochen // Loadout freigegeben.';
- }catch(err){if(hint)hint.textContent=String(err.message||err)}finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
+ }catch(err){if(hint)hint.textContent=String(err.message||err)}finally{fopInstallBusy=false;renderFopInstallation(fopInstallation);if(!fopInstallation)await refreshFopOperations()}
 });
 
 window.addEventListener('nodiv-founder-core-open',async()=>{

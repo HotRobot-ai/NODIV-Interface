@@ -74,8 +74,8 @@ all UIDs, ownership/status, assignment and competing mission deployments under
 ScriptLock. Existing ownership/transaction helpers prepare one atomic Sheets
 batch for transfers, log entries, reservation delivery and Node/code activation.
 Other ownership transfers respect these reservations; installation rows cannot
-be accepted/displayed as mission cargo. Successful installation hides inputs,
-PRIMARY and actions and shows a compact DEPLOYMENT COMPLETE summary.
+be accepted/displayed as mission cargo. Successful installation hides PRIMARY and scan/confirm controls and shows a
+compact DEPLOYMENT COMPLETE summary.
 
 Existing complete Nodes are rejected before selection or writes. In particular,
 no changes/migration run for NODE-001's real 859 E loadout (NC-006=105,
@@ -95,3 +95,63 @@ isolation/expiry/cancellation, foreign and unordered scans, atomic failure,
 existing transfer behavior and preservation of the real NODE-001 fixture.
 Physical Android NFC, UID reading, lock setup, Core insertion, deployed API
 permissions and concurrent real-device operations require real-world validation.
+
+
+## FOP operations, recovery and Alpha shutdown
+
+The mobile FOP console now selects only server-listed operations; free Node-ID
+entry is removed. `fopoperations` returns `{id, type, nodeId, label}` options such
+as `INSTALL // NODE-002` or `DEINSTALL // NODE-001`. Empty/unavailable queues show
+`NO OPERATIONS AVAILABLE` and disable retrieval. The list is read-only: it checks
+current event membership, provisioning, Node/core state, assignments, stock and
+live reservations without adding Event Nodes. Order retrieval repeats validation
+under ScriptLock, so stale/spoofed selections cannot authorize an operation.
+NODE-002 provisioned after the current initialization stays outside that event.
+
+The existing installation selection and atomic booking remain. Recovery reuses
+its expiring session/event-bound order metadata, Deployment Register reservations,
+scan validation, cancellation and ownership/log batch helpers. New reservation
+purpose: `NODE_DEINSTALLATION`; installation rows retain `NODE_INSTALLATION`.
+Prior installation attribution does not restrict which authorized FOP can accept
+a recovery; the new order binds its own FOP/session. Node access, Node-targeted
+mission assignment and competing ownership transfers are blocked during either
+live FOP operation. Expiry/revocation or explicit cancellation releases the
+reservation; scans never move ownership. Abort a partially performed physical
+recovery only after restoring the physical state represented by the database.
+
+| Action | Required parameters beyond `action` | Result |
+| --- | --- | --- |
+| `fopoperations` | `token` | Current authorized operation options |
+| `nodedeinstallorder` | `token`, `node` | Exact three current NODE-owned Core IDs/E/UID-bound removal order |
+| `nodedeinstallscan` | `token`, `node`, `installation`, `uid` | Verified 0/3–3/3 removal progress |
+| `nodedeinstallcancel` | `token`, `node`, `installation` | Release recovery reservations, ownership unchanged |
+| `nodedeinstallconfirm` | `token`, `node`, `installation` | Atomic 3/3 return to HQ + code/Node deactivation |
+| `eventshutdown` | Founder `token`, current `event` ID | Technical FIELD_ACTIVE -> COMPLETED, or concrete blockers |
+
+On explicit 3/3 recovery confirmation, one atomic Sheets batch moves all three
+Cores from NODE to NODIV_RESERVE/HQ with RESERVE status, records transactions,
+closes reservation rows, sets the Node AVAILABLE, clears current FOP attribution
+and disables active/pending code slots. Event Node Codes uses DEINSTALLED; all
+five mechanical codes and the historical INSTALLED AT remain. Node recovery and
+its actor are retained in the Transaction Log. Success shows
+`RECOVERY COMPLETE // NODE-001 // 3/3 CORES RETURNED` and hides scan/confirm/code
+controls. Loadout energy is labeled recoverable energy/current Node state.
+
+The Founder Event Control button `FIELD EVENT SHUTDOWN // ALPHA BESTÄTIGEN`
+invokes a separate event-bound shutdown. `abortEvent()` stays unchanged and denies
+FIELD_ACTIVE. Shutdown requires all Event Node records to be DEINSTALLED with
+inactive codes and AVAILABLE physical register state, zero Node-owned Cores
+(including outside the event), and no live installation/recovery orders for the
+current event. Failure returns `FIELD_SHUTDOWN_BLOCKED`, `message` and `blockers`.
+Success atomically writes COMPLETED, zero active Nodes, UPDATED AT and a new
+COMPLETED AT column (K) plus FIELD_EVENT_SHUTDOWN audit entry. No history is
+removed; completed events are excluded by the existing readCurrentEvent(). New
+initialization still requires the existing readiness/preflight process.
+This is only an Alpha technical shutdown, not story evacuation or final uploads.
+
+Deployment does not run recovery, alter NODE-001's 859 E loadout, add NODE-002 to
+the active event or migrate data. Sync Code.js and redeploy the same Apps Script
+web app; existing Sheets v4 service is reused. Column K is added only on explicit
+successful shutdown. Physical Android NFC, removal/return to HQ, concurrent device
+locking, empty/eligible queue display, mobile layout, blocked shutdown and successful
+shutdown/new-event preparation require real-device checks after deployment.
