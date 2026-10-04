@@ -620,28 +620,38 @@ function renderPioneerRestore(result,atNode=false){
  const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount'),panel=document.querySelector('#pioneerRestore');
  const phase=Number(result.phase||1),complete=['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(result.status),active=result.restore&&!complete;
  const missionLabel=document.querySelector('#restoreMissionLabel');if(missionLabel)missionLabel.textContent='RESTORE #'+phase;
- if(board)board.textContent=active?'RESTORE #'+phase+' // '+result.nodeId+' // '+result.inCore.id+' / '+result.inCore.energy+' E // IN TRANSIT (MISSION CARGO)':'NO ACTIVE RESTORE';
+ if(board)board.innerHTML=active?'<div><b>RESTORE #'+phase+'</b><span>AKTIV</span></div><p>'+result.nodeId+' wartet auf dich. Öffne die Mission und folge nur dem jeweils markierten Schritt.</p>':'<div><b>FIELD COMMS</b><span>STANDBY</span></div><p>Keine aktive RESTORE-Mission.</p>';
  if(count)count.textContent=active?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
  if(!panel)return;panel.hidden=!result.restore;
- document.querySelector('#restoreNode').textContent=result.nodeId+' // '+result.nodeState;
+ document.querySelector('#restoreNode').textContent=result.nodeId;
  const inCard=document.querySelector('#restoreInCard'),outCard=document.querySelector('#restoreOutCard');
- document.querySelector('#restoreInCore').textContent=result.inCore.id;
- document.querySelector('#restoreInEnergy').textContent=result.inCore.energy+' E';
- document.querySelector('#restoreOutCore').textContent=result.outCore.id;
- document.querySelector('#restoreOutEnergy').textContent=result.outCore.energy+' E';
- document.querySelector('#restoreCurrentEnergy').textContent=result.totalEnergy+' E';
- document.querySelector('#restoreProjectedEnergy').textContent=result.projectedEnergy+' E';
- if(inCard)inCard.dataset.state=result.inCount?'done':'pending';
- if(outCard)outCard.dataset.state=result.outCount?'done':'pending';
- const badge=document.querySelector('#restoreStateBadge');if(badge){badge.textContent=complete?'COMPLETE':result.authorized?'AUTHORIZED':atNode?'AT NODE':'IN TRANSIT';badge.dataset.state=complete?'done':result.authorized?'active':'pending';}
+ document.querySelector('#restoreInCore').textContent=result.inCore.id;document.querySelector('#restoreInEnergy').textContent=result.inCore.energy+' E';
+ document.querySelector('#restoreOutCore').textContent=result.outCore.id;document.querySelector('#restoreOutEnergy').textContent=result.outCore.energy+' E';
+ document.querySelector('#restoreCurrentEnergy').textContent=result.totalEnergy+' E';document.querySelector('#restoreProjectedEnergy').textContent=result.projectedEnergy+' E';
+ if(inCard)inCard.dataset.state=result.inCount?'done':'pending';if(outCard)outCard.dataset.state=result.outCount?'done':'pending';
+ const badge=document.querySelector('#restoreStateBadge');if(badge){badge.textContent=complete?'ERLEDIGT':result.authorized?'NODE OFFEN':atNode?'AM NODE':'AKTIV';badge.dataset.state=complete?'done':result.authorized?'active':'pending';}
  document.querySelector('#restoreProjection').textContent=result.nodeState+' → '+result.projectedState;
- document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE  '+result.accessCode:'';
- document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY '+(result.capacity||phase+1)+'/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1   //   OUT '+result.outCount+'/1';
+ document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'ZUGANGSCODE  '+result.accessCode:'';
+ document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY '+(result.capacity||phase+1)+'/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1';
+ const step=(id,state)=>{const el=document.querySelector(id);if(el)el.dataset.state=state;};
+ const hqDone=Boolean(atNode||result.authorized||result.inCount||result.outCount||complete),nodeDone=Boolean(result.authorized||result.inCount||result.outCount||complete),inDone=Boolean(result.inCount||complete),outDone=Boolean(result.outCount||complete);
+ let current='hq';if(hqDone)current='node';if(nodeDone)current='in';if(inDone)current='out';if(outDone)current='confirm';if(complete)current='complete';
+ step('#restoreStepHq',hqDone?'done':current==='hq'?'current':'waiting');step('#restoreStepNode',nodeDone?'done':current==='node'?'current':'waiting');step('#restoreStepIn',inDone?'done':current==='in'?'current':'waiting');step('#restoreStepOut',outDone?'done':current==='out'?'current':'waiting');
+ document.querySelector('#restoreStepHqDetail').textContent=hqDone?'Erledigt':result.inCore.id+' // '+result.inCore.energy+' E';
+ document.querySelector('#restoreStepNodeDetail').textContent=nodeDone?'Erledigt':result.nodeId;
+ document.querySelector('#restoreStepInTitle').textContent=result.inCore.id+' einsetzen';document.querySelector('#restoreStepInDetail').textContent=inDone?'Erledigt':result.inCore.energy+' E';
+ document.querySelector('#restoreStepOutTitle').textContent=result.outCore.id+' entnehmen';document.querySelector('#restoreStepOutDetail').textContent=outDone?'Erledigt':result.outCore.energy+' E';
+ const now=document.querySelector('#restoreNowTitle'),hint=document.querySelector('#restoreHint');
+ if(complete){now.textContent='RESTORE ERFOLGREICH';hint.textContent=phase===2?'NODE stabilisiert. Dritter Slot freigeschaltet.':'NODE stabilisiert. Zweiter Slot freigeschaltet.';}
+ else if(current==='hq'){now.textContent=result.inCore.id+' AM HQ ÜBERNEHMEN';hint.textContent='Nimm den angezeigten Transport-Core auf. Danach zum Ziel-Node gehen und dessen NFC-Tag scannen.';}
+ else if(current==='node'){now.textContent=result.nodeId+' SCANNEN';hint.textContent='Halte dein Smartphone an den NFC-Tag des Ziel-Nodes.';}
+ else if(current==='in'){now.textContent=result.inCore.id+' EINSETZEN';hint.textContent='Setze den Transport-Core ein und scanne ihn mit dem Smartphone.';}
+ else if(current==='out'){now.textContent=result.outCore.id+' ENTNEHMEN';hint.textContent='Entnimm genau diesen Node-Core und scanne ihn mit dem Smartphone.';}
+ else {now.textContent='RESTORE ABSCHLIESSEN';hint.textContent='Alle erforderlichen Schritte sind bestätigt. Schließe den RESTORE jetzt ab.';}
  const auth=document.querySelector('#restoreAuthorize'),scan=document.querySelector('#restoreScan'),confirm=document.querySelector('#restoreConfirm');
- auth.hidden=!active||!atNode||result.authorized;auth.disabled=pioneerRestoreBusy;
- scan.hidden=!active||!atNode||!result.authorized;scan.disabled=pioneerRestoreBusy||Boolean(result.canConfirm);scan.textContent=result.inCount?'VORGESCHRIEBENEN NODE-CORE SCANNEN':'TRANSIT-CORE SCANNEN';
- confirm.hidden=!active||!atNode||!result.authorized;confirm.disabled=pioneerRestoreBusy||!result.canConfirm;
- document.querySelector('#restoreHint').textContent=complete?(phase===2?'Persönlicher Besitz unverändert. Dritter Slot freigeschaltet.':'Zweiter Slot freigeschaltet.'):atNode?'Nur den zugewiesenen Transit-Core und den vorgeschriebenen niedrigsten Node-Core scannen.':'Transport-Core am HQ übernehmen und Ziel-Node per NFC scannen.';
+ auth.hidden=!active||current!=='node';auth.disabled=pioneerRestoreBusy;auth.textContent='NODE ÖFFNEN';
+ scan.hidden=!active||!['in','out'].includes(current);scan.disabled=pioneerRestoreBusy;scan.textContent=current==='out'?result.outCore.id+' SCANNEN':result.inCore.id+' SCANNEN';
+ confirm.hidden=!active||current!=='confirm';confirm.disabled=pioneerRestoreBusy||!result.canConfirm;
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=Boolean(active&&atNode&&result.authorized);
 }
 window.addEventListener('nodiv-pioneer-restore-status',async()=>{
