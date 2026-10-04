@@ -257,3 +257,17 @@
 
 /* Restore uses existing Pioneer/HQ field styling. */
 #pioneerRestore{margin-top:16px}#pioneerRestore .role-action{width:100%;margin-top:10px}#restoreCode{font-size:1.35rem;letter-spacing:.12em;overflow-wrap:anywhere}#restoreLoadout,#restoreHint,#founderRestoreHint{overflow-wrap:anywhere}#restoreProgress{font-weight:700;color:#90dcf2}#restorePioneerSelect{width:100%;min-height:48px;background:#081017;color:inherit;border:1px solid #315362;padding:12px;font:inherit}
+
+/* Pioneer Restore: compact physical workflow. */
+#pioneerRestore.restore-card{margin-top:14px;padding:14px;border:1px solid #315f73;border-radius:12px;background:linear-gradient(180deg,#071821,#050d12)}
+.restore-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #244654}
+.restore-head small{display:block;color:#7fa4b4;font-size:9px;letter-spacing:.14em}.restore-head strong{display:block;margin-top:5px;font-size:18px;letter-spacing:.04em}
+#restoreStateBadge{padding:6px 8px;border:1px solid #8f2f36;border-radius:999px;color:#ff8d94;font:700 8px ui-monospace,monospace;letter-spacing:.1em;white-space:nowrap}
+#restoreStateBadge[data-state="active"]{border-color:#b58a35;color:#f0c96d}#restoreStateBadge[data-state="done"]{border-color:#367b59;color:#78d9a8}
+.restore-core-grid{display:grid;grid-template-columns:1fr 24px 1fr;gap:7px;align-items:center;margin:14px 0}
+.restore-core{min-width:0;padding:12px 8px;border:1px solid #8f2f36;border-radius:9px;background:#160b0e;text-align:center}.restore-core[data-state="done"]{border-color:#367b59;background:#091710}
+.restore-core small{display:block;color:#839ba5;font-size:7px;letter-spacing:.09em}.restore-core b{display:block;margin:8px 0 4px;font-size:17px}.restore-core span{font-size:12px;color:#b9d1da}
+.restore-arrow{text-align:center;color:#6f98a8;font-size:18px}.restore-energy{display:grid;grid-template-columns:1fr 1fr;border:1px solid #244654;border-radius:9px;overflow:hidden}.restore-energy>div{padding:10px}.restore-energy>div+div{border-left:1px solid #244654}.restore-energy small{display:block;color:#6f8b98;font-size:7px;letter-spacing:.1em}.restore-energy b{display:block;margin-top:4px;font-size:16px}
+.restore-projection{margin:8px 0 0;text-align:center;color:#91cfe2;font:700 10px ui-monospace,monospace;letter-spacing:.08em}.restore-code{margin:14px 0 0;padding:12px;border:1px solid #b58a35;border-radius:8px;color:#f0c96d;text-align:center;font:700 18px ui-monospace,monospace;letter-spacing:.08em}.restore-code:empty{display:none}
+.restore-progress{margin:14px 0 0;padding:10px;border-radius:8px;background:#071219;color:#90dcf2;text-align:center;font:700 12px ui-monospace,monospace}.restore-hint{margin:10px 0;color:#a9bcc4;font-size:11px;line-height:1.5}
+#pioneerRestore .role-action{width:100%;margin-top:8px}
