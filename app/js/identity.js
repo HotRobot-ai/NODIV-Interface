@@ -680,6 +680,15 @@ document.addEventListener('click',async e=>{
   hint.textContent=r.message||'NODE-002 // RESTORE TEST LOADOUT ARMED';
  }catch(err){hint.textContent=String(err.message||err);button.disabled=false;}
 });
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('#repairRestoreReward');if(!button||!sessionToken)return;
+ const hint=document.querySelector('#founderRestoreHint');button.disabled=true;
+ try{
+  const r=await apiRequest({action:'restore1repairreward',token:sessionToken});
+  if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE REWARD REPAIR FAILED');
+  hint.textContent=r.message||'P003 // NC-013 94 E // 2/3 READY';
+ }catch(err){hint.textContent=String(err.message||err);button.disabled=false;}
+});
 window.addEventListener('nodiv-founder-restore',async e=>{
  if(!sessionToken)return;
  const select=document.querySelector('#restorePioneerSelect'),hint=document.querySelector('#founderRestoreHint'),button=document.querySelector('#assignRestore');
