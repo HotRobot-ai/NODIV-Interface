@@ -3885,7 +3885,7 @@ function selectRestoreTestLoadout(available){
   const triple=[cores[i],cores[j],cores[k]],total=triple.reduce((s,x)=>s+x.visibleEnergy,0);
   if(total<450||total>=600)continue;
   const low=triple[0],used=new Set(triple.map(x=>x.coreId));
-  const restore=cores.filter(x=>!used.has(x.coreId)).find(x=>total-low.visibleEnergy+x.visibleEnergy>=600);
+  const restore=cores.filter(x=>!used.has(x.coreId)).find(x=>total-low.visibleEnergy+x.visibleEnergy>=450);
   if(!restore)continue;
   const score=599-total;
   if(!best||score<best.score)best={triple,restore,score,total};
