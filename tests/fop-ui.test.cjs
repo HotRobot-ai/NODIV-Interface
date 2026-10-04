@@ -8,7 +8,7 @@ function ui({operation='INSTALL',empty=false}={}){
   replaceChildren(){this.children=[]}
   appendChild(child){this.children.push(child)}
  }
- const elements={};for(const id of ['fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent'])elements['#'+id]=new Element();
+ const elements={};for(const id of ['fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness'])elements['#'+id]=new Element();
  const listeners={},document={querySelector:id=>elements[id]||null,createElement:()=>new Element()},requests=[];
  const ctx={document,console,AbortController,setTimeout,clearTimeout,URLSearchParams,emitNodiv(){},window:{addEventListener:(name,fn)=>listeners[name]=fn}};
  ctx.window.NDEFReader=ctx.NDEFReader=class{async scan(){ctx.reader=this}};
@@ -55,4 +55,28 @@ test('Founder shutdown sends the displayed Event ID and uses technical Alpha lan
  const f=ui(),button=f.elements['#shutdownFieldEvent'],results=[];button.dataset.eventId='EVT-1';
  f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:true,action:true,eventId:'EVT-1',eventState:'COMPLETED'}};f.ctx.refreshFounderEventStatus=async()=>{};f.ctx.showFounderResult=(title,detail)=>results.push({title,detail});
  await f.listeners['nodiv-founder-event-shutdown']();assert.equal(f.requests[0].action,'eventshutdown');assert.equal(f.requests[0].event,'EVT-1');assert.equal(results[0].title,'FIELD EVENT SHUTDOWN // ALPHA');
+});
+
+test('Founder initialization requires fresh strict readiness and survives standby status refresh',async()=>{
+ const f=ui(),e=f.elements;let state='STANDBY',ready=true,fail=false;
+ f.ctx.showFounderResult=()=>{};
+ f.ctx.apiRequest=async p=>{
+  if(p.action==='eventstatus')return {ok:true,event:{state},provisionedNodes:[]};
+  if(fail)throw new Error('network error');
+  return {ok:true,ready,checks:[]};
+ };
+ const refresh=()=>f.ctx.refreshFounderEventStatus(),check=()=>f.listeners['nodiv-founder-event-readiness']();
+ await refresh();assert.equal(e['#initializeEvent'].disabled,true);
+ state='COMPLETED';await refresh();assert.equal(e['#initializeEvent'].disabled,true);
+ await check();assert.equal(e['#initializeEvent'].disabled,false);
+ await refresh();assert.equal(e['#initializeEvent'].disabled,false);
+ state='STANDBY';await refresh();assert.equal(e['#initializeEvent'].disabled,false);
+ for(const active of ['INITIALIZED','FIELD_ACTIVE']){
+  state=active;await refresh();assert.equal(e['#initializeEvent'].disabled,true);
+  await check();assert.equal(e['#initializeEvent'].disabled,true);
+  state='COMPLETED';await refresh();assert.equal(e['#initializeEvent'].disabled,true);
+ }
+ await check();assert.equal(e['#initializeEvent'].disabled,false);
+ for(const invalid of [false,'true',1]){ready=invalid;await check();await refresh();assert.equal(e['#initializeEvent'].disabled,true)}
+ ready=true;await check();fail=true;await check();await refresh();assert.equal(e['#initializeEvent'].disabled,true);
 });

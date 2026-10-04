@@ -209,6 +209,11 @@ function showFounderResult(title,detail,ok,target){
  el.innerHTML='<strong>'+String(title)+'</strong><span>'+String(detail)+'</span>';
 }
 
+let founderEventReady=false;
+function founderCanInitialize(){
+ const state=document.querySelector('#eventState')?.textContent||'STANDBY';
+ return founderEventReady && ['STANDBY','COMPLETED'].includes(state);
+}
 async function refreshFounderEventStatus(){
  if(!sessionToken)return;
  const state=document.querySelector('#eventState'),hint=document.querySelector('#eventHint'),list=document.querySelector('#eventNodes'),init=document.querySelector('#initializeEvent'),activate=document.querySelector('#activateEvent');
@@ -220,7 +225,8 @@ async function refreshFounderEventStatus(){
   state.textContent=ev.state||'STANDBY';
   if(list)list.innerHTML=nodes.length?nodes.map(n=>'<span>'+n+'</span>').join(''):'<span>KEINE NODES</span>';
   if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S)'):(nodes.length+' provisionierte Node(s) bereit.');
-  if(init)init.disabled=true;
+  if(!['STANDBY','COMPLETED'].includes(ev.state||'STANDBY'))founderEventReady=false;
+  if(init)init.disabled=!founderCanInitialize();
   if(activate)activate.disabled=ev.state!=='INITIALIZED';
   const shutdown=document.querySelector('#shutdownFieldEvent');if(shutdown){shutdown.disabled=ev.state!=='FIELD_ACTIVE';shutdown.dataset.eventId=ev.eventId||'';}
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
@@ -229,6 +235,8 @@ window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEve
 window.addEventListener('nodiv-founder-event-readiness',async()=>{
  if(!sessionToken)return;
  const btn=document.querySelector('#checkEventReadiness'),init=document.querySelector('#initializeEvent'),repair=document.querySelector('#repairCoreOwnership');
+ founderEventReady=false;
+ if(init)init.disabled=true;
  if(btn){btn.disabled=true;btn.textContent='PRÜFUNG LÄUFT'}
  try{
   const r=await apiRequest({action:'eventreadiness',token:sessionToken});
@@ -262,10 +270,11 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
   if(physical){physical.disabled=!r.systemReady||!!preflightMap.PHYSICAL_EQUIPMENT?.confirmed;physical.textContent=preflightMap.PHYSICAL_EQUIPMENT?.confirmed?'PHYSICAL EQUIPMENT ✓':'PHYSICAL EQUIPMENT BESTÄTIGEN'}
   if(config){config.disabled=!preflightMap.PHYSICAL_EQUIPMENT?.confirmed||!!preflightMap.EVENT_CONFIGURATION?.confirmed;config.textContent=preflightMap.EVENT_CONFIGURATION?.confirmed?'EVENT CONFIGURATION ✓':'EVENT CONFIGURATION BESTÄTIGEN'}
   if(finalConfirm){finalConfirm.disabled=!preflightMap.EVENT_CONFIGURATION?.confirmed||!!preflightMap.FINAL_FOUNDER_CONFIRMATION?.confirmed;finalConfirm.textContent=preflightMap.FINAL_FOUNDER_CONFIRMATION?.confirmed?'FINAL FOUNDER CONFIRMATION ✓':'FINAL FOUNDER CONFIRMATION'}
-  if(r.ready){
+  founderEventReady=r.ready===true && ['STANDBY','COMPLETED'].includes(document.querySelector('#eventState')?.textContent||'STANDBY');
+  if(r.ready===true){
    const coreLine='N_CORES: '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen';
    showFounderResult('EVENT READY',(r.checks||[]).map(x=>x.id+' ✓').join(' // ')+' // PRE-FLIGHT ✓ // '+coreLine,true,btn);
-   if(init)init.disabled=false;
+   if(init)init.disabled=!founderCanInitialize();
   }else if(r.systemReady){
    const pending=(r.manualChecksPending||[]).join(' // ');
    showFounderResult('BASELINE READY','SYSTEM CHECKS ✓ // PRE-FLIGHT AUSSTEHEND: '+pending,true,btn);
@@ -276,12 +285,14 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
    showFounderResult('NICHT BEREIT',blockers.concat(coreLines).join(' // ')||r.status,false,btn);
    if(init)init.disabled=true;
   }
- }catch(err){showFounderResult('READINESS FEHLER',String(err.message||err),false,btn);if(init)init.disabled=true}
+ }catch(err){founderEventReady=false;showFounderResult('READINESS FEHLER',String(err.message||err),false,btn);if(init)init.disabled=true}
  finally{if(btn){btn.disabled=false;btn.textContent='READINESS CHECK'}}
 });
 window.addEventListener('nodiv-founder-ownership-repair',async()=>{
  if(!sessionToken)return;
  const btn=document.querySelector('#repairCoreOwnership'),init=document.querySelector('#initializeEvent');
+ founderEventReady=false;
+ if(init)init.disabled=true;
  if(btn){btn.disabled=true;btn.textContent='OWNERSHIP WIRD REPARIERT'}
  try{
   const r=await apiRequest({action:'eventreadinessrepair',token:sessionToken});
@@ -315,6 +326,7 @@ window.addEventListener('nodiv-founder-preflight',async e=>{
 window.addEventListener('nodiv-founder-event-initialize',async()=>{
  if(!sessionToken)return;
  const btn=document.querySelector('#initializeEvent');
+ founderEventReady=false;
  if(btn){btn.disabled=true;btn.textContent='EVENT WIRD INITIALISIERT'}
  try{
   const s=await apiRequest({action:'eventstatus',token:sessionToken});
