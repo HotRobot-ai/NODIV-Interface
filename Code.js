@@ -4074,28 +4074,34 @@ function confirmNodeInstallation(e) {
     const actor=session.player,{key,order,context}=readNodeInstallation(e,actor);
     if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('INSTALL_REQUIRES_EXACTLY_3_CORES');
     order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid,order));
-    const requests=[],now=new Date(),nodeId=order.nodeId;
-    order.cores.forEach(item=>{
-      const result=transferCoreOwnership({coreId:item.id,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',
-        toType:'NODE',toId:nodeId,eventType:'NODE_INSTALL_CORE',actorId:actor.identity,actorRole:actor.role,
-        nodeId,newStatus:'DEPLOYED',details:order.eventId+' // '+order.id+' // initial installation',batchRequests:requests,installationId:order.id});
-      const dep=findDeploymentById(installationDeploymentId(order.id,item.id));
-      requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['DELIVERED',dep.createdAt,dep.acceptedAt||'',now,result.transactionId]]));
+
+    const requests=[],now=new Date(),nodeId=order.nodeId,register=getRegisterSheet(),depSheet=getDeploymentRegisterSheet();
+    const coreStates=order.cores.map(item=>readCoreState(item.id));
+    coreStates.forEach(core=>{
+      const dep=findDeploymentById(installationDeploymentId(order.id,core.coreId));
+      if(!dep||dep.status!=='ASSIGNED'||dep.purpose!=='NODE_INSTALLATION'||dep.targetNode!==nodeId||dep.carrierId!==actor.identity)throw new Error('INSTALL_RESERVATION_INVALID');
+      const tx=appendTransactionLog({eventType:'NODE_INSTALL_CORE',actorId:actor.identity,actorRole:actor.role,coreId:core.coreId,
+        fromType:'NODIV_RESERVE',fromId:'HQ',toType:'NODE',toId:nodeId,visibleEnergy:core.visibleEnergy,hiddenEnergy:core.hiddenEnergy,
+        actualEnergy:core.actualEnergy,nodeId,result:'SUCCESS',details:order.eventId+' // '+order.id+' // installation'},requests);
+      requests.push(sheetCellsRequest(register,core.row,CORE_COL.STATUS,[['DEPLOYED']]));
+      requests.push(sheetCellsRequest(register,core.row,CORE_COL.OWNER_TYPE,[['NODE',nodeId,tx,now]]));
+      requests.push(sheetCellsRequest(depSheet,dep.row,7,[['DELIVERED',dep.createdAt,dep.acceptedAt||'',now,tx]]));
     });
+
     const codeSheet=getEventNodeCodeSheet(),nodeSheet=getNodeRegisterSheet(),nodeRow=parseInt(nodeId.substring(5),10)+1;
     requests.push(sheetCellsRequest(codeSheet,context.eventNode.row,8,[['PRIMARY','','ACTIVE',context.assigned||actor.identity,now,now]]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,3,[['INSTALLED']]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,5,[[actor.identity,now]]));
     appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
       details:order.eventId+' // '+order.id+' // 3/3 // '+order.cores.map(core=>core.id).join(',')+(order.legacy?' // explicit legacy completion':'')},requests);
-    SpreadsheetApp.flush();
+
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     CacheService.getScriptCache().remove(key);
     PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
     if(order.nodeId==='NODE-002'&&restoreTestSetupFor(context,order.nodeId))PropertiesService.getScriptProperties().deleteProperty(RESTORE_TEST_SETUP_KEY);
     const totalEnergy=order.loadout.reduce((sum,core)=>sum+core.energy,0);
     return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
-      node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
+      node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'},message:'DEPLOYMENT COMPLETE // '+nodeId+' // 3/3 // '+totalEnergy+' E // '+nodeEnergyState(totalEnergy)};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
