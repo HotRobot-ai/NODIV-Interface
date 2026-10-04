@@ -3949,9 +3949,9 @@ function getNodeOperationOrder(e,operation) {
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
-    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&nodeOperationType(order)===operation&&
+    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&operation==='INSTALL'&&nodeOperationType(order)==='INSTALL'&&
       order.eventId===context.event.eventId&&order.eventState===context.event.state&&Array.isArray(order.loadout)&&order.loadout.length===3&&
-      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3)
+      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3&&order.loadout.every(core=>['NC-013','NC-006','NC-010'].includes(core.id)))
       .sort((a,b)=>(Number(b.expiresAt)||0)-(Number(a.expiresAt)||0))[0];
     if(recoverable){
       recoverable.sessionToken=token;
