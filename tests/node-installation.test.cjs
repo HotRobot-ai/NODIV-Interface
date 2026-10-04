@@ -424,3 +424,31 @@ test('new Session B of another Identity cannot take over an orphaned reservation
  f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));
  const e={parameter:{token,node:'NODE-001',uid:'nodeuid',exchange:f.e.parameter.exchange}};assert.equal(f.ctx.recoverNormalExchange(e,'NODE-001'),null);assert.throws(()=>f.ctx.getGameplayRoute(e),/ALREADY_RUNNING/);assert.throws(()=>f.ctx.normalExchange(e,'cancel'),/MISMATCH/);assert.equal(f.properties.get(key),before);assert.equal(f.batches(),0);
 });
+
+test('real 002->Node / 008->P003 confirm uses one validated batch, no transfer-loop reads or flush',()=>{
+ const f=exchangeFixture(),rows=f.sheets['N-Core Register'].rows;
+ rows[2][14]='PIONEER';rows[2][15]='P003';rows[2][4]='FIELD';rows[2][1]=341;
+ rows[6][14]='NODIV_RESERVE';rows[6][15]='HQ';rows[6][4]='RESERVE';
+ rows[8][2]='uid8';rows[8][14]='NODE';rows[8][15]='NODE-001';rows[8][4]='DEPLOYED';rows[8][1]=310;
+ f.sheets['Deployment Register'].rows.push(['closed','','','','','','DELIVERED']);
+ f.authorize();f.exchangeScan(2);f.exchangeScan(8);
+ let flushes=0,coreReads=0,deploymentReads=0;f.ctx.SpreadsheetApp.flush=()=>flushes++;
+ for(const [name,count] of [['N-Core Register',()=>coreReads++],['Deployment Register',()=>deploymentReads++]]){
+  const sheet=f.sheets[name],original=sheet.getRange.bind(sheet);sheet.getRange=(...args)=>{if(args[0]===2&&args[1]===1)count();return original(...args)};
+ }
+ f.ctx.transferCoreOwnership=()=>{throw Error('TRANSFER_LOOP_MUST_NOT_RESCAN')};
+ const result=f.finishExchange();assert.equal(result.status,'EXCHANGE_COMPLETE');assert.equal(f.batches(),1);assert.equal(flushes,0);assert.equal(coreReads,1);assert.equal(deploymentReads,1);
+ assert.equal(rows[2][14],'NODE');assert.equal(rows[2][15],'NODE-001');assert.equal(rows[2][4],'DEPLOYED');assert.equal(rows[8][14],'PIONEER');assert.equal(rows[8][15],'P003');assert.equal(rows[8][4],'FIELD');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
+ const logs=f.sheets['Transaction Log'].rows.slice(1);assert.deepEqual(logs.map(row=>row[2]),['NORMAL_EXCHANGE_IN','NORMAL_EXCHANGE_OUT','RESTORE_1_ELIGIBLE','NORMAL_EXCHANGE']);assert.equal(logs[0][5],'NC-002');assert.equal(logs[1][5],'NC-008');assert.equal(logs[0][0],rows[2][16]);assert.equal(logs[1][0],rows[8][16]);
+ assert.throws(f.finishExchange,/COMPLETED/);assert.equal(f.batches(),1);assert.equal(f.sheets['Transaction Log'].rows.length,5);
+});
+test('staging and batch failures leave no mutations or success logs; exchange remains recoverable and retry commits once',()=>{
+ for(const failure of ['staging','batch']){
+  const f=exchangeFixture();f.authorize();f.exchangeScan(6);f.exchangeScan(1);const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),key='NODIV_EXCHANGE_'+f.e.parameter.exchange,property=f.properties.get(key);
+  const append=f.ctx.appendTransactionLog,batch=f.ctx.Sheets.Spreadsheets.batchUpdate;
+  if(failure==='staging')f.ctx.appendTransactionLog=(data,requests)=>{if(data.eventType==='NORMAL_EXCHANGE')throw Error('STAGING_FAILED');return append(data,requests)};
+  else f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};
+  assert.throws(f.finishExchange,/FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.properties.get(key),property);assert.equal(f.batches(),0);assert.equal(f.ctx.recoverNormalExchange(f.e,'NODE-001').canConfirm,true);
+  f.ctx.appendTransactionLog=append;f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.finishExchange().status,'EXCHANGE_COMPLETE');assert.equal(f.batches(),1);assert.equal(f.properties.has(key),false);
+ }
+});

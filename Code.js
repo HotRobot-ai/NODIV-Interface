@@ -2997,10 +2997,10 @@ function findDeploymentById(deploymentId) {
   return null;
 }
 
-function hasOpenDeploymentForCore(coreId, installationId) {
+function hasOpenDeploymentForCore(coreId, installationId, deploymentRows, installationOrders) {
   const sheet=getDeploymentRegisterSheet(),wanted=normalizeCoreId(coreId);
-  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
-  const orders=readInstallationOrders().filter(installationOrderIsLive);
+  const rows=deploymentRows|| (sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[]);
+  const orders=installationOrders||readInstallationOrders().filter(installationOrderIsLive);
   return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
     ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
     (!isFopNodeDeployment(row)||
@@ -5422,6 +5422,13 @@ function readCoreState(coreId) {
 
   const values = sheet.getRange(row, 1, 1, CORE_COL.UPDATED_AT).getValues()[0];
 
+  return coreStateFromValues(normalized,row,values);
+
+}
+
+
+
+function coreStateFromValues(normalized,row,values) {
   return {
 
     row: row,
@@ -5449,8 +5456,6 @@ function readCoreState(coreId) {
   };
 
 }
-
-
 
 function writeCoreOwnership(row, ownerType, ownerId, transactionId, batchRequests) {
   const sheet=getRegisterSheet(),values=[[normalizeOwnerType(ownerType),String(ownerId||'').trim().toUpperCase(),String(transactionId||'').trim(),new Date()]];
@@ -6528,14 +6533,15 @@ function liveExchanges(){
   try{const order=JSON.parse(props[key]);return exchangeIsLive(order)?[order]:[];}catch(error){return [];}
  });
 }
-function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId){
- if(liveExchanges().some(order=>order.id!==exchangeId&&(
+function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders){
+ if((orders||liveExchanges()).some(order=>order.id!==exchangeId&&(
   (nodeId&&order.nodeId===nodeId)||(identity&&order.identity===identity)||
   (coreId&&order.inventory.concat(order.nodeCores).some(core=>core.coreId===coreId)))))throw new Error('EXCHANGE_ALREADY_RUNNING');
 }
-function exchangeOwnedCores(type,id){
- const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
- return rows.filter(row=>String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()===type&&String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()===id).map(row=>readCoreState(row[0]));
+function exchangeOwnedCores(type,id,rows){
+ rows=rows||getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+ return rows.flatMap((row,index)=>String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()===type&&String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()===id?
+  [coreStateFromValues(normalizeCoreId(row[0]),index+2,row)]:[]);
 }
 function exchangeNodeFingerprint(nodeId,eventNode){
  const rows=getNodeRegisterSheet().getRange(2,1,15,3).getValues();
@@ -6548,19 +6554,25 @@ function exchangeContext(player,nodeId,exchangeId){
  if(!auth.allowed)throw new Error(auth.reason);
  const event=readCurrentEvent(),eventNode=findEventNodeCode(event.eventId,nodeId);
  if(eventNode.pendingSlot)throw new Error('NODE_CODE_CHANGE_PENDING');
- assertExchangeUnreserved(nodeId,player.identity,'',exchangeId);
- const nodeCores=exchangeOwnedCores('NODE',nodeId),inventory=exchangeOwnedCores('PIONEER',player.identity);
+ const exchangeOrders=liveExchanges();
+ assertExchangeUnreserved(nodeId,player.identity,'',exchangeId,exchangeOrders);
+ const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+ const nodeCores=exchangeOwnedCores('NODE',nodeId,coreRows),inventory=exchangeOwnedCores('PIONEER',player.identity,coreRows);
+ const deploymentSheet=getDeploymentRegisterSheet(),deploymentRows=deploymentSheet.getLastRow()>1?deploymentSheet.getRange(2,1,deploymentSheet.getLastRow()-1,11).getValues():[];
+ const installationOrders=readInstallationOrders().filter(installationOrderIsLive);
  const capacity=Number(player.coreCapacity);
  if(!Number.isInteger(capacity)||capacity<1||capacity>3||inventory.length>capacity)throw new Error('PIONEER_SLOT_LIMIT_INVALID');
- const eligible=core=>core.uid&&Number.isFinite(core.visibleEnergy)&&!['IN_TRANSIT','RESERVE'].includes(core.status)&&!hasOpenDeploymentForCore(core.coreId);
+ const eligible=core=>core.uid&&Number.isFinite(core.visibleEnergy)&&!['IN_TRANSIT','RESERVE'].includes(core.status)&&!hasOpenDeploymentForCore(core.coreId,undefined,deploymentRows,installationOrders);
  if(nodeCores.length!==3||nodeCores.some(core=>!eligible(core)))throw new Error('NODE_CORES_UNAVAILABLE');
  const all=nodeCores.concat(inventory);
+ // Also guard every reserved Core once against the same in-memory reservation snapshot.
+ all.forEach(core=>assertExchangeUnreserved('','',core.coreId,exchangeId,exchangeOrders));
  if(new Set(all.map(core=>core.coreId)).size!==all.length||new Set(all.filter(core=>core.uid).map(core=>core.uid)).size!==all.filter(core=>core.uid).length)throw new Error('EXCHANGE_DUPLICATE_CORE_UID');
  const personal=inventory.filter(eligible);
- const logs=exchangeLogRows().filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
+ const transactionRows=exchangeLogRows(),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
  const cooldownUntil=logs.reduce((until,row)=>Math.max(until,new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS||0),0);
  if(cooldownUntil>Date.now())throw new Error('NODE_EXCHANGE_COOLDOWN // '+new Date(cooldownUntil).toISOString());
- return {event,eventNode,nodeCores,inventory,personal,capacity,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
+ return {event,eventNode,nodeCores,inventory,personal,capacity,transactionRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
 }
 function exchangePreview(e,player,nodeId){
  const context=exchangeContext(player,nodeId),preview=Utilities.getUuid();
@@ -6660,14 +6672,27 @@ function normalExchange(e,action){
   // Revalidate scanned membership too: stored metadata cannot bypass ownership rules.
   if(order.incoming.some(id=>!context.personal.some(c=>c.coreId===id))||order.outgoing.some(id=>!context.nodeCores.some(c=>c.coreId===id)))throw new Error('EXCHANGE_CORE_INVALID');
   const requests=[];
-  for(const id of order.incoming)transferCoreOwnership({coreId:id,expectedFromType:'PIONEER',expectedFromId:player.identity,toType:'NODE',toId:nodeId,newStatus:'DEPLOYED',actorId:player.identity,actorRole:player.role,eventType:'NORMAL_EXCHANGE_IN',nodeId,exchangeId:order.id,batchRequests:requests});
-  for(const id of order.outgoing)transferCoreOwnership({coreId:id,expectedFromType:'NODE',expectedFromId:nodeId,toType:'PIONEER',toId:player.identity,newStatus:'FIELD',actorId:player.identity,actorRole:player.role,eventType:'NORMAL_EXCHANGE_OUT',nodeId,exchangeId:order.id,batchRequests:requests});
-  const first=order.capacity===1&&!exchangeLogRows().some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity);
+  // All membership, ownership, snapshots and reservations were validated once above
+  // under this ScriptLock. Stage from those exact rows; never re-read inside the loop.
+  for(const id of order.incoming)stageValidatedExchangeTransfer(context.personal.find(core=>core.coreId===id),'NODE',nodeId,'DEPLOYED','NORMAL_EXCHANGE_IN',player,nodeId,requests);
+  for(const id of order.outgoing)stageValidatedExchangeTransfer(context.nodeCores.find(core=>core.coreId===id),'PIONEER',player.identity,'FIELD','NORMAL_EXCHANGE_OUT',player,nodeId,requests);
+  const first=order.capacity===1&&!context.transactionRows.some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity);
   if(first)appendTransactionLog({eventType:'RESTORE_1_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:'First normal exchange completed; eligibility marker only'},requests);
   appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
-  SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   // Completion is durable in the same batch; stale property cannot reserve or replay.
   try{props.deleteProperty(EXCHANGE_PREFIX+order.id);}catch(error){}
   return {...exchangeResponse(order,'EXCHANGE_COMPLETE'),canConfirm:false,cooldownSeconds:300,restore1Eligible:first};
  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+// Internal staging helper: called only after validateLiveExchange under ScriptLock.
+// The general transferCoreOwnership path retains every reservation/ownership guard.
+function stageValidatedExchangeTransfer(core,toType,toId,newStatus,eventType,player,nodeId,requests){
+ if(!core||!core.uid)throw new Error('EXCHANGE_CORE_INVALID');
+ const transactionId=appendTransactionLog({eventType,actorId:player.identity,actorRole:player.role,coreId:core.coreId,
+  fromType:core.ownerType,fromId:core.ownerId,toType,toId,visibleEnergy:core.visibleEnergy,
+  hiddenEnergy:core.hiddenEnergy,actualEnergy:core.actualEnergy,nodeId,result:'SUCCESS'},requests);
+ writeCoreOwnership(core.row,toType,toId,transactionId,requests);
+ requests.push(sheetCellsRequest(getRegisterSheet(),core.row,CORE_COL.STATUS,[[newStatus]]));
 }
