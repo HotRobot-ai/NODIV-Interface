@@ -270,6 +270,8 @@ function doGet(e) {
 
       result = getGameplayRoute(e);
 
+    } else if (action === 'restoretestsetup') {
+      result = setRestoreTestSetup(e);
     } else if (action === 'restoreeligible') {
       result = getRestoreEligibility(e);
     } else if (action === 'restoreassign') {
@@ -3796,7 +3798,8 @@ function validateNodeInstallation(actor, nodeId) {
   const count=countCoresOwnedBy('NODE',nodeId);
   if(count!==0)throw new Error(count===3?'NODE_ALREADY_INSTALLED':'NODE_CORE_COUNT_INVALID // '+count+'/3 // manuelle Prüfung erforderlich');
   const legacy=eventNode.changeStatus==='ACTIVE'&&eventNode.activeSlot==='PRIMARY'&&!eventNode.pendingSlot;
-  if(!legacy&&(event.state!=='INITIALIZED'||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
+  const restoreTestReinstall=event.state==='FIELD_ACTIVE'&&eventNode.changeStatus==='DEINSTALLED'&&restoreTestSetupFor({event,eventNode},nodeId);
+  if(!legacy&&!restoreTestReinstall&&(event.state!=='INITIALIZED'||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
   return {event,eventNode,assigned,legacy};
 }
 
@@ -3845,6 +3848,43 @@ function cleanupInstallationOrders() {
 }
 function nodeEnergyState(energy) {return energy>=600?'STABLE':energy>=450?'DEGRADED':'CRITICAL';}
 
+const RESTORE_TEST_SETUP_KEY='NODIV_RESTORE_TEST_NODE';
+function setRestoreTestSetup(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw new Error('FOUNDER_REQUIRED');
+  const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  const nodeId='NODE-002',eventNode=findEventNodeCode(event.eventId,nodeId);
+  if(!eventNode)throw new Error('NODE_002_NOT_IN_EVENT');
+  PropertiesService.getScriptProperties().setProperty(RESTORE_TEST_SETUP_KEY,JSON.stringify({eventId:event.eventId,nodeId,createdAt:new Date().toISOString()}));
+  return {ok:true,session:true,action:true,status:'RESTORE_TEST_SETUP_ARMED',nodeId,message:'NODE-002 // RESTORE TEST LOADOUT ARMED'};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function restoreTestSetupFor(context,nodeId){
+ try{
+  const raw=PropertiesService.getScriptProperties().getProperty(RESTORE_TEST_SETUP_KEY);if(!raw)return false;
+  const setup=JSON.parse(raw);return setup.eventId===context.event.eventId&&setup.nodeId===nodeId;
+ }catch(error){return false}
+}
+function selectRestoreTestLoadout(available){
+ if(available.length<4)throw new Error('RESTORE_TEST_REQUIRES_4_AVAILABLE_RESERVE_CORES');
+ const cores=available.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
+ let best=null;
+ for(let i=0;i<cores.length-2;i++)for(let j=i+1;j<cores.length-1;j++)for(let k=j+1;k<cores.length;k++){
+  const triple=[cores[i],cores[j],cores[k]],total=triple.reduce((s,x)=>s+x.visibleEnergy,0);
+  if(total<450||total>=600)continue;
+  const low=triple[0],used=new Set(triple.map(x=>x.coreId));
+  const restore=cores.filter(x=>!used.has(x.coreId)).find(x=>total-low.visibleEnergy+x.visibleEnergy>=600);
+  if(!restore)continue;
+  const score=599-total;
+  if(!best||score<best.score)best={triple,restore,score,total};
+ }
+ if(!best)throw new Error('NO_RESTORE_TEST_LOADOUT_AVAILABLE');
+ return best.triple.map(core=>({id:core.coreId,uid:core.uid,energy:core.visibleEnergy}));
+}
+
 function selectNodeInstallationLoadout(available,remainingNodes) {
   if(available.length<3)throw new Error('INSTALL_REQUIRES_3_AVAILABLE_RESERVE_CORES');
   const cores=available.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
@@ -3878,6 +3918,7 @@ function getAvailableInstallationCores() {
 
 function buildNodeInstallationLoadout(context,nodeId) {
   const available=getAvailableInstallationCores(),orders=readInstallationOrders().filter(installationOrderIsLive);
+  if(restoreTestSetupFor(context,nodeId))return selectRestoreTestLoadout(available);
   const reservedNodes=new Set(orders.map(order=>order.nodeId));
   const codeSheet=getEventNodeCodeSheet(),codes=codeSheet.getLastRow()>1?codeSheet.getRange(2,1,codeSheet.getLastRow()-1,13).getValues():[];
   const remaining=codes.filter(row=>String(row[0])===context.event.eventId&&!reservedNodes.has(String(row[1]))&&
@@ -4025,6 +4066,7 @@ function confirmNodeInstallation(e) {
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     CacheService.getScriptCache().remove(key);
     PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
+    if(order.nodeId==='NODE-002'&&restoreTestSetupFor(context,order.nodeId))PropertiesService.getScriptProperties().deleteProperty(RESTORE_TEST_SETUP_KEY);
     const totalEnergy=order.loadout.reduce((sum,core)=>sum+core.energy,0);
     return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
       node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
