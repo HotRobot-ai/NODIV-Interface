@@ -346,6 +346,10 @@ function doGet(e) {
 
       result = getNodeInstallOrder(e);
 
+    } else if (action === 'nodeinstallscan') {
+
+      result = scanNodeInstallationCore(e);
+
     } else if (action === 'nodeinstallconfirm') {
 
       result = confirmNodeInstallation(e);
@@ -3668,7 +3672,7 @@ function activateEvent(e) {
     if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Event muss zuerst initialisiert werden.');
 
     const codes=getEventNodeCodeSheet(), rows=codes.getLastRow()>1?codes.getRange(2,1,codes.getLastRow()-1,13).getValues():[];
-    const pending=rows.filter(r=>String(r[0])===event.eventId&&String(r[9]||'').toUpperCase()!=='ACTIVE');
+    const pending=rows.filter(r=>String(r[0])===event.eventId&&(String(r[9]||'').toUpperCase()!=='ACTIVE'||countCoresOwnedBy('NODE',String(r[1]||'').trim().toUpperCase())!==3));
     if(pending.length)return gameplayActionDenied(actor,'NODES_NOT_INSTALLED',pending.length+' Node(s) sind noch nicht physisch installiert/bestätigt.');
 
     const sheet=getEventRegisterSheet(), now=new Date();
@@ -3718,37 +3722,96 @@ function abortEvent(e) {
 }
 
 /*
- * FOP NODE INSTALLATION V0.1
- * The FOP receives only the code that must be set physically.
- * Reserve codes stay server-side. Confirmation makes PRIMARY active.
+ * FOP installation uses the existing event/code order and ownership engine.
+ * Scans stage IDs only; ownership changes exclusively in one Sheets batch.
+ * Legacy ACTIVE + empty Nodes require an explicit order, never auto-migration.
  */
-function getNodeInstallOrder(e) {
-  const session=resolvePlayerSession(e.parameter.token||'');
-  if(!session.ok)return session.response;
-  const actor=session.player;
-  if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER oder FIELD OPERATOR können Node-Installationsaufträge abrufen.');
+const NODE_INSTALL_TTL_SECONDS = 30 * 60;
+const NODE_INSTALL_PREFIX = 'NODIV_INSTALL_';
 
-  const nodeId=String(e.parameter.node||'').trim().toUpperCase();
-  if(!/^NODE-\d{3}$/.test(nodeId))throw new Error('Gültige Node-ID fehlt.');
+function validateNodeInstallation(actor, nodeId) {
+  if(!['FOUNDER','FOP'].includes(actor.role))throw new Error('ROLE_DENIED');
+  if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
   const event=readCurrentEvent();
-  if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Node-Installation ist nur für ein initialisiertes Event möglich.');
-
+  if(!event||!['INITIALIZED','FIELD_ACTIVE'].includes(event.state))throw new Error('EVENT_NOT_INITIALIZED');
   const eventNode=findEventNodeCode(event.eventId,nodeId);
-  if(!eventNode)return gameplayActionDenied(actor,'NODE_NOT_IN_EVENT','Dieser Node gehört nicht zum initialisierten Event.');
-  if(eventNode.changeStatus==='ACTIVE')return {ok:true,authenticated:true,action:false,status:'NODE_ALREADY_INSTALLED',nodeId:nodeId,eventId:event.eventId};
+  if(!eventNode)throw new Error('NODE_NOT_IN_EVENT');
+  const assigned=String(getEventNodeCodeSheet().getRange(eventNode.row,11).getDisplayValue()||'').trim().toUpperCase();
+  if(actor.role==='FOP'&&assigned&&assigned!==actor.identity)throw new Error('NODE_ASSIGNED_TO_OTHER_FOP');
+  const count=countCoresOwnedBy('NODE',nodeId);
+  if(count!==0)throw new Error(count===3?'NODE_ALREADY_INSTALLED':'NODE_CORE_COUNT_INVALID // '+count+'/3 // manuelle Prüfung erforderlich');
+  const legacy=eventNode.changeStatus==='ACTIVE'&&eventNode.activeSlot==='PRIMARY'&&!eventNode.pendingSlot;
+  if(!legacy&&(event.state!=='INITIALIZED'||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
+  return {event,eventNode,assigned,legacy};
+}
 
-  const codeSheet=getEventNodeCodeSheet(), now=new Date();
-  if(actor.role==='FOP'){
-    const assigned=String(codeSheet.getRange(eventNode.row,11).getDisplayValue()||'').trim().toUpperCase();
-    if(assigned&&assigned!==actor.identity)return gameplayActionDenied(actor,'NODE_ASSIGNED_TO_OTHER_FOP','Dieser Node ist bereits einem anderen Field Operator zugewiesen.');
-    if(!assigned)codeSheet.getRange(eventNode.row,11).setValue(actor.identity);
-  }
-  codeSheet.getRange(eventNode.row,9).setValue('PRIMARY');
-  codeSheet.getRange(eventNode.row,10).setValue('ASSIGNED_FOR_INSTALL');
-  codeSheet.getRange(eventNode.row,13).setValue(now);
-  SpreadsheetApp.flush();
+function getNodeInstallOrder(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
+    const context=validateNodeInstallation(actor,nodeId);
+    const cache=CacheService.getScriptCache();
+    // One active installation per login. Re-fetching invalidates old requests.
+    const key=NODE_INSTALL_PREFIX+normalizeSessionToken(e.parameter.token);
+    const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
+      identity:actor.identity,legacy:context.legacy,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+    if(!context.legacy){
+      const sheet=getEventNodeCodeSheet();
+      if(!context.assigned)sheet.getRange(context.eventNode.row,11).setValue(actor.identity);
+      sheet.getRange(context.eventNode.row,13).setValue(new Date());
+      SpreadsheetApp.flush();
+    }
+    cache.put(key,JSON.stringify(order),NODE_INSTALL_TTL_SECONDS);
+    return nodeInstallationResponse(order,context,'NODE_INSTALL_ORDER');
+  }finally{try{lock.releaseLock();}catch(error){}}
+}
 
-  return {ok:true,authenticated:true,action:true,status:'NODE_INSTALL_ORDER',eventId:event.eventId,node:{id:nodeId,code:eventNode.codes[0],slot:'PRIMARY'},instruction:'Mechanisches Schloss auf den angezeigten Code stellen und Installation anschließend bestätigen.'};
+function readNodeInstallation(e,actor) {
+  const key=NODE_INSTALL_PREFIX+normalizeSessionToken(e.parameter.token||'');
+  const raw=CacheService.getScriptCache().get(key);
+  if(!raw)throw new Error('INSTALL_SESSION_EXPIRED // Auftrag erneut abrufen');
+  const order=JSON.parse(raw);
+  if(order.id!==String(e.parameter.installation||'')||order.identity!==actor.identity||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw new Error('INSTALL_SESSION_MISMATCH');
+  if(!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)throw new Error('INSTALL_SESSION_EXPIRED');
+  const context=validateNodeInstallation(actor,order.nodeId);
+  if(order.eventId!==context.event.eventId||order.eventState!==context.event.state||order.legacy!==context.legacy)throw new Error('INSTALL_EVENT_STATE_CHANGED');
+  return {key,order,context};
+}
+
+function validateInstallationCore(core,uid) {
+  if(!uid||core.uid!==uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE')throw new Error('CORE_NOT_RESERVE // '+core.coreId);
+  if(hasOpenDeploymentForCore(core.coreId))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
+  if(core.visibleEnergy===''||!Number.isFinite(core.visibleEnergy))throw new Error('CORE_ENERGY_INVALID');
+}
+
+function nodeInstallationResponse(order,context,status) {
+  const cores=order.cores.map(item=>{const core=readCoreState(item.id);return {id:core.coreId,energy:core.visibleEnergy};});
+  return {ok:true,authenticated:true,session:true,action:true,status,eventId:order.eventId,
+    installation:order.id,expiresAt:new Date(order.expiresAt).toISOString(),legacy:order.legacy,
+    node:{id:order.nodeId,code:context.eventNode.codes[0],slot:'PRIMARY'},cores,count:cores.length,
+    canConfirm:cores.length===3,instruction:order.legacy?'LEGACY: mechanisch bestätigt, aber leer. PRIMARY einstellen und exakt 3 Reserve-Cores scannen.':'PRIMARY am Schloss einstellen, danach exakt 3 Reserve-Cores scannen.'};
+}
+
+function scanNodeInstallationCore(e) {
+  const lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    const {key,order,context}=readNodeInstallation(e,session.player);
+    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
+    if(!hit.found||hit.type!=='N_CORE'||!hit.id)throw new Error('CORE_NOT_FOUND');
+    if(order.cores.some(core=>core.id===hit.id||core.uid===uid))throw new Error('DUPLICATE_CORE_SCAN');
+    if(order.cores.length>=3)throw new Error('INSTALL_CORE_LIMIT');
+    const core=readCoreState(hit.id);
+    validateInstallationCore(core,uid);
+    order.cores.push({id:core.coreId,uid});
+    CacheService.getScriptCache().put(key,JSON.stringify(order),Math.max(1,Math.floor((order.expiresAt-Date.now())/1000)));
+    return nodeInstallationResponse(order,context,'INSTALL_CORE_SCANNED');
+  }finally{try{lock.releaseLock();}catch(error){}}
 }
 
 function confirmNodeInstallation(e) {
@@ -3757,38 +3820,35 @@ function confirmNodeInstallation(e) {
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
-    const actor=session.player;
-    if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER oder FIELD OPERATOR können eine Node-Installation bestätigen.');
-
-    const nodeId=String(e.parameter.node||'').trim().toUpperCase();
-    if(!/^NODE-\d{3}$/.test(nodeId))throw new Error('Gültige Node-ID fehlt.');
-    const event=readCurrentEvent();
-    if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Kein initialisiertes Event für die Installation vorhanden.');
-    const eventNode=findEventNodeCode(event.eventId,nodeId);
-    if(!eventNode)return gameplayActionDenied(actor,'NODE_NOT_IN_EVENT','Dieser Node gehört nicht zum initialisierten Event.');
-
-    const codeSheet=getEventNodeCodeSheet();
-    const assigned=String(codeSheet.getRange(eventNode.row,11).getDisplayValue()||'').trim().toUpperCase();
-    if(actor.role==='FOP'&&assigned&&assigned!==actor.identity)return gameplayActionDenied(actor,'NODE_ASSIGNED_TO_OTHER_FOP','Dieser Node ist einem anderen Field Operator zugewiesen.');
-    if(eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY')return gameplayActionDenied(actor,'INSTALL_ORDER_REQUIRED','Zuerst muss ein gültiger Installationsauftrag abgerufen werden.');
-
-    const now=new Date();
-    codeSheet.getRange(eventNode.row,8).setValue('PRIMARY');
-    codeSheet.getRange(eventNode.row,9).setValue('');
-    codeSheet.getRange(eventNode.row,10).setValue('ACTIVE');
-    if(!assigned)codeSheet.getRange(eventNode.row,11).setValue(actor.identity);
-    codeSheet.getRange(eventNode.row,12).setValue(now);
-    codeSheet.getRange(eventNode.row,13).setValue(now);
-
-    const nodeSheet=getNodeRegisterSheet(), nodeNumber=parseInt(nodeId.substring(5),10), nodeRow=nodeNumber+1;
-    nodeSheet.getRange(nodeRow,3).setValue('INSTALLED');
-    nodeSheet.getRange(nodeRow,5).setValue(actor.identity);
-    nodeSheet.getRange(nodeRow,6).setValue(now);
-
-    appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId:nodeId,result:'SUCCESS',details:event.eventId+' // physical installation confirmed // PRIMARY active'});
+    const actor=session.player,{key,order,context}=readNodeInstallation(e,actor);
+    if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('INSTALL_REQUIRES_EXACTLY_3_CORES');
+    // Revalidate ALL cores before preparing any mutation, under the shared lock.
+    order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid));
+    const requests=[],now=new Date(),nodeId=order.nodeId;
+    order.cores.forEach(item=>transferCoreOwnership({coreId:item.id,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',
+      toType:'NODE',toId:nodeId,eventType:'NODE_INSTALL_CORE',actorId:actor.identity,actorRole:actor.role,
+      nodeId,newStatus:'DEPLOYED',details:order.eventId+' // '+order.id+' // initial installation',batchRequests:requests}));
+    const codeSheet=getEventNodeCodeSheet(),nodeSheet=getNodeRegisterSheet(),nodeRow=parseInt(nodeId.substring(5),10)+1;
+    requests.push(sheetCellsRequest(codeSheet,context.eventNode.row,8,[['PRIMARY','','ACTIVE',context.assigned||actor.identity,now,now]]));
+    requests.push(sheetCellsRequest(nodeSheet,nodeRow,3,[['INSTALLED']]));
+    requests.push(sheetCellsRequest(nodeSheet,nodeRow,5,[[actor.identity,now]]));
+    appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
+      details:order.eventId+' // '+order.id+' // 3/3 // '+order.cores.map(core=>core.id).join(',')+(order.legacy?' // explicit legacy completion':'')},requests);
+    // Sheets validates and applies all requests atomically; no partial ownership/log/code writes.
     SpreadsheetApp.flush();
-    return {ok:true,authenticated:true,action:true,status:'NODE_INSTALLED',eventId:event.eventId,node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
+    Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+    CacheService.getScriptCache().remove(key);
+    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_INSTALLED',eventId:order.eventId,count:3,
+      node:{id:nodeId,status:'INSTALLED',activeSlot:'PRIMARY'}};
   }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+// Used by the existing transaction/ownership helpers when staging an atomic batch.
+function sheetCellsRequest(sheet,row,column,values) {
+  return {updateCells:{start:{sheetId:sheet.getSheetId(),rowIndex:row-1,columnIndex:column-1},
+    rows:values.map(cells=>({values:cells.map(value=>({userEnteredValue:
+      value instanceof Date?{stringValue:value.toISOString()}:
+      typeof value==='number'?{numberValue:value}:typeof value==='boolean'?{boolValue:value}:{stringValue:String(value??'')}}))})),fields:'userEnteredValue'}};
 }
 
 function findEventNodeCode(eventId,nodeId) {
@@ -3823,6 +3883,8 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus) {
   const eventNode=findEventNodeCode(event.eventId,id);
   if(!eventNode)return {allowed:false,reason:'NODE_NOT_IN_ACTIVE_EVENT',message:'Node erkannt. Dieser Node gehört nicht zum aktiven Event.'};
   if(eventNode.changeStatus!=='ACTIVE'||!eventNode.activeSlot)return {allowed:false,reason:'NODE_INSTALLATION_NOT_CONFIRMED',message:'Node erkannt. Die physische Installation ist noch nicht bestätigt.'};
+
+  if(countCoresOwnedBy('NODE',id)!==3)return {allowed:false,reason:'NODE_CORE_COUNT_INVALID',message:'Node benötigt exakt 3 N-Cores. Legacy-Installation gegebenenfalls explizit vervollständigen.'};
 
   if(['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(status))return {allowed:false,reason:'NODE_NOT_FIELD_ACTIVE',message:'Node erkannt. Der Node ist aktuell nicht für den Feldbetrieb freigegeben.'};
 
@@ -4404,7 +4466,7 @@ function findNextAccessCardId(rows) {
 
 
 
-function appendTransactionLog(data) {
+function appendTransactionLog(data, batchRequests) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -4424,7 +4486,7 @@ function appendTransactionLog(data) {
 
 
 
-  sheet.appendRow([
+  const transactionRow = [
 
     transactionId, new Date(), data.eventType || '', data.actorId || '',
 
@@ -4436,9 +4498,12 @@ function appendTransactionLog(data) {
 
     data.nodeId || '', data.result || '', data.details || ''
 
-  ]);
+  ];
 
-  return transactionId;
+  if(batchRequests)batchRequests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,[transactionRow]).updateCells.rows,fields:'userEnteredValue'}});
+  else sheet.appendRow(transactionRow);
+
+  return transactionId;
 
 }
 
@@ -5005,19 +5070,20 @@ function transferCoreOwnership(data) {
 
     details: data.details || ''
 
-  });
+  }, data.batchRequests);
 
 
 
-  writeCoreOwnership(state.row, toType, toId, transactionId);
+  writeCoreOwnership(state.row, toType, toId, transactionId, data.batchRequests);
 
   if (data.newStatus) {
 
-    getRegisterSheet().getRange(state.row, CORE_COL.STATUS).setValue(String(data.newStatus).trim().toUpperCase());
+    if(data.batchRequests)data.batchRequests.push(sheetCellsRequest(getRegisterSheet(),state.row,CORE_COL.STATUS,[[String(data.newStatus).trim().toUpperCase()]]));
+    else getRegisterSheet().getRange(state.row, CORE_COL.STATUS).setValue(String(data.newStatus).trim().toUpperCase());
 
   }
 
-  SpreadsheetApp.flush();
+  if(!data.batchRequests)SpreadsheetApp.flush();
 
 
 
@@ -5025,7 +5091,7 @@ function transferCoreOwnership(data) {
 
     transactionId: transactionId,
 
-    core: readCoreState(coreId),
+    core: data.batchRequests ? state : readCoreState(coreId),
 
     from: { type: fromType, id: fromId },
 
@@ -5087,25 +5153,11 @@ function readCoreState(coreId) {
 
 
 
-function writeCoreOwnership(row, ownerType, ownerId, transactionId) {
-
-  const sheet = getRegisterSheet();
-
-  sheet.getRange(row, CORE_COL.OWNER_TYPE, 1, 4).setValues([[
-
-    normalizeOwnerType(ownerType),
-
-    String(ownerId || '').trim().toUpperCase(),
-
-    String(transactionId || '').trim(),
-
-    new Date()
-
-  ]]);
-
+function writeCoreOwnership(row, ownerType, ownerId, transactionId, batchRequests) {
+  const sheet=getRegisterSheet(),values=[[normalizeOwnerType(ownerType),String(ownerId||'').trim().toUpperCase(),String(transactionId||'').trim(),new Date()]];
+  if(batchRequests)batchRequests.push(sheetCellsRequest(sheet,row,CORE_COL.OWNER_TYPE,values));
+  else sheet.getRange(row,CORE_COL.OWNER_TYPE,1,4).setValues(values);
 }
-
-
 
 function countCoresOwnedBy(ownerType, ownerId) {
 

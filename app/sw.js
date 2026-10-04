@@ -1,4 +1,4 @@
-const CACHE='nodiv-app-v1-20261003-1';
+const CACHE='nodiv-app-v1-20261004-install3';
 const ASSETS=['./manifest.webmanifest'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{await caches.open(CACHE).then(cache=>cache.addAll(ASSETS));await self.skipWaiting()})()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{const keys=await caches.keys();await Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)));await self.clients.claim()})()));

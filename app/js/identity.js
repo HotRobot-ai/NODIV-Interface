@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261003-1600';
+import {routeIdentity} from './router.js?v=20261004-install3';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -338,37 +338,69 @@ window.addEventListener('nodiv-founder-event-activate',async()=>{
  }catch(err){showFounderResult('AKTIVIERUNG GESPERRT',String(err.message||err),false,btn)}
  finally{if(btn)btn.textContent='FIELD OPERATIONS AKTIVIEREN';await refreshFounderEventStatus()}
 });
+let fopInstallation=null,fopInstallBusy=false;
+function renderFopInstallation(result){
+ const progress=document.querySelector('#fopInstallProgress'),list=document.querySelector('#fopInstallCores'),scan=document.querySelector('#fopInstallScan'),confirm=document.querySelector('#fopInstallConfirm');
+ if(progress)progress.textContent=String(result?.count||0)+'/3';
+ if(list){list.replaceChildren();for(const core of result?.cores||[]){const item=document.createElement('li');item.textContent=core.id+' // '+core.energy+' E';list.appendChild(item)}}
+ if(scan)scan.disabled=!result||result.count>=3||fopInstallBusy;
+ if(confirm)confirm.disabled=!result?.canConfirm||fopInstallBusy;
+}
+function fopRequestParams(action){return {action,token:sessionToken,node:fopInstallation.node.id,installation:fopInstallation.installation}}
 window.addEventListener('nodiv-fop-install-order',async()=>{
- if(!sessionToken)return;
+ if(!sessionToken||fopInstallBusy)return;
  const input=document.querySelector('#fopNodeId'),btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
  const node=String(input?.value||'').trim().toUpperCase();
+ fopInstallation=null;renderFopInstallation(null);
  if(!/^NODE-\d{3}$/.test(node)){if(hint)hint.textContent='Gültige Node-ID eingeben, z. B. NODE-001.';return}
- if(btn){btn.disabled=true;btn.textContent='AUFTRAG WIRD GELADEN'}
+ fopInstallBusy=true;if(btn)btn.disabled=true;
  try{
   const r=await apiRequest({action:'nodeinstallorder',token:sessionToken,node});
-  if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
+  if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
+  fopInstallation=r;
   if(panel)panel.hidden=false;
-  if(value)value.textContent=r.node?.code||'••••';
-  if(hint)hint.textContent=node+' // Schloss auf diesen Code stellen und erst danach bestätigen.';
-  if(panel)panel.dataset.nodeId=node;
-  emitNodiv('NFC_ARMED',{target:'#fopInstallCode'});
+  if(value)value.textContent=r.node.code;
+  if(hint)hint.textContent=node+' // '+r.instruction;
  }catch(err){if(panel)panel.hidden=false;if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
- finally{if(btn){btn.disabled=false;btn.textContent='INSTALLATIONSAUFTRAG ABRUFEN'}}
+ finally{fopInstallBusy=false;renderFopInstallation(fopInstallation);if(btn)btn.disabled=false}
+});
+window.addEventListener('nodiv-fop-install-scan',async()=>{
+ if(!sessionToken||!fopInstallation||fopInstallBusy||fopInstallation.count>=3)return;
+ const hint=document.querySelector('#fopInstallHint'),btn=document.querySelector('#fopInstallScan');
+ if(!('NDEFReader' in window)){if(hint)hint.textContent='Web NFC nicht verfügbar // Android + Chrome erforderlich.';return}
+ fopInstallBusy=true;renderFopInstallation(fopInstallation);
+ const controller=new AbortController();
+ const finish=()=>{controller.abort();fopInstallBusy=false;renderFopInstallation(fopInstallation);if(btn)btn.textContent='NÄCHSTEN N-CORE SCANNEN'};
+ try{
+  const reader=new NDEFReader();await reader.scan({signal:controller.signal});let handling=false;
+  if(btn)btn.textContent='NFC ARMED // N-CORE '+(fopInstallation.count+1)+'/3';
+  reader.onreadingerror=()=>{if(handling)return;if(hint)hint.textContent='NFC LESEFEHLER // Scan erneut starten.';finish()};
+  reader.onreading=async ev=>{
+   if(handling)return;handling=true;controller.abort();
+   try{
+    const uid=String(ev?.serialNumber||'').trim();if(!uid)throw new Error('NFC UID fehlt.');
+    const r=await apiRequest({...fopRequestParams('nodeinstallscan'),uid});
+    if(!r?.ok||r.action!==true)throw new Error(r?.message||r?.status||r?.error||'CORE ABGEWIESEN');
+    fopInstallation=r;
+    if(hint)hint.textContent=r.node.id+' // '+r.count+'/3'+(r.canConfirm?' // Drei Cores physisch einsetzen, dann Installation bestätigen.':' // Nächsten Core scannen.');
+   }catch(err){if(hint)hint.textContent=String(err.message||err)}finally{finish()}
+  };
+ }catch(err){if(hint)hint.textContent=String(err.message||err);finish()}
 });
 window.addEventListener('nodiv-fop-install-confirm',async()=>{
- if(!sessionToken)return;
- const panel=document.querySelector('#fopInstallCode'),btn=document.querySelector('#fopInstallConfirm'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
- const node=panel?.dataset.nodeId||'';
- if(!node){if(hint)hint.textContent='Zuerst Installationsauftrag abrufen.';return}
- if(btn){btn.disabled=true;btn.textContent='BESTÄTIGUNG WIRD GESENDET'}
+ if(!sessionToken||!fopInstallation?.canConfirm||fopInstallBusy)return;
+ const btn=document.querySelector('#fopInstallConfirm'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
+ fopInstallBusy=true;renderFopInstallation(fopInstallation);
  try{
-  const r=await apiRequest({action:'nodeinstallconfirm',token:sessionToken,node});
+  const r=await apiRequest(fopRequestParams('nodeinstallconfirm'));
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'BESTÄTIGUNG FEHLGESCHLAGEN');
   if(value)value.textContent='ACTIVE';
-  if(hint)hint.textContent=node+' // PRIMARY CODE AKTIV // INSTALLATION BESTÄTIGT';
+  if(hint)hint.textContent=r.node.id+' // 3/3 // PRIMARY AKTIV // INSTALLATION BESTÄTIGT';
   if(btn)btn.textContent='INSTALLIERT ✓';
+  fopInstallation.canConfirm=false;
   emitNodiv('IDENTITY_VERIFIED',{target:'#fopInstallCode'});
- }catch(err){if(hint)hint.textContent=String(err.message||err);if(btn){btn.disabled=false;btn.textContent='INSTALLATION BESTÄTIGEN'}}
+ }catch(err){if(hint)hint.textContent=String(err.message||err)}
+ finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
 });
 
 window.addEventListener('nodiv-founder-core-open',async()=>{
