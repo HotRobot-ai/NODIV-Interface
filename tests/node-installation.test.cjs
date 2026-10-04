@@ -161,10 +161,10 @@ test('abort, expiry, login revocation and failed reservation publication do not 
  const h=fixture();h.order();h.cache.delete('NODIV_SESSION_'+h.e.parameter.token);assert.equal(h.ctx.hasOpenDeploymentForCore('NC-001'),false);
  const j=fixture();j.fail();assert.throws(j.order,/BATCH_FAILED/);assert.equal(j.properties.size,0);assert.equal(j.sheets['Deployment Register'].rows.length,1);
 });
-test('cache eviction retains durable order; competing login cannot reserve the same Node',()=>{
+test('cache eviction retains durable order; same FOP login resumes it and revokes old installation token',()=>{
  const f=fixture(),order=f.order();f.cache.delete('NODIV_INSTALL_'+f.e.parameter.token);assert.equal(f.scan(1).count,1);
  const token='b'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));
- assert.throws(()=>f.ctx.getNodeInstallOrder({parameter:{token,node:'NODE-001'}}),/NODE_INSTALLATION_RESERVED/);
+ assert.equal(f.ctx.getNodeInstallOrder({parameter:{token,node:'NODE-001'}}).installation,order.installation);assert.throws(()=>f.scan(2),/INSTALL_SESSION_MISMATCH/);
  assert.equal(f.properties.size,1);assert.equal(f.ctx.hasOpenDeploymentForCore(order.loadout[0].id),true);
 });
 test('real NODE-001 fixture 006=105,003=401,004=353 stays 859 E STABLE with no migration',()=>{
@@ -660,4 +660,24 @@ test('Restore #2 revalidates phase capacity, Event, UID, Node fingerprint and fo
  for(const mutate of [f=>f.sheets['Access Card Register'].rows[2][6]=3,f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.sheets['N-Core Register'].rows[9][2]='replaced',f=>f.sheets['Node Register'].rows[2][1]='replaced-node',f=>f.restoreE.parameter.token='a'.repeat(72)]){
   const f=restoreTwoFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');mutate(f);const before=JSON.stringify(f.sheets),b=f.batches();assert.throws(f.restoreFinish);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),b);
  }
+});
+
+function installRebindFixture(scans=3,nodeId='NODE-001'){
+ const f=fixture(),rows=f.sheets['N-Core Register'].rows;if(nodeId==='NODE-002'){f.sheets['Event Register'].rows[1][1]='FIELD_ACTIVE';enableNode(f,nodeId,'F001',true);f.e.parameter.node=nodeId;}for(const row of rows.slice(1))row[2]='';
+ for(const [id,energy]of [[14,50],[6,105],[12,435]]){rows[id][2]='uid'+id;rows[id][1]=energy;}
+ const order=f.order();for(const n of [14,6,12].slice(0,scans))f.scan(n);
+ const oldToken=f.e.parameter.token,token='9'.repeat(72);f.cache.delete('NODIV_SESSION_'+oldToken);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));f.e.parameter.token=token;
+ return {...f,initialOrder:order,oldToken};
+}
+test('INSTALL recovery rebinds arbitrary valid loadout after lost session, preserves 1/3 through 3/3 without new orders/reservations',()=>{
+ for(const count of [1,2,3]){const f=installRebindFixture(count),before=JSON.stringify(f.sheets),b=f.batches(),r=f.ctx.getNodeInstallOrder(f.e);assert.equal(r.status,'NODE_INSTALL_ORDER_RESUMED');assert.equal(r.installation,f.initialOrder.installation);assert.equal(r.count,count);assert.equal(r.canConfirm,count===3);assert.equal(r.totalEnergy,590);assert.deepEqual(Array.from(r.loadout,c=>c.id).sort(),['NC-006','NC-012','NC-014']);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),b);assert.equal(f.ctx.readInstallationOrders().length,1);assert.equal(f.ctx.readInstallationOrders()[0].sessionToken,f.e.parameter.token);assert.equal(r.expiresAt,f.initialOrder.expiresAt);
+  if(count===3){assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);assert.equal(f.ctx.readCoreState('NC-014').ownerId,'NODE-001');}
+ }
+});
+test('INSTALL recovery validates complete loadout and deployment reservations before rebinding, including unscanned Cores',()=>{
+ for(const mutate of [f=>f.sheets['N-Core Register'].rows[12][15]='OTHER',f=>f.sheets['N-Core Register'].rows[12][1]=436,f=>f.sheets['Deployment Register'].rows[1][6]='CANCELLED',f=>{const key='NODIV_INSTALL_ORDER_'+f.initialOrder.installation,o=JSON.parse(f.properties.get(key));o.cores[0].uid='wrong';f.properties.set(key,JSON.stringify(o));},f=>{const key='NODIV_INSTALL_ORDER_'+f.initialOrder.installation,o=JSON.parse(f.properties.get(key));o.loadout[1]={...o.loadout[0]};f.properties.set(key,JSON.stringify(o));}]){const f=installRebindFixture(1);mutate(f);const before=JSON.stringify(f.sheets),properties=JSON.stringify([...f.properties]);assert.throws(()=>f.ctx.getNodeInstallOrder(f.e),/RESERVE|ASSIGNED|RESERVATION_INVALID|LOADOUT_INVALID/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(JSON.stringify([...f.properties]),properties);}
+});
+
+test('NODE-002 recovery preserves real 014=50,006=105,012=435 loadout at 3/3 and can confirm immediately',()=>{
+ const f=installRebindFixture(3,'NODE-002'),before=JSON.stringify(f.sheets),r=f.ctx.getNodeInstallOrder(f.e);assert.equal(r.node.id,'NODE-002');assert.equal(r.installation,f.initialOrder.installation);assert.equal(r.totalEnergy,590);assert.equal(r.count,3);assert.equal(r.canConfirm,true);assert.equal(JSON.stringify(f.sheets),before);assert.deepEqual(Array.from(r.loadout,c=>[c.id,c.energy]),[['NC-014',50],['NC-006',105],['NC-012',435]]);assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);
 });

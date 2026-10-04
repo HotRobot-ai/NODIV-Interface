@@ -3974,14 +3974,24 @@ function getNodeOperationOrder(e,operation) {
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
     const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&operation==='INSTALL'&&nodeOperationType(order)==='INSTALL'&&
       order.eventId===context.event.eventId&&order.eventState===context.event.state&&Array.isArray(order.loadout)&&order.loadout.length===3&&
-      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3&&order.loadout.every(core=>['NC-013','NC-006','NC-010'].includes(core.id)))
+      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt)
       .sort((a,b)=>(Number(b.expiresAt)||0)-(Number(a.expiresAt)||0))[0];
     if(recoverable){
+      if(recoverable.legacy!==context.legacy||new Set(recoverable.loadout.map(core=>core.id)).size!==3||
+        new Set(recoverable.loadout.map(core=>core.uid)).size!==3||new Set(recoverable.cores.map(core=>core.id)).size!==recoverable.cores.length||
+        new Set(recoverable.cores.map(core=>core.uid)).size!==recoverable.cores.length||
+        recoverable.loadout.some(core=>!core.uid||!Number.isFinite(core.energy)||core.energy<=0)||
+        recoverable.cores.some(core=>!recoverable.loadout.some(item=>item.id===core.id&&item.uid===core.uid)))throw new Error('INSTALL_LOADOUT_INVALID');
+      if(orders.some(order=>order.id!==recoverable.id&&order.nodeId===nodeId&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
+      // Reuse ownership/UID/energy and exact deployment-reservation guards before rebinding.
+      // The old browser session may be gone; it is not the authority for this encounter.
+      recoverable.loadout.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid,recoverable));
+      const previousToken=recoverable.sessionToken;
       recoverable.sessionToken=token;
-      recoverable.expiresAt=Date.now()+NODE_INSTALL_TTL_SECONDS*1000;
       PropertiesService.getScriptProperties().setProperty(NODE_INSTALL_ORDER_PREFIX+recoverable.id,JSON.stringify(recoverable));
-      CacheService.getScriptCache().put(NODE_INSTALL_PREFIX+token,JSON.stringify(recoverable),NODE_INSTALL_TTL_SECONDS);
-      return nodeInstallationResponse(recoverable,context,operation==='DEINSTALL'?'NODE_DEINSTALL_ORDER_RESUMED':'NODE_INSTALL_ORDER_RESUMED');
+      if(previousToken!==token)CacheService.getScriptCache().remove(NODE_INSTALL_PREFIX+previousToken);
+      CacheService.getScriptCache().put(NODE_INSTALL_PREFIX+token,JSON.stringify(recoverable),Math.max(1,Math.floor((recoverable.expiresAt-Date.now())/1000)));
+      return nodeInstallationResponse(recoverable,context,'NODE_INSTALL_ORDER_RESUMED');
     }
     cleanupInstallationOrders();
     const liveOrders=readInstallationOrders();
