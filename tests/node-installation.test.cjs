@@ -307,7 +307,7 @@ test('P003 scan never returns code; server sizes only 1 and releases code only a
  const f=exchangeFixture(),route=f.preview();assert.equal(route.accessCode,undefined);assert.equal(f.ctx.getNodeAccessAuthorization(f.player,'NODE-001','INSTALLED').accessCode,undefined);
  assert.deepEqual(Array.from(route.exchangePreview.sizes),[1]);assert.equal(route.exchangePreview.slotLimit,1);
  f.e.parameter.size=2;assert.throws(()=>f.ctx.normalExchange(f.e,'authorize'),/SIZE_NOT_ALLOWED/);
- assert.equal(f.authorize(1).accessCode,'0123');assert.equal(f.batches(),0);assert.throws(()=>f.authorize(1),/ALREADY_RUNNING/);
+ assert.equal(f.authorize(1).accessCode,'0123');assert.equal(f.batches(),0);assert.throws(()=>f.ctx.exchangePreview(f.e,f.player,'NODE-001'),/ALREADY_RUNNING/);
 });
 test('exchange rejects wrong, foreign, duplicate and wrong-phase cores; scans never change ownership',()=>{
  const f=exchangeFixture();f.authorize();const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));
@@ -380,4 +380,26 @@ test('retry cannot bypass current session, core ownership, phase or snapshot val
   const f=exchangeFixture();f.authorize();f.e.parameter.phase='IN';f.exchangeScan(6);mutate(f);assert.throws(()=>f.exchangeScan(6));assert.equal(f.batches(),0);
  }
  const f=exchangeFixture();f.authorize();f.e.parameter.phase='OUT';assert.throws(()=>f.exchangeScan(1),/PHASE_MISMATCH/);f.e.parameter.phase='INVALID';assert.throws(()=>f.exchangeScan(6),/PHASE_INVALID/);
+});
+
+test('Node rescan resumes own exchange at 0/0, 1/0, 1/1 without creating order or changing ownership',()=>{
+ for(const count of [0,1,2]){
+  const f=exchangeFixture();const auth=f.authorize();if(count>=1)f.exchangeScan(6);if(count===2)f.exchangeScan(1);
+  const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),properties=JSON.stringify([...f.properties]);f.e.parameter.uid='nodeuid';
+  const route=f.ctx.getGameplayRoute(f.e),resume=route.exchangeResume;assert.equal(route.decision.action,'EXCHANGE_RESUME');assert.equal(resume.exchange,auth.exchange);assert.equal(resume.nodeId,'NODE-001');assert.equal(resume.size,1);assert.equal(resume.inCount,count>=1?1:0);assert.equal(resume.outCount,count===2?1:0);assert.equal(resume.canConfirm,count===2);assert.equal(resume.accessCode,'0123');assert.equal(route.exchangePreview,undefined);
+  assert.equal(JSON.stringify([...f.properties]),properties);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);assert.equal(f.batches(),0);assert.equal(f.ctx.liveExchanges().length,1);
+  if(count===0){f.e.parameter.exchange=resume.exchange;f.ctx.normalExchange(f.e,'cancel');assert.equal(f.ctx.liveExchanges().length,0);assert.equal(f.properties.has('NODIV_EXCHANGE_'+resume.exchange),false);assert.ok(f.preview().exchangePreview);}
+  if(count===1){f.exchangeScan(1);assert.equal(f.finishExchange().status,'EXCHANGE_COMPLETE');}
+  if(count===2)assert.equal(f.finishExchange().status,'EXCHANGE_COMPLETE');
+ }
+});
+test('recovery rejects different identity/session/Node, expired/completed orders and changed event/code/core state',()=>{
+ const f=exchangeFixture();f.authorize();assert.equal(f.ctx.recoverNormalExchange(f.e,'NODE-002'),null);
+ const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'CARD-003'}));assert.equal(f.ctx.recoverNormalExchange({parameter:{token}},'NODE-001'),null);
+ f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));assert.equal(f.ctx.recoverNormalExchange({parameter:{token}},'NODE-001'),null);
+ for(const mutate of [f=>f.sheets['Event Register'].rows[1][0]='OTHER',f=>f.sheets['Event Register'].rows[1][1]='COMPLETED',f=>f.cache.delete('NODIV_SESSION_'+f.e.parameter.token),f=>{const key='NODIV_EXCHANGE_'+f.e.parameter.exchange,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));}]){
+  const g=exchangeFixture();g.authorize();mutate(g);assert.equal(g.ctx.recoverNormalExchange(g.e,'NODE-001'),null);assert.equal(g.batches(),0);
+ }
+ for(const mutate of [f=>f.sheets['N-Core Register'].rows[6][15]='OTHER',f=>f.sheets['Event Node Codes'].rows[1][2]='9999']){const g=exchangeFixture();g.authorize();mutate(g);assert.throws(()=>g.ctx.recoverNormalExchange(g.e,'NODE-001'));assert.equal(g.batches(),0);}
+ const g=exchangeFixture();g.authorize();g.exchangeScan(6);g.exchangeScan(1);g.finishExchange();assert.equal(g.ctx.recoverNormalExchange(g.e,'NODE-001'),null);
 });

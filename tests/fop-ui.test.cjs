@@ -114,3 +114,11 @@ test('NFC read error closes that reader before a delayed reading can send a requ
  f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});await action('authorize');await action('scan');
  let requests=0;f.ctx.apiRequest=async()=>{requests++;};f.ctx.reader.onreadingerror();await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests,0);assert.equal(e['#exchangeScan'].disabled,false);
 });
+
+test('reload recovery restores code, server counts, phase/confirm gating and usable cancel',async()=>{
+ for(const [incoming,outgoing] of [[0,0],[1,0],[1,1]]){
+  const f=ui(),e=f.elements;f.ctx.resumePioneerExchange({exchange:'existing',status:'EXCHANGE_RESUMED',nodeId:'NODE-001',size:1,inCount:incoming,outCount:outgoing,canConfirm:outgoing===1,accessCode:'0123',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
+  assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeProgress'].textContent,'IN '+incoming+'/1 // OUT '+outgoing+'/1');assert.equal(e['#exchangeConfirm'].disabled,outgoing!==1);assert.equal(e['#exchangeAuthorize'].hidden,true);assert.equal(e['#exchangeCancel'].hidden,false);assert.match(e['#exchangeScan'].textContent,incoming?/NODE-CORE/:/EIGENEN CORE/);
+  f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:true,action:true,status:'EXCHANGE_CANCELLED'}};await f.listeners['nodiv-pioneer-exchange']({detail:{action:'cancel'}});assert.equal(f.requests[0].action,'exchangecancel');assert.equal(f.requests[0].exchange,'existing');assert.equal(f.requests[0].node,'NODE-001');assert.equal(e['#pioneerExchange'].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
+ }
+});

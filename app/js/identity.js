@@ -69,8 +69,9 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    b.textContent='NODIV OBJECT // VERIFYING';
    try{
     const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
-    if(!route?.ok||!route?.session)throw new Error(route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
-    if(route.exchangePreview)showPioneerExchangePreview(route.exchangePreview);
+    if(!route?.ok||!route?.session)throw new Error(route?.error||route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
+    if(route.exchangeResume)resumePioneerExchange(route.exchangeResume);
+    else if(route.exchangePreview)showPioneerExchangePreview(route.exchangePreview);
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
     const decision=route.decision||{};
@@ -562,6 +563,11 @@ function renderPioneerExchange(result){
  document.querySelector('#exchangeProgress').textContent=complete?'EXCHANGE COMPLETE // NODE COOLDOWN 05:00':active?'IN '+result.inCount+'/'+result.size+' // OUT '+result.outCount+'/'+result.size:'Exchange-Größe wählen. Code erst nach Autorisierung.';
  if(active)document.querySelector('#exchangeScan').textContent=result.inCount<result.size?'EIGENEN CORE SCANNEN':'ENTNOMMENEN NODE-CORE SCANNEN';
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active;
+}
+function resumePioneerExchange(resume){
+ pioneerExchangePreview=resume;pioneerExchange=resume;
+ renderPioneerExchange(resume);
+ document.querySelector('#exchangeHint').textContent='EXCHANGE RESUMED // bestätigte Scans wiederhergestellt. Weiterarbeiten oder Exchange abbrechen.';
 }
 function showPioneerExchangePreview(preview){
  if(pioneerExchange)return;

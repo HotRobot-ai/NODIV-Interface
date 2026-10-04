@@ -2668,6 +2668,8 @@ function getGameplayRoute(e) {
 
   if (hit.type === 'NODE') {
     const status=getNodeGameplayStatus(hit.id);
+    const recovery=player.role==='PIONEER'?recoverNormalExchange(e,hit.id):null;
+    if(recovery)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},'EXCHANGE_RESUME',true,'EXCHANGE_RESUMED','Autorisierter Exchange wiederhergestellt.',{exchangeResume:recovery});
     const cargo=findActiveDeploymentForCarrier(player.identity,player.role);
     if(cargo){
       const isTarget=cargo.targetNode===String(hit.id||'').trim().toUpperCase();
@@ -6564,6 +6566,37 @@ function exchangePreview(e,player,nodeId){
  return {preview,nodeId,totalEnergy:context.totalEnergy,nodeState:nodeEnergyState(context.totalEnergy),slotLimit:context.capacity,sizes:Array.from({length:Math.min(context.capacity,context.personal.length)},(_,i)=>i+1)};
 }
 function exchangeResponse(order,status){return {ok:true,session:true,action:true,status,exchange:order.id,nodeId:order.nodeId,size:order.size,inCount:order.incoming.length,outCount:order.outgoing.length,canConfirm:order.incoming.length===order.size&&order.outgoing.length===order.size};}
+function validateLiveExchange(order,player){
+ if(!exchangeIsLive(order))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
+ const nodeId=order.nodeId;
+  const context=exchangeContext(player,nodeId,order.id);
+  if(exchangeNodeFingerprint(nodeId,context.eventNode)!==order.nodeFingerprint)throw new Error('EXCHANGE_NODE_CHANGED');
+  if(context.event.eventId!==order.eventId||context.capacity!==order.capacity)throw new Error('EXCHANGE_EVENT_SLOT_CHANGED');
+  const snapshot=cores=>JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());
+  if(snapshot(context.inventory)!==snapshot(order.inventory)||snapshot(context.nodeCores)!==snapshot(order.nodeCores))throw new Error('EXCHANGE_CORE_STATE_CHANGED');
+ const ids=order.incoming.concat(order.outgoing);
+ if(!Number.isInteger(order.size)||order.size<1||order.size>Math.min(context.capacity,context.personal.length)||
+    order.incoming.length>order.size||order.outgoing.length>order.size||new Set(ids).size!==ids.length||
+    (order.outgoing.length&&order.incoming.length!==order.size)||
+    order.incoming.some(id=>!context.personal.some(core=>core.coreId===id))||
+    order.outgoing.some(id=>!context.nodeCores.some(core=>core.coreId===id)))throw new Error('EXCHANGE_CORE_INVALID');
+ return context;
+}
+function recoverNormalExchange(e,nodeId){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return null;
+  const token=normalizeSessionToken(e.parameter.token);
+  const order=liveExchanges().find(order=>order.token===token&&order.identity===session.player.identity&&order.nodeId===nodeId);
+  if(!order)return null;
+  const context=validateLiveExchange(order,session.player);
+  const index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[context.eventNode.activeSlot];
+  const accessCode=context.eventNode.codes[index];
+  if(!/^\d{4}$/.test(accessCode))throw new Error('NODE_CODE_STATE_INVALID');
+  return {...exchangeResponse(order,'EXCHANGE_RESUMED'),accessCode,totalEnergy:context.totalEnergy,nodeState:nodeEnergyState(context.totalEnergy),slotLimit:context.capacity,sizes:[order.size]};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
 function normalExchange(e,action){
  const lock=LockService.getScriptLock();
  try{
@@ -6588,11 +6621,7 @@ function normalExchange(e,action){
   if(order.token!==token||order.identity!==player.identity||order.nodeId!==nodeId)throw new Error('EXCHANGE_SESSION_NODE_MISMATCH');
   if(action==='cancel'){props.deleteProperty(EXCHANGE_PREFIX+order.id);return {...exchangeResponse(order,'EXCHANGE_CANCELLED'),canConfirm:false};}
   if(!exchangeIsLive(order))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
-  const context=exchangeContext(player,nodeId,order.id);
-  if(exchangeNodeFingerprint(nodeId,context.eventNode)!==order.nodeFingerprint)throw new Error('EXCHANGE_NODE_CHANGED');
-  if(context.event.eventId!==order.eventId||context.capacity!==order.capacity)throw new Error('EXCHANGE_EVENT_SLOT_CHANGED');
-  const snapshot=cores=>JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());
-  if(snapshot(context.inventory)!==snapshot(order.inventory)||snapshot(context.nodeCores)!==snapshot(order.nodeCores))throw new Error('EXCHANGE_CORE_STATE_CHANGED');
+  const context=validateLiveExchange(order,player);
   if(action==='scan'){
    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
    if(!uid||!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
