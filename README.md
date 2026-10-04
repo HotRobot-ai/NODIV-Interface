@@ -227,3 +227,39 @@ Deploy updated Code.js to the existing Apps Script Web App (existing Sheets v4
 service), and publish the frontend updates. Test cargo handoff, target scan,
 mechanical code, ordered NFC scans, session recovery and mobile layout with real
 Android hardware before relying on field operation.
+
+### CATCH V1.0 — direct authenticated encounter
+
+The existing `catch` action now takes `token` and `mode=preview` with a physically
+scanned `targetUid`, then `mode=confirm` with the returned `catchId`. The Catcher
+must have an active authenticated Access Card with `catchAccess=true`; the target
+must present an active Pioneer card. Self-catch is rejected. Anonymous legacy
+requests and manually selected Core IDs do not authorize a transfer.
+
+The preview discloses only target identity and readiness, never the selected Core.
+The server selects the highest **visible** energy eligible personal FIELD Core
+(ties use Core ID). Transit, open deployments, active Exchange/Restore/FOP Core
+reservations are excluded. No eligible Core yields `NO_CATCHABLE_CORE`; no free
+personal slot yields `CATCHER_CAPACITY_FULL`. Existing Ghost protection is respected;
+Catch does not introduce a new Ghost timer or change progression/RESTORE rewards.
+
+Five-minute previews use existing Script Properties, reserve no inventory and
+store private inventory snapshots. Under ScriptLock, confirm rechecks the cards,
+FIELD_ACTIVE event, full inventories, highest eligible Core and reservations.
+Two overlapping previews of the same target cannot both commit. The existing
+ownership engine stages one Advanced Sheets atomic batch: `PIONEER/<target>` to
+`PIONEER/<catcher>`, status FIELD, and `CATCH_COMPLETE` including visible energy.
+The durable log is the retry receipt, including when the batch succeeded but its
+response was lost. No new sheet, column, migration or live-data repair is required.
+
+Catcher roles display their PIONEER-owned personal Cores alongside any existing
+role-owned inventory; both types count against capacity, excluding transit cargo.
+The Catcher screen refreshes immediately after success. Other visible field
+screens poll authoritative player state every five seconds and refresh on focus;
+there is no GPS or browser ownership calculation. Red/yellow/green indicate an
+open step, running NFC/server operation, and server acceptance.
+
+Deploy a new Apps Script Web App version and the updated frontend/cache assets.
+Real Android/NFC validation remains necessary for login, both physical Access
+Cards, duplicate NFC callbacks, actual handover and recovery from interrupted
+network responses. No physical cards or live event data are changed by deployment.

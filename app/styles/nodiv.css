@@ -271,3 +271,5 @@
 .restore-projection{margin:8px 0 0;text-align:center;color:#91cfe2;font:700 10px ui-monospace,monospace;letter-spacing:.08em}.restore-code{margin:14px 0 0;padding:12px;border:1px solid #b58a35;border-radius:8px;color:#f0c96d;text-align:center;font:700 18px ui-monospace,monospace;letter-spacing:.08em}.restore-code:empty{display:none}
 .restore-progress{margin:14px 0 0;padding:10px;border-radius:8px;background:#071219;color:#90dcf2;text-align:center;font:700 12px ui-monospace,monospace}.restore-hint{margin:10px 0;color:#a9bcc4;font-size:11px;line-height:1.5}
 #pioneerRestore .role-action{width:100%;margin-top:8px}
+
+.catch-step{padding:12px;border:2px solid;border-radius:8px;font-size:.8rem;letter-spacing:.06em}.catch-step.required{border-color:#dc6464;color:#ffc1c1}.catch-step.running{border-color:#e7bf56;color:#ffe299}.catch-step.accepted{border-color:#46c996;color:#9cecc5}.catch-panel button{width:100%;margin-top:10px}.catch-panel [hidden]{display:none!important}#catchResult{color:#9cecc5;font-weight:700}#catchInventory{margin-top:14px;font-size:.85rem;color:#91cfe5}

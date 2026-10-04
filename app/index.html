@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#050a11"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles/nodiv.css?v=20261004-restore-ui2">
+<meta name="theme-color" content="#050a11"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles/nodiv.css?v=20261004-catch1">
 <title>NODIV // APP V1</title>
 <style>
 :root{--bg:#05090d;--cyan:#39c8ff;--text:#edf8ff;--muted:#7890a0}
@@ -30,7 +30,7 @@ button{width:100%;min-height:56px;border:1px solid #27769b;border-radius:10px;ba
 </section><section id="roleView" class="role-view" hidden></section></main>
 <script type="module">
 import {emitNodiv} from "./js/motion.js?v=20261003-2335";
-import {startIdentity} from "./js/identity.js?v=20261004-restore-ui2";
+import {startIdentity} from "./js/identity.js?v=20261004-catch1";
 emitNodiv("APP_BOOT",{target:"#app"});
 document.getElementById("identityBtn").addEventListener("click",startIdentity);
 if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js?v=20261004-ops3").catch(()=>{});

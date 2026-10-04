@@ -2824,6 +2824,7 @@ function getPlayerState(e) {
   if (!session.ok) return session.response;
   const player = session.player;
   const ownerType = player.role;
+  const personalTypes = player.catchAccess ? [ownerType,'PIONEER'] : [ownerType];
   const ownerId = player.identity;
   const sheet = getRegisterSheet();
   const rows = sheet.getRange(2, 1, 200, Math.max(CORE_COL.UPDATED_AT, CORE_COL.OWNER_ID)).getValues();
@@ -2831,7 +2832,7 @@ function getPlayerState(e) {
   rows.forEach((row, index) => {
     const type = String(row[CORE_COL.OWNER_TYPE - 1] || '').trim().toUpperCase();
     const id = String(row[CORE_COL.OWNER_ID - 1] || '').trim().toUpperCase();
-    if (type !== ownerType || id !== ownerId) return;
+    if (!personalTypes.includes(type) || id !== ownerId || String(row[CORE_COL.STATUS-1]).toUpperCase()==='IN_TRANSIT') return;
     const visible = row[CORE_COL.VISIBLE_ENERGY - 1] === '' ? '' : Number(row[CORE_COL.VISIBLE_ENERGY - 1]);
     const actual = row[CORE_COL.ACTUAL_ENERGY - 1] === '' ? '' : Number(row[CORE_COL.ACTUAL_ENERGY - 1]);
     cores.push({
@@ -5217,89 +5218,72 @@ function startCoreTransfer(e) {
 
 
 
-function catchCoreTransfer(e) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-
-    const card1Uid = normalizeUid(e.parameter.card1Uid || '');
-    const card2Uid = normalizeUid(e.parameter.card2Uid || '');
-    const coreUid = normalizeUid(e.parameter.uid || '');
-
-    if (!card1Uid || !card2Uid) throw new Error('Zwei Access Cards müssen gescannt werden.');
-    if (card1Uid === card2Uid) throw new Error('Dieselbe Access Card wurde zweimal gescannt.');
-    if (!coreUid) throw new Error('N-Core NFC UID fehlt.');
-
-    const a = findAccessCardByUid(card1Uid);
-    const b = findAccessCardByUid(card2Uid);
-    if (!a || !b) throw new Error('Eine der Access Cards ist nicht registriert.');
-    if (a.status !== 'ACTIVE' || b.status !== 'ACTIVE') throw new Error('Beide Access Cards müssen ACTIVE sein.');
-
-    let pioneer, local;
-    if (a.role === 'PIONEER' && b.role === 'LOCAL') { pioneer=a; local=b; }
-    else if (a.role === 'LOCAL' && b.role === 'PIONEER') { pioneer=b; local=a; }
-    else throw new Error('CATCH benötigt genau einen PIONEER und einen LOCAL.');
-
-    if (!local.catchAccess) throw new Error(local.identity + ' besitzt keine CATCH Berechtigung.');
-
-    const pioneerId=String(pioneer.identity||'').trim().toUpperCase();
-    const localId=String(local.identity||'').trim().toUpperCase();
-    if (!pioneerId || !localId) throw new Error('Identity fehlt im Access Card Register.');
-
-    const now=new Date();
-    if (pioneer.ghostUntil) {
-      const activeGhost=new Date(pioneer.ghostUntil);
-      if (!isNaN(activeGhost.getTime()) && activeGhost>now) {
-        throw new Error(pioneerId + ' befindet sich bereits im GHOST Status.');
-      }
-    }
-
-    if (countCoresOwnedBy('LOCAL',localId) >= local.coreCapacity) {
-      throw new Error(localId + ' hat keine freie N-Core Kapazität.');
-    }
-
-    const hit=lookupUidGlobally(coreUid);
-    if (!hit.found || hit.type !== 'N_CORE' || !hit.id) {
-      throw new Error('Gescannter NFC Tag ist kein registrierter N-Core.');
-    }
-
-    const coreId=String(hit.id).trim().toUpperCase();
-    const state=readCoreState(coreId);
-    if (state.uid !== coreUid) throw new Error('N-Core UID stimmt nicht mit dem Register überein.');
-    if (state.ownerType !== 'PIONEER' || state.ownerId !== pioneerId) {
-      throw new Error(coreId + ' gehört nicht zu ' + pioneerId + ' // tatsächlich ' +
-        (state.ownerType||'—') + ' // ' + (state.ownerId||'—'));
-    }
-
-    const result=transferCoreOwnership({
-      coreId:coreId,
-      expectedFromType:'PIONEER',
-      expectedFromId:pioneerId,
-      toType:'LOCAL',
-      toId:localId,
-      eventType:'CATCH',
-      actorId:localId,
-      actorRole:'LOCAL',
-      newStatus:'CAUGHT',
-      details:'CATCH // '+pioneerId+' -> '+localId
-    });
-
-    const ghostUntil=new Date(now.getTime()+15*60*1000);
-    setAccessCardGhostUntilByUid(pioneer.uid,ghostUntil);
-
-    SpreadsheetApp.flush();
-
-    return {
-      ok:true,
-      catch:result,
-      pioneer:pioneerId,
-      local:localId,
-      core:coreId,
-      ghostUntil:ghostUntil.toISOString()
-    };
-  } finally {
-    try { lock.releaseLock(); } catch (error) {}
+/* CATCH V1: authenticated encounter, hidden server selection, optimistic snapshots.
+ * The existing endpoint no longer accepts a manually chosen Core or anonymous cards. */
+const CATCH_PREFIX='NODIV_CATCH_V1_';
+function catchPersonalCores(player,rows){
+ return exchangeOwnedCores('PIONEER',player.identity,rows).concat(player.role==='PIONEER'?[]:exchangeOwnedCores(player.role,player.identity,rows)).filter(core=>core.status!=='IN_TRANSIT');
+}
+function catchInventorySnapshot(cores){
+ return JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.lastTransaction]).sort((a,b)=>a[0].localeCompare(b[0])));
+}
+function catchContext(catcher,target){
+ if(!catcher||catcher.status!=='ACTIVE'||catcher.catchAccess!==true)throw new Error('CATCH_ACCESS_DENIED');
+ if(!target||target.status!=='ACTIVE'||target.role!=='PIONEER')throw new Error('CATCH_TARGET_INVALID');
+ if(target.identity===catcher.identity)throw new Error('SELF_CATCH');
+ const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('FIELD_ACTIVE_REQUIRED');
+ if(target.ghostUntil&&new Date(target.ghostUntil).getTime()>Date.now())throw new Error('TARGET_PROTECTED');
+ const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+ const personal=exchangeOwnedCores('PIONEER',target.identity,rows),inventory=catchPersonalCores(catcher,rows);
+ if(!Number.isInteger(catcher.coreCapacity)||catcher.coreCapacity<1||inventory.length>=catcher.coreCapacity)throw new Error('CATCHER_CAPACITY_FULL');
+ const exchanges=liveExchanges(),restores=liveRestores(),installations=readInstallationOrders().filter(installationOrderIsLive);
+ const sheet=getDeploymentRegisterSheet(),deployments=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
+ const eligible=personal.filter(core=>{
+  if(!core.uid||!Number.isFinite(core.visibleEnergy)||core.status!=='FIELD')return false;
+  if(hasOpenDeploymentForCore(core.coreId,undefined,deployments,installations))return false;
+  try{assertExchangeUnreserved('',target.identity,core.coreId,undefined,exchanges);assertRestoreUnreserved('','',core.coreId,undefined,restores);}catch(error){return false;}
+  return !installations.some(order=>(order.loadout||[]).some(c=>(c.id||c.coreId)===core.coreId));
+ }).sort((a,b)=>b.visibleEnergy-a.visibleEnergy||a.coreId.localeCompare(b.coreId));
+ if(!eligible.length)throw new Error('NO_CATCHABLE_CORE');
+ // Receiving a Core must not change the inventory of an already authorized Exchange.
+ assertExchangeUnreserved('',catcher.identity,'',undefined,exchanges);
+ return {event,personal,inventory,core:eligible[0]};
+}
+function catchCoreTransfer(e){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const catcher=session.player,action=String(e.parameter.mode||'preview'),props=PropertiesService.getScriptProperties();
+  if(catcher.status!=='ACTIVE'||catcher.catchAccess!==true)throw new Error('CATCH_ACCESS_DENIED');
+  if(action==='preview'){
+   const target=findAccessCardByUid(normalizeUid(e.parameter.targetUid||''));
+   const context=catchContext(catcher,target),id='CAT-'+Utilities.getUuid().toUpperCase();
+   // Expired previews reserve nothing. Bound property count for repeated NFC encounters.
+   const existing=props.getProperties();Object.keys(existing).filter(key=>key.startsWith(CATCH_PREFIX)).forEach(key=>{try{if(JSON.parse(existing[key]).expiresAt<=Date.now())props.deleteProperty(key);}catch(error){props.deleteProperty(key);}});
+   const order={id,catcher:catcher.identity,catcherCard:catcher.cardId,target:target.identity,targetCard:target.cardId,targetUid:target.uid,eventId:context.event.eventId,expiresAt:Date.now()+5*60*1000,
+    personalSnapshot:catchInventorySnapshot(context.personal),catcherSnapshot:catchInventorySnapshot(context.inventory),coreId:context.core.coreId};
+   props.setProperty(CATCH_PREFIX+id,JSON.stringify(order));
+   return {ok:true,session:true,action:true,status:'CATCH_READY',catchId:id,target:target.identity,canConfirm:true,expiresAt:order.expiresAt};
   }
+  if(action!=='confirm')throw new Error('INVALID_CATCH_ACTION');
+  const id=String(e.parameter.catchId||''),order=JSON.parse(props.getProperty(CATCH_PREFIX+id)||'null');
+  if(!order||order.catcher!==catcher.identity||order.catcherCard!==catcher.cardId)throw new Error('CATCH_SESSION_MISMATCH');
+  const completed=exchangeLogRows().find(row=>row[2]==='CATCH_COMPLETE'&&row[3]===catcher.identity&&String(row[15]||'').startsWith(id+' // '));
+  if(completed)return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:order.target,core:{id:completed[5],energy:Number(completed[10])},replayed:true};
+  if(order.expiresAt<=Date.now())throw new Error('CATCH_EXPIRED');
+  const target=findAccessCardByUid(order.targetUid);
+  if(!target||target.identity!==order.target||target.cardId!==order.targetCard)throw new Error('CATCH_TARGET_INVALID');
+  const context=catchContext(catcher,target);
+  if(context.event.eventId!==order.eventId)throw new Error('CATCH_EVENT_CHANGED');
+  if(catchInventorySnapshot(context.personal)!==order.personalSnapshot||catchInventorySnapshot(context.inventory)!==order.catcherSnapshot||context.core.coreId!==order.coreId)throw new Error('CATCH_SNAPSHOT_CHANGED');
+  const core=context.core,requests=[];
+  // Reuse the general ownership engine, preserving every guard, staging only.
+  transferCoreOwnership({coreId:core.coreId,expectedFromType:'PIONEER',expectedFromId:target.identity,toType:'PIONEER',toId:catcher.identity,newStatus:'FIELD',eventType:'CATCH_COMPLETE',actorId:catcher.identity,actorRole:catcher.role,
+   details:id+' // TARGET '+target.identity+' // '+core.coreId+' // '+core.visibleEnergy+' E',batchRequests:requests});
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  // Durable completion log is the replay receipt; preview metadata expires independently.
+  return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:target.identity,core:{id:core.coreId,energy:core.visibleEnergy},replayed:false};
+ }finally{try{lock.releaseLock();}catch(error){}}
 }
 
 function setAccessCardGhostUntilByUid(uid,ghostUntil) {

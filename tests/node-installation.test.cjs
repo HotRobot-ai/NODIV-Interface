@@ -496,11 +496,11 @@ test('Restore recovery/session rebind preserves all scan phases and code authori
 });
 test('Restore final batch exchanges fixed cores, completes mission, capacity exactly 2 and locks only target for 1 hour',()=>{
  const f=restoreFixture(),personal=JSON.stringify(f.sheets['N-Core Register'].rows[8]);f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const b=f.batches(),r=f.restoreFinish();assert.equal(f.batches(),b+1);assert.equal(r.status,'RESTORE_1_COMPLETE');assert.equal(r.totalEnergy,600);assert.equal(r.nodeState,'STABLE');
- const rows=f.sheets['N-Core Register'].rows;assert.equal(rows[9][14],'NODE');assert.equal(rows[9][15],'NODE-002');assert.equal(rows[9][4],'DEPLOYED');assert.equal(rows[4][14],'NODIV_RESERVE');assert.equal(rows[4][15],'HQ');assert.equal(rows[4][4],'RESERVE');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),1);assert.equal(JSON.stringify(rows[8]),personal);
+ const rows=f.sheets['N-Core Register'].rows;assert.equal(rows[9][14],'NODE');assert.equal(rows[9][15],'NODE-002');assert.equal(rows[9][4],'DEPLOYED');assert.equal(rows[4][14],'PIONEER');assert.equal(rows[4][15],'P003');assert.equal(rows[4][4],'FIELD');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),2);assert.equal(JSON.stringify(rows[8]),personal);
  assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);assert.equal(f.sheets['Deployment Register'].rows[1][6],'COMPLETED');assert.equal(f.ctx.liveRestores().length,0);assert.equal(f.properties.has('NODIV_RESTORE_1_'+f.restoreE.parameter.restore),false);
  const logs=f.sheets['Transaction Log'].rows.map(row=>row[2]);assert.ok(logs.includes('RESTORE_1_IN'));assert.ok(logs.includes('RESTORE_1_OUT'));assert.ok(logs.includes('RESTORE_1_COMPLETE'));assert.equal(f.ctx.getRestoreEligibility(f.founder).pioneers.length,0);assert.throws(f.restoreFinish,/COMPLETED/);assert.equal(f.batches(),b+1);
  const player=f.ctx.findIdentityById('P003'),lock=f.ctx.getNodeAccessAuthorization(player,'NODE-002','INSTALLED');assert.equal(lock.reason,'RESTORE_TARGET_LOCKED');assert.ok(lock.remainingSeconds>3590&&lock.remainingSeconds<=3600);assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-001','INSTALLED').allowed,true);
- const complete=f.sheets['Transaction Log'].rows.find(row=>row[2]==='RESTORE_1_COMPLETE');complete[1]=new Date(Date.now()-3600000);assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-002','INSTALLED').allowed,true);assert.deepEqual(Array.from(f.ctx.exchangePreview(f.restoreE,player,'NODE-001').sizes),[1]);
+ const complete=f.sheets['Transaction Log'].rows.find(row=>row[2]==='RESTORE_1_COMPLETE');complete[1]=new Date(Date.now()-3600000);assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-002','INSTALLED').allowed,true);assert.deepEqual(Array.from(f.ctx.exchangePreview(f.restoreE,player,'NODE-001').sizes),[1,2]);
 });
 test('Restore blocks concurrent FOP/Exchange/mission/ownership and rejects changed state, foreign Identity, Node/Event or expiry',()=>{
  const f=restoreFixture();f.assign();f.restoreAuthorize();assert.throws(()=>f.ctx.getNodeDeinstallOrder({parameter:{token:'a'.repeat(72),node:'NODE-002'}}),/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.exchangePreview(f.restoreE,f.ctx.findIdentityById('P003'),'NODE-002'),/RESTORE_OPERATION_RESERVED/);assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-009',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'FOP',toId:'F001'}),/RESTORE_OPERATION_RESERVED/);
@@ -513,14 +513,14 @@ test('Restore batch failure leaves all state including capacity/logs/order recov
  f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(f.restoreFinish,/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(sheet=>sheet.rows)),before);assert.equal(f.target().canConfirm,true);f.ctx.Sheets.Spreadsheets.batchUpdate=original;assert.equal(f.restoreFinish().capacity,2);
 });
 test('expired Restore releases transit status/reservation without moving ownership; failed assignment produces no live mission',()=>{
- const f=restoreFixture();f.assign();const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));assert.equal(f.ctx.liveRestores().length,0);f.ctx.getRestoreEligibility(f.founder);assert.equal(f.ctx.readCoreState('NC-009').status,'RESERVE');assert.equal(f.ctx.readCoreState('NC-009').ownerId,'HQ');assert.equal(f.properties.has(key),false);
+ const f=restoreFixture();f.assign();const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));assert.equal(f.ctx.liveRestores().length,0);f.ctx.cleanupRestoreOrders();assert.equal(f.ctx.readCoreState('NC-009').status,'RESERVE');assert.equal(f.ctx.readCoreState('NC-009').ownerId,'HQ');assert.equal(f.properties.has(key),false);
  const g=restoreFixture(),before=JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows));g.fail();assert.throws(g.assign,/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(g.sheets).map(sheet=>sheet.rows)),before);assert.equal(g.ctx.liveRestores().length,0);
 });
 
 test('STABLE-only event creates no restore; upload inventory and catch/normal exchange exclude assigned HQ transit core',()=>{
  const f=restoreFixture();for(const n of [4,5,7])f.sheets['N-Core Register'].rows[n][1]=200;assert.equal(f.assign().status,'NO_SUITABLE_RESTORE_TARGET_OR_CORE');assert.equal(f.batches(),0);
  const g=restoreFixture();g.assign();g.sheets['Upload Terminal Register'].rows.push(['UPLOAD-HQ-BAY-01','UPLOAD_HQ','uploaduid','ACTIVE']);const preview=g.ctx.getHqUploadPreview({parameter:{token:g.restoreE.parameter.token,uid:'uploaduid'}});assert.deepEqual(Array.from(preview.cores,c=>c.coreId),['NC-008']);assert.throws(()=>g.ctx.exchangePreview(g.restoreE,g.ctx.findIdentityById('P003'),'NODE-001'),/RESTORE_OPERATION_RESERVED/);
- g.sheets['Access Card Register'].rows.push(['CARD-L','L001','LOCAL','localuid','ACTIVE','',1,false,true]);assert.throws(()=>g.ctx.catchCoreTransfer({parameter:{card1Uid:'p003uid',card2Uid:'localuid',uid:'uid9'}}),/gehört nicht/);assert.equal(g.ctx.readCoreState('NC-009').ownerType,'NODIV_RESERVE');
+ g.sheets['Access Card Register'].rows.push(['CARD-L','L001','LOCAL','localuid','ACTIVE','',1,false,true]);assert.equal(g.ctx.catchCoreTransfer({parameter:{card1Uid:'p003uid',card2Uid:'localuid',uid:'uid9'}}).session,false);assert.equal(g.ctx.readCoreState('NC-009').ownerType,'NODIV_RESERVE');
 });
 
 test('actual first Normal Exchange marker enables Restore assignment; FOP-reserved target and shared Core cannot be used',()=>{
@@ -538,4 +538,76 @@ test('foreign authenticated Pioneer cannot resume Restore; unauthorized assignme
 
 test('Restore commit uses atomic batch without flush/transfer rescans; completion marker prevents replay despite stale property',()=>{
  const f=restoreFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');const key='NODIV_RESTORE_1_'+f.restoreE.parameter.restore,order=f.properties.get(key);let flushes=0;f.ctx.SpreadsheetApp.flush=()=>flushes++;f.ctx.transferCoreOwnership=()=>{throw Error('RESTORE_COMMIT_MUST_USE_VALIDATED_BATCH')};f.restoreFinish();assert.equal(flushes,0);f.properties.set(key,order);assert.throws(f.restoreFinish,/EXPIRED_OR_COMPLETED/);assert.equal(f.ctx.getPioneerRestoreState(f.restoreE).status,'NO_ACTIVE_RESTORE');assert.equal(f.sheets['Transaction Log'].rows.filter(row=>row[2]==='RESTORE_1_COMPLETE').length,1);
+});
+
+function catchFixture(capacity=3){
+ const f=exchangeFixture(capacity),token='c'.repeat(72);f.ctx.readPlayerEnergyBalance=()=>0;
+ f.sheets['Access Card Register'].rows.push(['CARD-C','P009','PIONEER','catcheruid','ACTIVE','',2,true,true]);
+ f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P009',role:'PIONEER',cardId:'CARD-C'}));
+ const e={parameter:{token,mode:'preview',targetUid:'p003uid'}};
+ return {...f,catchE:e,catchPreview(){return f.ctx.catchCoreTransfer(e)},catchConfirm(id){return f.ctx.catchCoreTransfer({parameter:{token,mode:'confirm',catchId:id}})}};
+}
+test('CATCH highest visible energy stays hidden until atomic confirmation; both inventories update, no progression mutation',()=>{
+ const f=catchFixture(),rows=f.sheets['N-Core Register'].rows;rows[4][1]=410;rows[4][13]=1;rows[5][1]=390;rows[5][13]=900;
+ const before=JSON.stringify(f.sheets),r=f.catchPreview();assert.equal(r.target,'P003');assert.equal(r.core,undefined);assert.equal(r.coreId,undefined);assert.equal(JSON.stringify(f.sheets),before);
+ const completed=f.catchConfirm(r.catchId);assert.equal(completed.status,'CATCH_COMPLETE');assert.equal(completed.core.id,'NC-004');assert.equal(completed.core.energy,410);assert.equal(f.batches(),1);
+ assert.equal(rows[4][14],'PIONEER');assert.equal(rows[4][15],'P009');assert.equal(rows[4][4],'FIELD');
+ assert.equal(f.ctx.getPlayerState(f.e).cores.length,2);assert.equal(f.ctx.getPlayerState(f.catchE).cores.length,1);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,3);
+ const log=f.sheets['Transaction Log'].rows[1];assert.equal(log[2],'CATCH_COMPLETE');assert.equal(log[3],'P009');assert.equal(log[7],'P003');assert.equal(log[9],'P009');assert.equal(log[10],410);
+ const snapshot=JSON.stringify(f.sheets);assert.equal(f.catchConfirm(r.catchId).replayed,true);assert.equal(JSON.stringify(f.sheets),snapshot);
+});
+test('CATCH excludes transit and mission-bound cores, chooses highest remaining; zero eligible denied',()=>{
+ const f=catchFixture(),rows=f.sheets['N-Core Register'].rows;rows[6][4]='IN_TRANSIT';rows[5][1]=300;
+ f.sheets['Deployment Register'].rows.push(['DEP','NC-005','','','','MISSION','ASSIGNED']);
+ const r=f.catchPreview();assert.equal(f.catchConfirm(r.catchId).core.id,'NC-004');assert.equal(rows[6][15],'P003');assert.equal(rows[5][15],'P003');
+ const g=catchFixture(1);g.sheets['N-Core Register'].rows[6][4]='IN_TRANSIT';assert.throws(()=>g.catchPreview(),/NO_CATCHABLE_CORE/);
+ const h=catchFixture(1);h.sheets['N-Core Register'].rows[6][14]='NODIV_RESERVE';h.sheets['N-Core Register'].rows[6][15]='HQ';assert.throws(()=>h.catchPreview(),/NO_CATCHABLE_CORE/);
+});
+test('CATCH rights, active cards, self-catch, capacity, event and session are server validated',()=>{
+ const mutate=[f=>f.sheets['Access Card Register'].rows.at(-1)[8]=false,f=>f.sheets['Access Card Register'].rows.at(-1)[4]='INACTIVE',f=>f.sheets['Access Card Register'].rows[2][4]='INACTIVE',f=>f.catchE.parameter.targetUid='catcheruid',f=>f.sheets['Access Card Register'].rows.at(-1)[6]=0,f=>f.sheets['Event Register'].rows[1][1]='COMPLETED'];
+ for(const change of mutate){const f=catchFixture();change(f);const result=()=>f.catchPreview();if(f.sheets['Access Card Register'].rows.at(-1)[4]==='INACTIVE')assert.equal(result().session,false);else assert.throws(result,/ACCESS_DENIED|TARGET_INVALID|SELF_CATCH|CAPACITY_FULL|FIELD_ACTIVE/);assert.equal(f.batches(),0);}
+ const f=catchFixture();f.sheets['Access Card Register'].rows.at(-1)[6]=1;const row=f.sheets['N-Core Register'].rows[8];row[2]='eight';row[14]='PIONEER';row[15]='P009';row[4]='FIELD';assert.throws(()=>f.catchPreview(),/CATCHER_CAPACITY_FULL/);
+ assert.equal(f.ctx.catchCoreTransfer({parameter:{card1Uid:'p003uid',card2Uid:'catcheruid',uid:'uid6'}}).session,false);
+});
+test('CATCH blocks active Exchange inventory and rechecks reservations added after preview',()=>{
+ const f=catchFixture(1);f.authorize(1);assert.throws(()=>f.catchPreview(),/NO_CATCHABLE_CORE/);
+ for(const reserved of ['deployment','exchange']){const g=catchFixture(1),r=g.catchPreview(),before=JSON.stringify(g.sheets);if(reserved==='exchange')g.authorize(1);else g.sheets['Deployment Register'].rows.push(['DEP','NC-006','','','','MISSION','IN_TRANSIT']);const owners=g.sheets['N-Core Register'].rows.map(row=>row.slice(14));assert.throws(()=>g.catchConfirm(r.catchId),/NO_CATCHABLE_CORE/);assert.deepEqual(g.sheets['N-Core Register'].rows.map(row=>row.slice(14)),owners);}
+ const g=catchFixture(),r=g.catchPreview();g.sheets['N-Core Register'].rows[4][1]=999;assert.throws(()=>g.catchConfirm(r.catchId),/SNAPSHOT_CHANGED/);assert.equal(g.batches(),0);
+});
+test('CATCH batch failure leaves ownership/log unchanged and confirmation retry succeeds',()=>{
+ const f=catchFixture(),r=f.catchPreview(),before=JSON.stringify(f.sheets),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(()=>f.catchConfirm(r.catchId),/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.catchConfirm(r.catchId).status,'CATCH_COMPLETE');
+ const g=catchFixture(),p=g.catchPreview();g.ctx.transferCoreOwnership=()=>{throw Error('PRECOMMIT_FAILED')};const snapshot=JSON.stringify(g.sheets);assert.throws(()=>g.catchConfirm(p.catchId),/PRECOMMIT_FAILED/);assert.equal(JSON.stringify(g.sheets),snapshot);
+});
+test('CATCH concurrent previews on same Pioneer allow only one transfer, including a different catcher',()=>{
+ const f=catchFixture(),a=f.catchPreview(),b=f.catchPreview();f.catchConfirm(a.catchId);assert.throws(()=>f.catchConfirm(b.catchId),/SNAPSHOT_CHANGED/);assert.equal(f.batches(),1);
+ const g=catchFixture(),one=g.catchPreview(),token='d'.repeat(72);g.sheets['Access Card Register'].rows.push(['CARD-D','L001','LOCAL','localuid','ACTIVE','',1,false,true]);g.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'L001',role:'LOCAL',cardId:'CARD-D'}));
+ const two=g.ctx.catchCoreTransfer({parameter:{token,mode:'preview',targetUid:'p003uid'}});g.catchConfirm(one.catchId);assert.throws(()=>g.ctx.catchCoreTransfer({parameter:{token,mode:'confirm',catchId:two.catchId}}),/SNAPSHOT_CHANGED/);assert.equal(g.batches(),1);
+});
+test('CATCH revalidates cards/event/expiry, rejects foreign confirmation, no new ghost rule',()=>{
+ for(const mutate of [f=>f.sheets['Access Card Register'].rows.at(-1)[8]=false,f=>f.sheets['Access Card Register'].rows[2][3]='replacement',f=>f.sheets['Event Register'].rows[1][0]='OTHER']){
+  const f=catchFixture(),r=f.catchPreview();mutate(f);assert.throws(()=>f.catchConfirm(r.catchId),/ACCESS_DENIED|TARGET_INVALID|EVENT_CHANGED/);assert.equal(f.batches(),0);
+ }
+ const f=catchFixture(),r=f.catchPreview(),key='NODIV_CATCH_V1_'+r.catchId,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));assert.throws(()=>f.catchConfirm(r.catchId),/CATCH_EXPIRED/);
+ assert.throws(()=>f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'confirm',catchId:r.catchId}}),/ACCESS_DENIED/);
+ const g=catchFixture(1),p=g.catchPreview();g.catchConfirm(p.catchId);assert.equal(g.ctx.findIdentityById('P003').ghostUntil,null);
+});
+test('LOCAL Catcher receives PIONEER-owned FIELD Core and sees it immediately; P003 Restore capacity remains exactly 2',()=>{
+ const f=catchFixture(1);f.sheets['Access Card Register'].rows[2][6]=2;f.sheets['Access Card Register'].rows.at(-1)[2]='LOCAL';f.sheets['Access Card Register'].rows.at(-1)[7]=false;f.cache.set('NODIV_SESSION_'+f.catchE.parameter.token,JSON.stringify({identity:'P009',role:'LOCAL',cardId:'CARD-C'}));
+ const r=f.catchPreview();f.catchConfirm(r.catchId);assert.equal(f.ctx.getPlayerState(f.catchE).cores[0].coreId,'NC-006');assert.equal(f.ctx.getPlayerState(f.e).cores.length,0);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);
+});
+test('CATCH lost batch response is recovered from durable receipt without transferring another Core',()=>{
+ const f=catchFixture(),r=f.catchPreview(),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('NETWORK_RESPONSE_LOST')};assert.throws(()=>f.catchConfirm(r.catchId),/NETWORK_RESPONSE_LOST/);const before=JSON.stringify(f.sheets);const retry=f.catchConfirm(r.catchId);assert.equal(retry.replayed,true);assert.equal(retry.core.energy,341);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),1);
+});
+test('CATCH confirms only with fresh authenticated Catcher, current capacity and unchanged target ownership',()=>{
+ const f=catchFixture(),r=f.catchPreview();f.cache.delete('NODIV_SESSION_'+f.catchE.parameter.token);assert.equal(f.catchConfirm(r.catchId).session,false);assert.equal(f.batches(),0);
+ const g=catchFixture(),p=g.catchPreview();g.sheets['Access Card Register'].rows.at(-1)[6]=0;assert.throws(()=>g.catchConfirm(p.catchId),/CAPACITY_FULL/);assert.equal(g.batches(),0);
+ const h=catchFixture(),q=h.catchPreview();h.sheets['N-Core Register'].rows[6][15]='OTHER';assert.throws(()=>h.catchConfirm(q.catchId),/SNAPSHOT_CHANGED/);assert.equal(h.batches(),0);
+ const j=catchFixture(),a=j.catchPreview(),token='e'.repeat(72);j.sheets['Access Card Register'].rows.push(['CARD-E','P010','PIONEER','otheruid','ACTIVE','',1,true,true]);j.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P010',role:'PIONEER',cardId:'CARD-E'}));assert.throws(()=>j.ctx.catchCoreTransfer({parameter:{token,mode:'confirm',catchId:a.catchId}}),/CATCH_SESSION_MISMATCH/);assert.equal(j.batches(),0);
+});
+test('CATCH does not grant Pioneer rights: P003 2/3 with NC-008 remains intact, authorized catch can fill second slot',()=>{
+ const f=catchFixture(1),rows=f.sheets['N-Core Register'].rows;rows[6][14]='NODIV_RESERVE';rows[6][15]='HQ';rows[8][2]='uid8';rows[8][1]=310;rows[8][4]='FIELD';rows[8][14]='PIONEER';rows[8][15]='P003';f.sheets['Access Card Register'].rows[2][6]=2;
+ f.sheets['Transaction Log'].rows.push(['RESTORED',new Date(),'RESTORE_1_COMPLETE','P003','PIONEER','','','','','','','','','NODE-002','SUCCESS','old-restore']);
+ assert.throws(()=>f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'preview',targetUid:'catcheruid'}}),/CATCH_ACCESS_DENIED/);assert.equal(f.ctx.readCoreState('NC-008').ownerId,'P003');assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);
+ f.sheets['Access Card Register'].rows[2][8]=true;rows[7][2]='uid7';rows[7][1]=100;rows[7][4]='FIELD';rows[7][14]='PIONEER';rows[7][15]='P009';const personal=JSON.stringify(rows[8]),order=f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'preview',targetUid:'catcheruid'}});
+ f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'confirm',catchId:order.catchId}});assert.equal(JSON.stringify(rows[8]),personal);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,2);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),2);assert.deepEqual(Array.from(f.ctx.exchangePreview(f.e,f.ctx.findIdentityById('P003'),'NODE-001').sizes),[1,2]);assert.equal(f.sheets['Transaction Log'].rows.filter(r=>r[2]==='RESTORE_1_COMPLETE').length,1);
 });

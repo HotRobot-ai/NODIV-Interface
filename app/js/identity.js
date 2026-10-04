@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-restore-ui2';
+import {routeIdentity} from './router.js?v=20261004-catch1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -53,7 +53,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
 });
 window.addEventListener('nodiv-pioneer-scan',async()=>{
  const b=document.querySelector('#pioneerScan');
- if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy)return;
+ if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
@@ -576,7 +576,7 @@ function showPioneerExchangePreview(preview){
  document.querySelector('#exchangeHint').textContent='Anzahl rein = Anzahl raus. Erst alle eigenen, dann die entnommenen Cores scannen.';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
- if(pioneerExchangeBusy||pioneerRestoreBusy||!pioneerExchangePreview||!sessionToken)return;
+ if(pioneerExchangeBusy||pioneerRestoreBusy||catchBusy||!pioneerExchangePreview||!sessionToken)return;
  const action=e.detail?.action;
  const hint=document.querySelector('#exchangeHint');
  if(action==='scan'){
@@ -716,3 +716,44 @@ window.addEventListener('nodiv-founder-restore',async e=>{
   if(assignmentMessage)hint.textContent=assignmentMessage;
  }catch(err){hint.textContent=String(err.message||err);if(button)button.disabled=false;}
 });
+
+/* Direct encounter: NFC target authentication never lets the browser select a Core. */
+let catchOrder=null,catchBusy=false,catchScanController=null;
+function catchStep(id,state,text){const element=document.querySelector('#'+id);if(element){element.className='catch-step '+state;element.textContent=text;}}
+window.addEventListener('nodiv-catch-live',async()=>{
+ if(!sessionToken)return;const inventory=document.querySelector('#catchInventory');if(!inventory)return;
+ try{const r=await apiRequest({action:'playerstate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'PLAYER STATE UNAVAILABLE');inventory.textContent=(r.cores||[]).map(c=>c.coreId+' // '+c.energy+' E').join(' // ')||'NO PERSONAL CORES';const slots=document.querySelector('#catcherPersonalSlots');if(slots)slots.textContent=inventory.textContent+' // '+(r.cores||[]).length+'/'+r.player.coreCapacity;}catch(error){inventory.textContent=String(error.message||error);}
+});
+window.addEventListener('nodiv-catch',async e=>{
+ if(!sessionToken||catchBusy||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
+ const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),confirm=document.querySelector('#catchConfirm'),result=document.querySelector('#catchResult');if(!hint||!start)return;
+ if(e.detail?.action==='scan'){
+  if(typeof NDEFReader==='undefined'){hint.textContent='WEB NFC NICHT VERFÜGBAR // Android + Chrome erforderlich.';return;}
+  catchOrder=null;confirm.hidden=true;confirm.disabled=true;result.hidden=true;catchBusy=true;start.disabled=true;
+  catchStep('catchTargetStep','running','TARGET // NFC SCAN RUNNING');catchStep('catchCommitStep','required','TRANSFER // CONFIRMATION REQUIRED');
+  try{
+   catchScanController?.abort();catchScanController=new AbortController();const reader=new NDEFReader();await reader.scan({signal:catchScanController.signal});let handled=false;
+   const finish=()=>{catchBusy=false;start.disabled=false;catchScanController.abort();};
+   reader.onreadingerror=()=>{if(handled)return;handled=true;finish();catchStep('catchTargetStep','required','TARGET // ACCESS CARD REQUIRED');hint.textContent='NFC READ FAILED // RETRY';};
+   reader.onreading=async ev=>{if(handled)return;handled=true;catchScanController.abort();try{
+    const r=await apiRequest({action:'catch',mode:'preview',token:sessionToken,targetUid:String(ev.serialNumber||'')});
+    if(!r?.ok||!r.session||!r.canConfirm||r.status!=='CATCH_READY')throw Error(r?.error||r?.status||'CATCH DENIED');
+    catchOrder=r;catchStep('catchTargetStep','accepted','TARGET // '+r.target+' // SERVER ACCEPTED');hint.textContent=r.target+' // CATCH READY';confirm.hidden=false;confirm.disabled=false;
+   }catch(error){catchStep('catchTargetStep','required','TARGET // NOT ACCEPTED');hint.textContent=String(error.message||error);}finally{finish();}};
+  }catch(error){catchBusy=false;start.disabled=false;catchStep('catchTargetStep','required','TARGET // ACCESS CARD REQUIRED');hint.textContent=String(error.message||error);}
+  return;
+ }
+ if(e.detail?.action!=='confirm'||!catchOrder)return;
+ catchBusy=true;start.disabled=true;confirm.disabled=true;catchStep('catchCommitStep','running','TRANSFER // SERVER COMMIT RUNNING');
+ try{
+  const r=await apiRequest({action:'catch',mode:'confirm',token:sessionToken,catchId:catchOrder.catchId});
+  if(!r?.ok||r.status!=='CATCH_COMPLETE')throw Error(r?.error||r?.status||'CATCH DENIED');
+  catchStep('catchCommitStep','accepted','TRANSFER // SERVER ACCEPTED');result.hidden=false;result.textContent='CATCH COMPLETE // '+r.core.id+' // '+r.core.energy+' E';hint.textContent='Core physisch übergeben.';confirm.hidden=true;catchOrder=null;
+  window.dispatchEvent(new CustomEvent('nodiv-catch-live'));window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+ }catch(error){catchStep('catchCommitStep','required','TRANSFER // NOT CONFIRMED');hint.textContent=String(error.message||error);confirm.disabled=false;}finally{catchBusy=false;start.disabled=false;}
+});
+// Refresh ownership after returning from a physical encounter on another device.
+window.addEventListener('focus',()=>{window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));window.dispatchEvent(new CustomEvent('nodiv-catch-live'));});
+
+// JSONP has no push channel: visible field screens refresh authoritative ownership.
+setInterval(()=>{if(sessionToken&&document.visibilityState==='visible'){window.dispatchEvent(new CustomEvent(document.querySelector('#pioneerInventory')?'nodiv-pioneer-live':'nodiv-catch-live'));}},5000);
