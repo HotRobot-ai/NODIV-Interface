@@ -3800,7 +3800,7 @@ function validateNodeInstallation(actor, nodeId) {
   const legacy=eventNode.changeStatus==='ACTIVE'&&eventNode.activeSlot==='PRIMARY'&&!eventNode.pendingSlot;
   const restoreTestReinstall=event.state==='FIELD_ACTIVE'&&eventNode.changeStatus==='DEINSTALLED'&&restoreTestSetupFor({event,eventNode},nodeId);
   if(!legacy&&!restoreTestReinstall&&(event.state!=='INITIALIZED'||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
-  return {event,eventNode,assigned,legacy};
+  return {event,eventNode,assigned,legacy,restoreTestReinstall};
 }
 
 // Durable, expiring metadata extends the existing Deployment Register. No new sheet.
@@ -3943,6 +3943,10 @@ function getNodeOperationOrder(e,operation) {
     if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
     orders.filter(order=>order.sessionToken===token).forEach(order=>releaseInstallationOrder(order,'CANCELLED'));
     const loadout=operation==='DEINSTALL'?getNodeRemovalLoadout(nodeId):buildNodeInstallationLoadout(context,nodeId);
+    if(operation==='INSTALL'&&context.restoreTestReinstall){
+      const total=loadout.reduce((sum,core)=>sum+core.energy,0);
+      if(total<450||total>=600)throw new Error('RESTORE_TEST_LOADOUT_NOT_DEGRADED');
+    }
     if(operation==='DEINSTALL'&&loadout.some(core=>hasOpenDeploymentForCore(core.id)))throw new Error('CORE_ALREADY_ASSIGNED');
     const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
       identity:actor.identity,sessionToken:token,operation,legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
