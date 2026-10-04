@@ -622,11 +622,20 @@ function renderPioneerRestore(result,atNode=false){
  if(board)board.textContent=active?'RESTORE #1 // '+result.nodeId+' // '+result.inCore.id+' / '+result.inCore.energy+' E // IN TRANSIT (MISSION CARGO)':'NO ACTIVE RESTORE';
  if(count)count.textContent=active?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
  if(!panel)return;panel.hidden=!result.restore;
- document.querySelector('#restoreNode').textContent='RESTORE #1 // '+result.nodeId+' // '+result.totalEnergy+' E // '+result.nodeState;
- document.querySelector('#restoreLoadout').textContent='IN // '+result.inCore.id+' / '+result.inCore.energy+' E // OUT REQUIRED // '+result.outCore.id+' / '+result.outCore.energy+' E';
- document.querySelector('#restoreProjection').textContent='PROJECTED // '+result.projectedEnergy+' E // '+result.projectedState;
- document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE // '+result.accessCode:'';
- document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY 2/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1';
+ document.querySelector('#restoreNode').textContent=result.nodeId+' // '+result.nodeState;
+ const inCard=document.querySelector('#restoreInCard'),outCard=document.querySelector('#restoreOutCard');
+ document.querySelector('#restoreInCore').textContent=result.inCore.id;
+ document.querySelector('#restoreInEnergy').textContent=result.inCore.energy+' E';
+ document.querySelector('#restoreOutCore').textContent=result.outCore.id;
+ document.querySelector('#restoreOutEnergy').textContent=result.outCore.energy+' E';
+ document.querySelector('#restoreCurrentEnergy').textContent=result.totalEnergy+' E';
+ document.querySelector('#restoreProjectedEnergy').textContent=result.projectedEnergy+' E';
+ if(inCard)inCard.dataset.state=result.inCount?'done':'pending';
+ if(outCard)outCard.dataset.state=result.outCount?'done':'pending';
+ const badge=document.querySelector('#restoreStateBadge');if(badge){badge.textContent=complete?'COMPLETE':result.authorized?'AUTHORIZED':atNode?'AT NODE':'IN TRANSIT';badge.dataset.state=complete?'done':result.authorized?'active':'pending';}
+ document.querySelector('#restoreProjection').textContent=result.nodeState+' → '+result.projectedState;
+ document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE  '+result.accessCode:'';
+ document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY 2/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1   //   OUT '+result.outCount+'/1';
  const auth=document.querySelector('#restoreAuthorize'),scan=document.querySelector('#restoreScan'),confirm=document.querySelector('#restoreConfirm');
  auth.hidden=!active||!atNode||result.authorized;auth.disabled=pioneerRestoreBusy;
  scan.hidden=!active||!atNode||!result.authorized;scan.disabled=pioneerRestoreBusy||Boolean(result.canConfirm);scan.textContent=result.inCount?'VORGESCHRIEBENEN NODE-CORE SCANNEN':'TRANSIT-CORE SCANNEN';
