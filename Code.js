@@ -3948,10 +3948,22 @@ function getNodeOperationOrder(e,operation) {
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
-    cleanupInstallationOrders();
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
-    if(orders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
-    orders.filter(order=>order.sessionToken===token).forEach(order=>releaseInstallationOrder(order,'CANCELLED'));
+    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&nodeOperationType(order)===operation&&
+      order.eventId===context.event.eventId&&order.eventState===context.event.state&&Array.isArray(order.loadout)&&order.loadout.length===3&&
+      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3)
+      .sort((a,b)=>(Number(b.expiresAt)||0)-(Number(a.expiresAt)||0))[0];
+    if(recoverable){
+      recoverable.sessionToken=token;
+      recoverable.expiresAt=Date.now()+NODE_INSTALL_TTL_SECONDS*1000;
+      PropertiesService.getScriptProperties().setProperty(NODE_INSTALL_ORDER_PREFIX+recoverable.id,JSON.stringify(recoverable));
+      CacheService.getScriptCache().put(NODE_INSTALL_PREFIX+token,JSON.stringify(recoverable),NODE_INSTALL_TTL_SECONDS);
+      return nodeInstallationResponse(recoverable,context,operation==='DEINSTALL'?'NODE_DEINSTALL_ORDER_RESUMED':'NODE_INSTALL_ORDER_RESUMED');
+    }
+    cleanupInstallationOrders();
+    const liveOrders=readInstallationOrders();
+    if(liveOrders.some(order=>order.nodeId===nodeId&&order.sessionToken!==token&&installationOrderIsLive(order)))throw new Error('NODE_INSTALLATION_RESERVED');
+    liveOrders.filter(order=>order.sessionToken===token).forEach(order=>releaseInstallationOrder(order,'CANCELLED'));
     const loadout=operation==='DEINSTALL'?getNodeRemovalLoadout(nodeId):buildNodeInstallationLoadout(context,nodeId);
     if(operation==='INSTALL'&&context.restoreTestReinstall){
       const total=loadout.reduce((sum,core)=>sum+core.energy,0);
