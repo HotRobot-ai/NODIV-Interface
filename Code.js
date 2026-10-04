@@ -3859,7 +3859,16 @@ function setRestoreTestSetup(e){
   const nodeId='NODE-002',eventNode=findEventNodeCode(event.eventId,nodeId);
   if(!eventNode)throw new Error('NODE_002_NOT_IN_EVENT');
   PropertiesService.getScriptProperties().setProperty(RESTORE_TEST_SETUP_KEY,JSON.stringify({eventId:event.eventId,nodeId,createdAt:new Date().toISOString()}));
-  return {ok:true,session:true,action:true,status:'RESTORE_TEST_SETUP_ARMED',nodeId,message:'NODE-002 // RESTORE TEST LOADOUT ARMED'};
+  const nodeCoreCount=countCoresOwnedBy('NODE',nodeId),available=getAvailableInstallationCores();
+  let preview=null,diagnostic='ARMED // NODE CURRENTLY INSTALLED';
+  if(nodeCoreCount===0){
+    try{
+      const loadout=selectRestoreTestLoadout(available),total=loadout.reduce((sum,core)=>sum+core.energy,0);
+      preview={loadout:loadout.map(core=>({id:core.id,energy:core.energy})),totalEnergy:total,nodeState:nodeEnergyState(total)};
+      diagnostic='READY // '+loadout.map(core=>core.id+' '+core.energy+'E').join(' // ')+' // '+total+'E';
+    }catch(error){diagnostic=String(error.message||error);}
+  }
+  return {ok:true,session:true,action:true,status:'RESTORE_TEST_SETUP_ARMED',nodeId,nodeCoreCount,availableReserveCores:available.length,preview,diagnostic,message:'NODE-002 // '+diagnostic};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function restoreTestSetupFor(context,nodeId){
