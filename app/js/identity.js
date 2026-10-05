@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261004-restore2';
+import {routeIdentity} from './router.js?v=20261005-catch-ghost';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -36,6 +36,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   const state=await apiRequest({action:'playerstate',token:sessionToken});
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
   const capacity=Math.max(0,Number(state.player?.coreCapacity||0)),cores=Array.isArray(state.cores)?state.cores:[];
+  renderPioneerGhost(state.player,state.serverNow);
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
   if(total)total.textContent=String(state.carriedEnergy??0)+' E';
   if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
@@ -769,3 +770,22 @@ window.addEventListener('focus',()=>{window.dispatchEvent(new CustomEvent('nodiv
 
 // JSONP has no push channel: visible field screens refresh authoritative ownership.
 setInterval(()=>{if(sessionToken&&document.visibilityState==='visible'){window.dispatchEvent(new CustomEvent(document.querySelector('#pioneerInventory')?'nodiv-pioneer-live':'nodiv-catch-live'));}},5000);
+
+// Display server-authoritative GhostUntil; this clock never authorizes gameplay.
+let pioneerGhostUntil=0,pioneerGhostClockOffset=0;
+function renderPioneerGhost(player,serverNow){
+ pioneerGhostUntil=new Date(player?.ghostUntil||0).getTime();
+ pioneerGhostClockOffset=Number.isFinite(serverNow)?serverNow-Date.now():0;
+ updatePioneerGhostClock();
+}
+function updatePioneerGhostClock(){
+ const panel=document.querySelector('.pioneer-priority'),timer=document.querySelector('.pioneer-timer');if(!panel||!timer)return;
+ const remaining=Math.max(0,Math.ceil((pioneerGhostUntil-Date.now()-pioneerGhostClockOffset)/1000)),active=remaining>0;
+ panel.dataset.ghost=active?'active':'inactive';timer.hidden=!active;
+ timer.textContent=active?String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0'):'';
+ const title=document.querySelector('.pioneer-priority h3'),hint=document.querySelector('.pioneer-priority p'),status=document.querySelector('.pioneer-state b');
+ if(title)title.textContent=active?'GHOST ACTIVE':'FIELD STATUS NOMINAL';
+ if(hint)hint.textContent=active?'CATCH-SCHUTZ // SERVER BESTÄTIGT':'No immediate action required.';
+ if(status)status.textContent=active?'GHOST':'ACTIVE';
+}
+setInterval(updatePioneerGhostClock,1000);

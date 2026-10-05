@@ -2843,7 +2843,7 @@ function getPlayerState(e) {
   });
   const carriedEnergy = cores.reduce((sum, core) => sum + (Number.isFinite(Number(core.energy)) ? Number(core.energy) : 0), 0);
   return {
-    ok:true, authenticated:true, session:true, status:'PLAYER_STATE',
+    ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
@@ -5279,31 +5279,33 @@ function catchCoreTransfer(e){
   const id=String(e.parameter.catchId||''),order=JSON.parse(props.getProperty(CATCH_PREFIX+id)||'null');
   if(!order||order.catcher!==catcher.identity||order.catcherCard!==catcher.cardId)throw new Error('CATCH_SESSION_MISMATCH');
   const completed=exchangeLogRows().find(row=>row[2]==='CATCH_COMPLETE'&&row[3]===catcher.identity&&String(row[15]||'').startsWith(id+' // '));
-  if(completed)return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:order.target,core:{id:completed[5],energy:Number(completed[10])},replayed:true};
+  if(completed)return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:order.target,core:{id:completed[5],energy:Number(completed[10])},ghostUntil:(String(completed[15]).match(/GHOST_UNTIL ([^ ]+)/)||[])[1]||null,replayed:true};
   if(order.expiresAt<=Date.now())throw new Error('CATCH_EXPIRED');
   const target=findAccessCardByUid(order.targetUid);
   if(!target||target.identity!==order.target||target.cardId!==order.targetCard)throw new Error('CATCH_TARGET_INVALID');
   const context=catchContext(catcher,target);
   if(context.event.eventId!==order.eventId)throw new Error('CATCH_EVENT_CHANGED');
   if(catchInventorySnapshot(context.personal)!==order.personalSnapshot||catchInventorySnapshot(context.inventory)!==order.catcherSnapshot||context.core.coreId!==order.coreId)throw new Error('CATCH_SNAPSHOT_CHANGED');
-  const core=context.core,requests=[];
+  const core=context.core,requests=[],ghostUntil=new Date(Date.now()+5*60*1000);
   // Reuse the general ownership engine, preserving every guard, staging only.
   transferCoreOwnership({coreId:core.coreId,expectedFromType:'PIONEER',expectedFromId:target.identity,toType:'PIONEER',toId:catcher.identity,newStatus:'FIELD',eventType:'CATCH_COMPLETE',actorId:catcher.identity,actorRole:catcher.role,
-   details:id+' // TARGET '+target.identity+' // '+core.coreId+' // '+core.visibleEnergy+' E',batchRequests:requests});
+   details:id+' // TARGET '+target.identity+' // '+core.coreId+' // '+core.visibleEnergy+' E // GHOST_UNTIL '+ghostUntil.toISOString(),batchRequests:requests});
+  setAccessCardGhostUntilByUid(target.uid,ghostUntil,requests);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   // Durable completion log is the replay receipt; preview metadata expires independently.
-  return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:target.identity,core:{id:core.coreId,energy:core.visibleEnergy},replayed:false};
+  return {ok:true,session:true,action:true,status:'CATCH_COMPLETE',catchId:id,target:target.identity,core:{id:core.coreId,energy:core.visibleEnergy},ghostUntil:ghostUntil.toISOString(),replayed:false};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 
-function setAccessCardGhostUntilByUid(uid,ghostUntil) {
+function setAccessCardGhostUntilByUid(uid,ghostUntil,batchRequests) {
   const normalizedUid=normalizeUid(uid);
   const sheet=getAccessCardRegisterSheet();
   const lastRow=Math.max(sheet.getLastRow(),2);
   const rows=sheet.getRange(2,1,lastRow-1,12).getValues();
   for (let i=0;i<rows.length;i++) {
     if (normalizeUid(rows[i][3])===normalizedUid) {
-      sheet.getRange(i+2,10).setValue(ghostUntil);
+      if(batchRequests)batchRequests.push(sheetCellsRequest(sheet,i+2,10,[[ghostUntil]]));
+      else sheet.getRange(i+2,10).setValue(ghostUntil);
       return true;
     }
   }

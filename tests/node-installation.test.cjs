@@ -579,17 +579,17 @@ test('CATCH batch failure leaves ownership/log unchanged and confirmation retry 
  const g=catchFixture(),p=g.catchPreview();g.ctx.transferCoreOwnership=()=>{throw Error('PRECOMMIT_FAILED')};const snapshot=JSON.stringify(g.sheets);assert.throws(()=>g.catchConfirm(p.catchId),/PRECOMMIT_FAILED/);assert.equal(JSON.stringify(g.sheets),snapshot);
 });
 test('CATCH concurrent previews on same Pioneer allow only one transfer, including a different catcher',()=>{
- const f=catchFixture(),a=f.catchPreview(),b=f.catchPreview();f.catchConfirm(a.catchId);assert.throws(()=>f.catchConfirm(b.catchId),/SNAPSHOT_CHANGED/);assert.equal(f.batches(),1);
+ const f=catchFixture(),a=f.catchPreview(),b=f.catchPreview();f.catchConfirm(a.catchId);assert.throws(()=>f.catchConfirm(b.catchId),/TARGET_PROTECTED/);assert.equal(f.batches(),1);
  const g=catchFixture(),one=g.catchPreview(),token='d'.repeat(72);g.sheets['Access Card Register'].rows.push(['CARD-D','L001','LOCAL','localuid','ACTIVE','',1,false,true]);g.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'L001',role:'LOCAL',cardId:'CARD-D'}));
- const two=g.ctx.catchCoreTransfer({parameter:{token,mode:'preview',targetUid:'p003uid'}});g.catchConfirm(one.catchId);assert.throws(()=>g.ctx.catchCoreTransfer({parameter:{token,mode:'confirm',catchId:two.catchId}}),/SNAPSHOT_CHANGED/);assert.equal(g.batches(),1);
+ const two=g.ctx.catchCoreTransfer({parameter:{token,mode:'preview',targetUid:'p003uid'}});g.catchConfirm(one.catchId);assert.throws(()=>g.ctx.catchCoreTransfer({parameter:{token,mode:'confirm',catchId:two.catchId}}),/TARGET_PROTECTED/);assert.equal(g.batches(),1);
 });
-test('CATCH revalidates cards/event/expiry, rejects foreign confirmation, no new ghost rule',()=>{
+test('CATCH revalidates cards/event/expiry, rejects foreign confirmation, atomic five-minute ghost',()=>{
  for(const mutate of [f=>f.sheets['Access Card Register'].rows.at(-1)[8]=false,f=>f.sheets['Access Card Register'].rows[2][3]='replacement',f=>f.sheets['Event Register'].rows[1][0]='OTHER']){
   const f=catchFixture(),r=f.catchPreview();mutate(f);assert.throws(()=>f.catchConfirm(r.catchId),/ACCESS_DENIED|TARGET_INVALID|EVENT_CHANGED/);assert.equal(f.batches(),0);
  }
  const f=catchFixture(),r=f.catchPreview(),key='NODIV_CATCH_V1_'+r.catchId,order=JSON.parse(f.properties.get(key));order.expiresAt=0;f.properties.set(key,JSON.stringify(order));assert.throws(()=>f.catchConfirm(r.catchId),/CATCH_EXPIRED/);
  assert.throws(()=>f.ctx.catchCoreTransfer({parameter:{token:f.e.parameter.token,mode:'confirm',catchId:r.catchId}}),/ACCESS_DENIED/);
- const g=catchFixture(1),p=g.catchPreview();g.catchConfirm(p.catchId);assert.equal(g.ctx.findIdentityById('P003').ghostUntil,null);
+ const g=catchFixture(1),p=g.catchPreview();g.catchConfirm(p.catchId);assert.ok(new Date(g.ctx.findIdentityById('P003').ghostUntil).getTime()>Date.now()+299000);
 });
 test('LOCAL Catcher receives PIONEER-owned FIELD Core and sees it immediately; P003 Restore capacity remains exactly 2',()=>{
  const f=catchFixture(1);f.sheets['Access Card Register'].rows[2][6]=2;f.sheets['Access Card Register'].rows.at(-1)[2]='LOCAL';f.sheets['Access Card Register'].rows.at(-1)[7]=false;f.cache.set('NODIV_SESSION_'+f.catchE.parameter.token,JSON.stringify({identity:'P009',role:'LOCAL',cardId:'CARD-C'}));
@@ -680,4 +680,30 @@ test('INSTALL recovery validates complete loadout and deployment reservations be
 
 test('NODE-002 recovery preserves real 014=50,006=105,012=435 loadout at 3/3 and can confirm immediately',()=>{
  const f=installRebindFixture(3,'NODE-002'),before=JSON.stringify(f.sheets),r=f.ctx.getNodeInstallOrder(f.e);assert.equal(r.node.id,'NODE-002');assert.equal(r.installation,f.initialOrder.installation);assert.equal(r.totalEnergy,590);assert.equal(r.count,3);assert.equal(r.canConfirm,true);assert.equal(JSON.stringify(f.sheets),before);assert.deepEqual(Array.from(r.loadout,c=>[c.id,c.energy]),[['NC-014',50],['NC-006',105],['NC-012',435]]);assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-002'),3);
+});
+
+test('Catch commits highest FIELD Core, SUCCESS log and exact five-minute GhostUntil in one atomic batch',()=>{
+ const f=catchFixture(),r=f.catchPreview(),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;let captured,flushes=0;f.ctx.SpreadsheetApp.flush=()=>flushes++;f.ctx.Sheets.Spreadsheets.batchUpdate=(body,id)=>{captured=body.requests;batch(body,id);};
+ const start=Date.now(),result=f.catchConfirm(r.catchId),end=Date.now(),until=new Date(f.ctx.findIdentityById('P003').ghostUntil).getTime();assert.ok(until>=start+300000&&until<=end+300000);assert.equal(result.ghostUntil,new Date(until).toISOString());assert.equal(f.batches(),1);assert.equal(flushes,0);assert.equal(f.ctx.readCoreState('NC-006').ownerId,'P009');assert.ok(captured.some(req=>req.updateCells?.start.sheetId===7&&req.updateCells.start.columnIndex===9));assert.equal(f.ctx.getPlayerState(f.e).player.status,'GHOST');assert.ok(Number.isFinite(f.ctx.getPlayerState(f.e).serverNow));
+ const before=JSON.stringify(f.sheets),receipt=f.catchConfirm(r.catchId);assert.equal(receipt.replayed,true);assert.equal(receipt.ghostUntil,result.ghostUntil);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),1);
+});
+test('Ghost prevents new preview and previously prepared confirm; expiry restores eligibility without affecting Node cooldown',()=>{
+ const f=catchFixture(),a=f.catchPreview(),b=f.catchPreview();f.catchConfirm(a.catchId);let before=JSON.stringify(f.sheets);assert.throws(()=>f.catchPreview(),/TARGET_PROTECTED/);assert.throws(()=>f.catchConfirm(b.catchId),/TARGET_PROTECTED/);assert.equal(JSON.stringify(f.sheets),before);
+ const player=f.ctx.findIdentityById('P003');assert.equal(f.ctx.getNodeAccessAuthorization(player,'NODE-001','INSTALLED').allowed,true);assert.ok(f.ctx.exchangePreview(f.e,player,'NODE-001').sizes.length>0);
+ f.sheets['Access Card Register'].rows[2][9]=new Date(Date.now()-1000);assert.equal(f.catchPreview().status,'CATCH_READY');
+ const g=catchFixture();g.sheets['Transaction Log'].rows.push(['cool',new Date(),'NORMAL_EXCHANGE','P003','PIONEER','','','','','','','','','NODE-001','SUCCESS','previous']);assert.throws(()=>g.ctx.exchangePreview(g.e,g.ctx.findIdentityById('P003'),'NODE-001'),/NODE_EXCHANGE_COOLDOWN/);assert.equal(g.catchPreview().status,'CATCH_READY');
+});
+test('Catch denial or failure creates neither transfer nor Ghost: protection, capacity, transit, snapshots, reservations and precommit/batch errors',()=>{
+ for(const kind of ['protected','full','transit','snapshot','reservation','ownership','ghost-stage','transfer-stage','batch']){
+  const f=catchFixture(1);let order;
+  if(kind==='protected')f.sheets['Access Card Register'].rows[2][9]=new Date(Date.now()+120000);
+  else if(kind==='full')f.sheets['Access Card Register'].rows.at(-1)[6]=0;
+  else if(kind==='transit')f.sheets['N-Core Register'].rows[6][4]='IN_TRANSIT';
+  else{order=f.catchPreview();if(kind==='snapshot')f.sheets['N-Core Register'].rows[6][1]=1;if(kind==='reservation')f.sheets['Deployment Register'].rows.push(['DEP','NC-006','','','','MISSION','ASSIGNED']);if(kind==='ownership')f.sheets['N-Core Register'].rows[6][15]='OTHER';if(kind==='ghost-stage')f.ctx.setAccessCardGhostUntilByUid=()=>{throw Error('GHOST_STAGE_FAILED')};if(kind==='transfer-stage')f.ctx.transferCoreOwnership=()=>{throw Error('TRANSFER_STAGE_FAILED')};if(kind==='batch')f.fail();}
+  const before=JSON.stringify(f.sheets);assert.throws(()=>order?f.catchConfirm(order.catchId):f.catchPreview());assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);assert.equal(f.ctx.exchangeLogRows().some(row=>row[2]==='CATCH_COMPLETE'),false);
+ }
+});
+test('Lost successful Catch response replays original Ghost deadline even after that deadline expires',()=>{
+ const f=catchFixture(),r=f.catchPreview(),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(()=>f.catchConfirm(r.catchId),/LOST_RESPONSE/);const original=f.ctx.findIdentityById('P003').ghostUntil,receipt=f.catchConfirm(r.catchId);assert.equal(receipt.ghostUntil,original);assert.equal(f.batches(),1);
+ const advanced=Date.now()+301000;f.ctx.Date=class extends Date{constructor(...args){super(...(args.length?args:[advanced]));}static now(){return advanced;}};const before=JSON.stringify(f.sheets);assert.equal(f.catchConfirm(r.catchId).ghostUntil,original);assert.equal(JSON.stringify(f.sheets),before);
 });
