@@ -796,7 +796,7 @@ let pioneerUpload=null,pioneerUploadBusy=false,pioneerUploadSelection=new Set();
 function renderPioneerUpload(result){
  pioneerUpload=result;pioneerUploadSelection=new Set();
  const panel=document.querySelector('#pioneerUpload'),choices=document.querySelector('#uploadChoices');if(!panel||!choices)return;
- panel.hidden=false;choices.hidden=false;choices.replaceChildren();document.querySelector('#uploadBay').textContent=result.bay?.id||'HQ UPLOAD';
+ panel.hidden=false;choices.hidden=false;choices.replaceChildren();document.querySelector('#uploadBay').textContent=' // '+(result.bay?.id||'HQ UPLOAD');
  document.querySelector('#uploadResult').hidden=true;document.querySelector('#uploadConfirm').hidden=true;document.querySelector('#uploadConfirm').disabled=true;
  document.querySelector('#uploadAuthorize').hidden=false;document.querySelector('#uploadAuthorize').disabled=true;
  for(const core of result.cores||[]){
