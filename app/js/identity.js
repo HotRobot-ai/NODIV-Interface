@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261005-catch-ghost';
+import {routeIdentity} from './router.js?v=20261005-hq-upload';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -54,7 +54,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
 });
 window.addEventListener('nodiv-pioneer-scan',async()=>{
  const b=document.querySelector('#pioneerScan');
- if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy)return;
+ if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
@@ -77,6 +77,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
     const decision=route.decision||{};
+    if(type==='UPLOAD_TERMINAL'&&object.terminalType==='UPLOAD_HQ'&&object.status==='ACTIVE'&&route.decision?.allowed!==false){const preview=await apiRequest({action:'uploadpreview',token:sessionToken,uid});if(!preview?.ok||!preview?.action)throw new Error(preview?.error||preview?.status||'UPLOAD PREVIEW FAILED');renderPioneerUpload(preview);}
     const action=String(decision.action||route.action||'NO_ACTION').toUpperCase();
     const allowed=decision.allowed!==undefined?Boolean(decision.allowed):route.allowed!==false;
     const status=String(object.status||route.status||'').toUpperCase();
@@ -789,3 +790,40 @@ function updatePioneerGhostClock(){
  if(status)status.textContent=active?'GHOST':'ACTIVE';
 }
 setInterval(updatePioneerGhostClock,1000);
+
+// Normal HQ Upload: only server-issued choices; retries retain the same upload ID.
+let pioneerUpload=null,pioneerUploadBusy=false,pioneerUploadSelection=new Set();
+function renderPioneerUpload(result){
+ pioneerUpload=result;pioneerUploadSelection=new Set();
+ const panel=document.querySelector('#pioneerUpload'),choices=document.querySelector('#uploadChoices');if(!panel||!choices)return;
+ panel.hidden=false;choices.hidden=false;choices.replaceChildren();document.querySelector('#uploadBay').textContent=result.bay?.id||'HQ UPLOAD';
+ document.querySelector('#uploadResult').hidden=true;document.querySelector('#uploadConfirm').hidden=true;document.querySelector('#uploadConfirm').disabled=true;
+ document.querySelector('#uploadAuthorize').hidden=false;document.querySelector('#uploadAuthorize').disabled=true;
+ for(const core of result.cores||[]){
+  const label=document.createElement('label'),input=document.createElement('input'),text=document.createElement('span');input.type='checkbox';input.value=core.coreId;
+  text.textContent=String(core.energy)+' E // FIELD';label.className='pioneer-core';label.appendChild(input);label.appendChild(text);choices.appendChild(label);
+  input.addEventListener('change',()=>{if(input.checked)pioneerUploadSelection.add(core.coreId);else pioneerUploadSelection.delete(core.coreId);document.querySelector('#uploadAuthorize').disabled=pioneerUploadBusy||pioneerUploadSelection.size===0;});
+ }
+ document.querySelector('#uploadHint').textContent=result.selectable?'1 bis alle verfügbaren Cores auswählen. Kostenlos // kein zusätzlicher Schutz.':'Keine uploadbaren persönlichen FIELD-Cores.';
+}
+window.addEventListener('nodiv-pioneer-upload',async e=>{
+ if(!pioneerUpload||!sessionToken||pioneerUploadBusy||pioneerExchangeBusy||pioneerRestoreBusy||catchBusy)return;
+ const action=e.detail?.action;if(!['authorize','confirm'].includes(action))return;
+ if(action==='authorize'&&!pioneerUploadSelection.size)return;if(action==='confirm'&&!pioneerUpload.canConfirm)return;
+ const authorize=document.querySelector('#uploadAuthorize'),confirm=document.querySelector('#uploadConfirm'),choices=document.querySelector('#uploadChoices'),hint=document.querySelector('#uploadHint');
+ pioneerUploadBusy=true;authorize.disabled=true;confirm.disabled=true;const scan=document.querySelector('#pioneerScan'),scanDisabled=scan?.disabled;if(scan)scan.disabled=true;
+ // Freeze choices while the server validates them; authorization locks the selection.
+ choices.querySelectorAll('input').forEach(input=>input.disabled=true);
+ try{
+  const r=await apiRequest({action:'upload'+action,token:sessionToken,upload:pioneerUpload.upload,...(action==='authorize'?{cores:JSON.stringify([...pioneerUploadSelection])}:{})});
+  if(!r?.ok||!r?.session||!r?.action)throw new Error(r?.error||r?.message||r?.status||'UPLOAD FAILED');
+  pioneerUpload=r;
+  if(r.status==='UPLOAD_COMPLETE'){
+   choices.hidden=true;authorize.hidden=true;confirm.hidden=true;hint.textContent='';const result=document.querySelector('#uploadResult');result.hidden=false;result.textContent='UPLOAD COMPLETE // '+String(r.totalEnergy)+' E SECURED';
+   window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+  }else{
+   authorize.hidden=true;confirm.hidden=false;hint.textContent=String(r.cores.length)+' CORE(S) // '+String(r.totalEnergy)+' E SECURED. Diese Cores verlassen dein persönliches Inventar. Upload jetzt verbindlich bestätigen.';
+  }
+ }catch(error){hint.textContent=String(error.message||error)+' // Mit derselben Auswahl erneut versuchen.';if(!pioneerUpload.canConfirm)choices.querySelectorAll('input').forEach(input=>input.disabled=false);}
+ finally{pioneerUploadBusy=false;authorize.disabled=pioneerUploadSelection.size===0;confirm.disabled=!pioneerUpload.canConfirm;if(scan)scan.disabled=Boolean(scanDisabled);}
+});

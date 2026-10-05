@@ -750,3 +750,93 @@ test('Deployment assignment and acceptance keep mission cargo HQ-owned outside a
  const assigned=f.ctx.assignCoreDeployment({parameter:{token:'a'.repeat(72),carrier:'P003',uid:'uid7',targetNode:'NODE-001'}});assert.equal(assigned.status,'DEPLOYMENT_ASSIGNED');
  const accepted=f.ctx.acceptCoreDeployment({parameter:{token:f.e.parameter.token,deployment:assigned.deployment.deploymentId}});assert.equal(accepted.status,'MISSION_CARGO_IN_TRANSIT');assert.equal(rows[7][14],'NODIV_RESERVE');assert.equal(rows[7][15],'HQ');assert.equal(rows[7][4],'IN_TRANSIT');assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),3);
 });
+
+function uploadFixture(capacity=1){
+ const f=exchangeFixture(capacity),Sheet=f.sheets['N-Core Register'].constructor;
+ f.sheets['Player Energy Ledger']=new Sheet(9,[['Entry ID','Timestamp','Identity','Role','Type','Amount','Balance After','Reference','Details']]);
+ f.sheets['Upload Terminal Register'].rows.push(['UPLOAD-HQ-BAY-01','UPLOAD_HQ','uploaduid','ACTIVE']);
+ for(const n of f.own)f.sheets['N-Core Register'].rows[n][13]=n*50;
+ const e={parameter:{token:f.e.parameter.token,uid:'uploaduid'}};
+ return {...f,uploadE:e,uploadPreview(){const r=f.ctx.getHqUploadPreview(e);e.parameter.upload=r.upload;return r},uploadAuthorize(ids){e.parameter.cores=JSON.stringify(ids);return f.ctx.normalHqUpload(e,'authorize')},uploadConfirm(){return f.ctx.normalHqUpload(e,'confirm')}};
+}
+test('HQ Upload commits one, partial and full inventories with exact authoritative energy, permanent ledger and receipt',()=>{
+ for(const [capacity,count] of [[1,1],[2,1],[2,2],[3,1],[3,2],[3,3]]){
+  const f=uploadFixture(capacity),ids=f.own.slice(0,count).map(n=>'NC-00'+n),expected=f.own.slice(0,count).reduce((sum,n)=>sum+n*50,0),before=JSON.stringify(f.sheets);
+  const preview=f.uploadPreview();assert.equal(preview.cores.length,capacity);const authorized=f.uploadAuthorize(ids);assert.equal(authorized.totalEnergy,expected);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+  const receipt=f.uploadConfirm();assert.equal(receipt.status,'UPLOAD_COMPLETE');assert.equal(receipt.totalEnergy,expected);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),expected);assert.equal(f.batches(),1);
+  for(const n of f.own.slice(0,count)){const core=f.ctx.readCoreState('NC-00'+n);assert.equal(core.ownerType,'NODIV_RESERVE');assert.equal(core.ownerId,'HQ');assert.equal(core.status,'RESERVE');}
+  const state=f.ctx.getPlayerState(f.uploadE);assert.equal(state.cores.length,capacity-count);assert.equal(state.carriedEnergy,f.own.slice(count).reduce((sum,n)=>sum+n*50,0));assert.equal(state.securedEnergy,expected);
+  assert.equal(f.sheets['Player Energy Ledger'].rows.length,2);const credit=f.sheets['Player Energy Ledger'].rows[1];assert.equal(credit[5],expected);assert.equal(credit[7],receipt.upload);
+  const complete=f.ctx.exchangeLogRows().filter(row=>row[2]==='HQ_UPLOAD_COMPLETE');assert.equal(complete.length,1);const durable=JSON.parse(complete[0][15]);assert.equal(durable.energyEntry,credit[0]);assert.equal(durable.securedEnergy,credit[6]);assert.equal(complete[0][12],expected);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='HQ_UPLOAD_CORE').length,count);
+ }
+});
+test('HQ Upload adds energy to prior permanent balance and ignores browser energy claims',()=>{
+ const f=uploadFixture();f.sheets['Player Energy Ledger'].rows.push(['prior',new Date(),'P003','PIONEER','CREDIT',75,75,'old','']);f.uploadPreview();f.uploadAuthorize(['NC-006']);f.uploadE.parameter.energy=999999;const r=f.uploadConfirm();assert.equal(r.totalEnergy,300);assert.equal(r.securedEnergy,375);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),375);
+});
+test('HQ Upload preview excludes transit, non-FIELD, deployments, mission and exchange reservations',()=>{
+ for(const kind of ['transit','reserve','deployment','restore','fop','exchange']){
+  const f=uploadFixture(),row=f.sheets['N-Core Register'].rows[6];
+  if(kind==='transit')row[4]='IN_TRANSIT';if(kind==='reserve')row[4]='RESERVE';
+  if(kind==='deployment')f.sheets['Deployment Register'].rows.push(['DEP','NC-006','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED']);
+  if(kind==='restore')f.ctx.liveRestores=()=>[{id:'restore',identity:'P003',cargo:{coreId:'NC-006'},out:'NC-004',nodeCores:[]}];
+  if(kind==='fop')f.ctx.readInstallationOrders=()=>[{id:'fop',nodeId:'NODE-002',eventId:'EVT-1',operation:'INSTALL',expiresAt:Date.now()+60000,loadout:[{id:'NC-006'}]}],f.ctx.installationOrderIsLive=()=>true;
+  if(kind==='exchange')f.authorize();
+  const before=JSON.stringify(f.sheets),r=f.uploadPreview();assert.equal(r.selectable,false,kind);assert.equal(r.cores.length,0,kind);assert.equal(JSON.stringify(f.sheets),before);
+ }
+});
+test('HQ Upload rejects invented, foreign, duplicate and empty selections without any writes',()=>{
+ for(const ids of [[],['NC-001'],['NC-999'],['NC-006','NC-006']]){
+  const f=uploadFixture();f.uploadPreview();const before=JSON.stringify(f.sheets);assert.throws(()=>f.uploadAuthorize(ids),/UPLOAD_SELECTION_INVALID|UPLOAD_CORE_NOT_AUTHORIZED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+ }
+});
+test('HQ Upload validates active HQ Bay and Pioneer authentication at preview and commit',()=>{
+ for(const kind of ['unknown','inactive','wrong-type','non-pioneer','lost-session']){
+  const f=uploadFixture();f.uploadPreview();f.uploadAuthorize(['NC-006']);
+  if(kind==='unknown')f.sheets['Upload Terminal Register'].rows[1][2]='different';if(kind==='inactive')f.sheets['Upload Terminal Register'].rows[1][3]='INACTIVE';if(kind==='wrong-type')f.sheets['Upload Terminal Register'].rows[1][1]='UPLOAD_FOP';if(kind==='non-pioneer')f.uploadE.parameter.token='a'.repeat(72);if(kind==='lost-session')f.cache.delete('NODIV_SESSION_'+f.uploadE.parameter.token);
+  const before=JSON.stringify(f.sheets);if(kind==='lost-session'){assert.equal(f.uploadConfirm().session,false);assert.equal(f.uploadPreview().session,false);}else{assert.throws(f.uploadConfirm,/UPLOAD_BAY_INVALID|ROLE_DENIED/);assert.throws(f.uploadPreview,/UPLOAD_BAY_INVALID|ROLE_DENIED/);}assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+ }
+});
+test('HQ Upload revalidates status, ownership, UID, actual energy, capacity-independent reservations and expiry',()=>{
+ for(const kind of ['transit','foreign','uid','energy','reservation','exchange','expired']){
+  const f=uploadFixture();f.uploadPreview();f.uploadAuthorize(['NC-006']);const row=f.sheets['N-Core Register'].rows[6];
+  if(kind==='transit')row[4]='IN_TRANSIT';if(kind==='foreign')row[15]='P004';if(kind==='uid')row[2]='new';if(kind==='energy')row[13]=301;if(kind==='reservation')f.sheets['Deployment Register'].rows.push(['DEP','NC-006','','','','MISSION','ASSIGNED']);if(kind==='exchange')f.authorize();if(kind==='expired'){const key='NODIV_HQ_UPLOAD_'+f.uploadE.parameter.upload,o=JSON.parse(f.properties.get(key));o.expiresAt=0;f.properties.set(key,JSON.stringify(o));}
+  const before=JSON.stringify(f.sheets);assert.throws(f.uploadConfirm,/UPLOAD_CORE_UNAVAILABLE|UPLOAD_SNAPSHOT_CHANGED|UPLOAD_EXPIRED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+ }
+});
+test('HQ Upload retries and lost successful responses replay the durable receipt without additional transfer, credit or Ghost',()=>{
+ for(const lost of [false,true]){
+  const f=uploadFixture();f.uploadPreview();f.uploadAuthorize(['NC-006']);const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;
+  if(lost)f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};
+  if(lost)assert.throws(f.uploadConfirm,/LOST_RESPONSE/);else f.uploadConfirm();
+  // Property is intentionally absent: permanent transaction data alone must replay.
+  f.properties.delete('NODIV_HQ_UPLOAD_'+f.uploadE.parameter.upload);const before=JSON.stringify(f.sheets),r=f.uploadConfirm();assert.equal(r.replayed,true);assert.equal(r.totalEnergy,300);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),1);assert.equal(f.ctx.findIdentityById('P003').ghostUntil,null);
+ }
+});
+test('HQ Upload precommit and batch failures leave ownership, ledger and success logs untouched and retryable',()=>{
+ for(const kind of ['transfer','ledger','receipt','batch']){
+  const f=uploadFixture(2);f.uploadPreview();f.uploadAuthorize(['NC-006','NC-005']);
+  if(kind==='transfer'){const transfer=f.ctx.transferCoreOwnership;let n=0;f.ctx.transferCoreOwnership=data=>{if(++n===2)throw Error('STAGE_FAILED');return transfer(data);};}
+  if(kind==='ledger')f.ctx.bookPlayerEnergy=()=>{throw Error('STAGE_FAILED')};
+  if(kind==='receipt'){const log=f.ctx.appendTransactionLog;f.ctx.appendTransactionLog=(data,requests)=>{if(data.eventType==='HQ_UPLOAD_COMPLETE')throw Error('STAGE_FAILED');return log(data,requests);};}
+  if(kind==='batch')f.fail();const before=JSON.stringify(f.sheets);assert.throws(f.uploadConfirm,/STAGE_FAILED|BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);assert.ok(f.properties.has('NODIV_HQ_UPLOAD_'+f.uploadE.parameter.upload));assert.equal(f.ctx.readPlayerEnergyBalance('P003'),0);
+ }
+});
+test('HQ Upload cannot replay or use another Pioneer choice; competing previews cannot double credit',()=>{
+ const f=uploadFixture(),first=f.uploadPreview();f.uploadAuthorize(['NC-006']);const second=f.uploadPreview();f.uploadAuthorize(['NC-006']);f.uploadConfirm();f.uploadE.parameter.upload=first.upload;assert.throws(f.uploadConfirm,/UPLOAD_CORE_UNAVAILABLE/);assert.equal(f.batches(),1);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),300);
+ f.sheets['Access Card Register'].rows.push(['CARD-4','P004','PIONEER','p4','ACTIVE','',1,true]);const token='4'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-4'}));f.uploadE.parameter.token=token;f.uploadE.parameter.upload=second.upload;assert.throws(f.uploadConfirm,/UPLOAD_SESSION_MISMATCH/);assert.equal(f.batches(),1);
+});
+test('Ledger batch extension stages append-only entries without writes and keeps cumulative balances coherent',()=>{
+ const f=uploadFixture(),requests=[],before=JSON.stringify(f.sheets);const a=f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:10},requests),b=f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:20},requests);assert.equal(a.balance,10);assert.equal(b.before,10);assert.equal(b.balance,30);assert.equal(JSON.stringify(f.sheets),before);f.ctx.Sheets.Spreadsheets.batchUpdate({requests},'spreadsheet');assert.equal(f.ctx.readPlayerEnergyBalance('P003'),30);
+ assert.equal(f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:5}).balance,35);assert.throws(()=>f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:0}),/ungültig/);
+});
+test('HQ Upload requires explicit authorization, validates energies and uses visible fallback only when actual is absent',()=>{
+ const f=uploadFixture();f.uploadPreview();const before=JSON.stringify(f.sheets);assert.throws(f.uploadConfirm,/UPLOAD_AUTHORIZATION_REQUIRED/);assert.equal(JSON.stringify(f.sheets),before);
+ for(const actual of [NaN,-1,Infinity]){const g=uploadFixture();g.sheets['N-Core Register'].rows[6][13]=actual;const before=JSON.stringify(g.sheets);assert.throws(g.uploadPreview,/UPLOAD_ENERGY_INVALID/);assert.equal(JSON.stringify(g.sheets),before);assert.equal(g.batches(),0);}
+ for(const actual of ['',0]){const g=uploadFixture();g.sheets['N-Core Register'].rows[6][13]=actual;g.uploadPreview();g.uploadAuthorize(['NC-006']);assert.equal(g.uploadConfirm().totalEnergy,actual===''?341:0);assert.equal(g.ctx.readPlayerEnergyBalance('P003'),actual===''?341:0);}
+});
+test('HQ Upload retry after rejected batch commits once with ownership, ledger and receipt in the same request',()=>{
+ const f=uploadFixture(3);f.uploadPreview();f.uploadAuthorize(['NC-006','NC-005','NC-004']);const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;let first=true,captured;
+ f.ctx.Sheets.Spreadsheets.batchUpdate=(body,id)=>{captured=body.requests;if(first){first=false;throw Error('BATCH_REJECTED');}return batch(body,id);};const before=JSON.stringify(f.sheets);assert.throws(f.uploadConfirm,/BATCH_REJECTED/);assert.equal(JSON.stringify(f.sheets),before);
+ const receipt=f.uploadConfirm();assert.equal(receipt.totalEnergy,750);assert.equal(f.batches(),1);assert.ok(captured.some(r=>r.updateCells?.start.sheetId===1));assert.ok(captured.some(r=>r.appendCells?.sheetId===9));assert.ok(captured.some(r=>r.appendCells?.sheetId===5));assert.equal(f.ctx.readPlayerEnergyBalance('P003'),750);assert.equal(f.ctx.getPlayerState(f.uploadE).cores.length,0);
+ assert.equal(f.uploadConfirm().replayed,true);assert.equal(f.batches(),1);
+});
