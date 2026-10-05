@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261005-hq-upload';
+import {routeIdentity} from './router.js?v=20261005-resupply';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -37,6 +37,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
   const capacity=Math.max(0,Number(state.player?.coreCapacity||0)),cores=Array.isArray(state.cores)?state.cores:[];
   renderPioneerGhost(state.player,state.serverNow);
+  if(capacity>0&&cores.length===0&&(!pioneerReSupply||pioneerReSupply.status==='RESUPPLY_COMPLETE')&&!pioneerReSupplyBusy)window.dispatchEvent(new CustomEvent('nodiv-pioneer-resupply-status'));
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
   if(total)total.textContent=String(state.carriedEnergy??0)+' E';
   if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
@@ -54,7 +55,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
 });
 window.addEventListener('nodiv-pioneer-scan',async()=>{
  const b=document.querySelector('#pioneerScan');
- if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy)return;
+ if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy||pioneerReSupplyBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
@@ -71,7 +72,8 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    try{
     const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
     if(!route?.ok||!route?.session)throw new Error(route?.error||route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
-    if(route.restoreMission)renderPioneerRestore(route.restoreMission,true);
+    if(route.resupplyMission)renderPioneerReSupply(route.resupplyMission,true);
+    else if(route.restoreMission)renderPioneerRestore(route.restoreMission,true);
     else if(route.exchangeResume)resumePioneerExchange(route.exchangeResume);
     else if(route.exchangePreview)showPioneerExchangePreview(route.exchangePreview);
     const object=route.object||route.target||{};
@@ -88,7 +90,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
    }catch(err){
     b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
    }finally{
-    setTimeout(()=>{b.disabled=Boolean(pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore?.status)));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
+    setTimeout(()=>{b.disabled=Boolean((pioneerReSupply?.atNode&&pioneerReSupply?.authorized&&pioneerReSupply?.status!=='RESUPPLY_COMPLETE')||pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore?.status)));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
    }
   };
  }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
@@ -826,4 +828,57 @@ window.addEventListener('nodiv-pioneer-upload',async e=>{
   }
  }catch(error){hint.textContent=String(error.message||error)+' // Mit derselben Auswahl erneut versuchen.';if(!pioneerUpload.canConfirm)choices.querySelectorAll('input').forEach(input=>input.disabled=false);}
  finally{pioneerUploadBusy=false;authorize.disabled=pioneerUploadSelection.size===0;confirm.disabled=!pioneerUpload.canConfirm;if(scan)scan.disabled=Boolean(scanDisabled);}
+});
+
+let pioneerReSupply=null,pioneerReSupplyBusy=false;
+function renderPioneerReSupply(result,atNode=false){
+ const panel=document.querySelector('#pioneerReSupply');if(!panel)return;
+ const complete=result.status==='RESUPPLY_COMPLETE',mission=Boolean(result.resupply),active=mission&&!complete;
+ if(mission)pioneerReSupply={...result,atNode};else pioneerReSupply=null;
+ panel.hidden=!mission&&!result.eligible;
+ document.querySelector('#resupplyNode').textContent=result.nodeId||'PERSÖNLICHER CORE BENÖTIGT';
+ const request=document.querySelector('#resupplyRequest'),accept=document.querySelector('#resupplyAccept'),authorize=document.querySelector('#resupplyAuthorize'),scan=document.querySelector('#resupplyScan'),confirm=document.querySelector('#resupplyConfirm');
+ request.hidden=mission;request.disabled=pioneerReSupplyBusy||!result.eligible;
+ accept.hidden=!active||result.accepted;accept.disabled=pioneerReSupplyBusy;
+ authorize.hidden=!active||!result.accepted||!atNode||result.authorized;authorize.disabled=pioneerReSupplyBusy;
+ scan.hidden=!active||!atNode||!result.authorized||result.canConfirm;scan.disabled=pioneerReSupplyBusy;
+ confirm.hidden=!active||!atNode||!result.authorized;confirm.disabled=pioneerReSupplyBusy||!result.canConfirm;
+ scan.textContent=result.inCount?'VORGEGEBENEN NODE-CORE ENTNEHMEN // NFC':'TRANSPORT-CORE EINSETZEN // NFC';
+ document.querySelector('#resupplyEnergy').textContent=active?(atNode?'EINSETZEN: '+result.inCore.energy+' E // ENTNEHMEN: '+result.outCore.energy+' E':result.inCore.energy+' E // IN TRANSIT // MISSION CARGO'):'';
+ document.querySelector('#resupplyCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE // '+result.accessCode:'';
+ document.querySelector('#resupplyProgress').textContent=active&&atNode?'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1':'';
+ document.querySelector('#resupplyGuide').textContent=complete?'Zurück im Field HUD.':!mission?'Ein Transportauftrag bringt dir wieder einen persönlichen Core.':!result.accepted?'MISSION CARGO READY // Angezeigten HQ-Core übernehmen und scannen.':!atNode?'Transport-Core zum Ziel-Node bringen und Node per NFC scannen.':!result.authorized?'Ziel erkannt. Node-Zugang jetzt autorisieren.':result.canConfirm?'Beide Cores gescannt. Physischen Tausch bestätigen.':result.inCount?'Angezeigten niedrigsten Node-Core entnehmen und scannen.':'Transport-Core einsetzen und per NFC scannen.';
+ const final=document.querySelector('#resupplyResult');final.hidden=!complete;final.textContent=complete?'RE-SUPPLY COMPLETE // '+result.acquiredCore.energy+' E CORE ACQUIRED':'';
+ const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active&&atNode&&result.authorized;
+}
+window.addEventListener('nodiv-pioneer-resupply-status',async()=>{
+ if(!sessionToken||pioneerReSupplyBusy||(pioneerReSupply?.atNode&&pioneerReSupply.status!=='RESUPPLY_COMPLETE'))return;
+ pioneerReSupplyBusy=true;
+ try{const r=await apiRequest({action:'resupplystate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RE-SUPPLY STATE FAILED');pioneerReSupplyBusy=false;renderPioneerReSupply(r);}
+ catch(error){const hint=document.querySelector('#resupplyGuide');if(hint)hint.textContent=String(error.message||error);}
+ finally{pioneerReSupplyBusy=false;}
+});
+window.addEventListener('nodiv-pioneer-resupply',async e=>{
+ const action=e.detail?.action;if(!sessionToken||pioneerReSupplyBusy||pioneerExchangeBusy||pioneerRestoreBusy||catchBusy||pioneerUploadBusy)return;
+ if(!['assign','accept','authorize','scan','confirm'].includes(action))return;
+ if(action!=='assign'&&!pioneerReSupply)return;
+ if(['authorize','scan','confirm'].includes(action)&&!pioneerReSupply.atNode)return;
+ if(action==='scan'&&!pioneerReSupply.authorized)return;if(action==='confirm'&&!pioneerReSupply.canConfirm)return;
+ const mission=pioneerReSupply,atNode=mission?.atNode===true,phase=mission?.inCount?'OUT':'IN';pioneerReSupplyBusy=true;
+ if(mission)renderPioneerReSupply(mission,atNode);else document.querySelector('#resupplyRequest').disabled=true;
+ const request=async uid=>{
+  const r=await apiRequest({action:'resupply'+action,token:sessionToken,...(action==='assign'?{}:{resupply:mission.resupply,node:mission.nodeId,uid:uid||'',phase})});
+  if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RE-SUPPLY REJECTED');
+  pioneerReSupplyBusy=false;renderPioneerReSupply({...mission,...r},atNode);
+  if(r.status==='RESUPPLY_COMPLETE')window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+ };
+ const failed=error=>{pioneerReSupplyBusy=false;if(mission)renderPioneerReSupply(mission,atNode);else document.querySelector('#resupplyRequest').disabled=false;document.querySelector('#resupplyGuide').textContent=String(error.message||error);};
+ try{
+  if(['accept','scan'].includes(action)){
+   if(!('NDEFReader' in window))throw Error('Android + Chrome / Web NFC erforderlich.');
+   const controller=new AbortController(),reader=new NDEFReader();await reader.scan({signal:controller.signal});let handled=false;
+   reader.onreadingerror=()=>{if(handled)return;handled=true;controller.abort();failed(Error('NFC LESEFEHLER // ERNEUT'));};
+   reader.onreading=async ev=>{if(handled)return;handled=true;controller.abort();try{const uid=String(ev.serialNumber||'').trim();if(!uid)throw Error('NFC UID FEHLT');await request(uid);}catch(error){failed(error);}};
+  }else await request();
+ }catch(error){failed(error);}
 });

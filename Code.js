@@ -285,6 +285,9 @@ function doGet(e) {
     } else if (['exchangeauthorize','exchangescan','exchangeconfirm','exchangecancel'].includes(action)) {
       result = normalExchange(e,action.replace('exchange',''));
 
+    } else if (['resupplystate','resupplyassign','resupplyaccept','resupplyauthorize','resupplyscan','resupplyconfirm'].includes(action)) {
+      result = normalReSupply(e,action.replace('resupply',''));
+
     } else if (action === 'coredeposit') {
 
       result = depositOwnedCoreToReserve(e);
@@ -2683,6 +2686,8 @@ function getGameplayRoute(e) {
 
   if (hit.type === 'NODE') {
     const status=getNodeGameplayStatus(hit.id);
+    const resupply=player.role==='PIONEER'?getReSupplyRoute(e,hit.id):null;
+    if(resupply)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},resupply.action?'RESUPPLY_MISSION':'NO_ACTION',resupply.action,resupply.status,resupply.message||'RE-SUPPLY // Ziel-Node erkannt.',resupply.action?{resupplyMission:resupply}:null);
     const restore=player.role==='PIONEER'?getRestoreRoute(e,hit.id):null;
     if(restore)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},restore.action?'RESTORE_MISSION':'NO_ACTION',restore.action,restore.status,restore.message||'RESTORE #1 // Ziel-Node erkannt.',restore.action?{restoreMission:restore}:null);
     const recovery=player.role==='PIONEER'?recoverNormalExchange(e,hit.id):null;
@@ -3144,7 +3149,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
-    if (isFopNodeDeployment(row)||isRestorePurpose(row[5])) return;
+    if (isFopNodeDeployment(row)||isRestorePurpose(row[5])||row[5]==='RESUPPLY') return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3164,6 +3169,7 @@ function getPendingPlayerDeployments(e) {
 }
 
 function acceptCoreDeployment(e) {
+  if(findDeploymentById(e.parameter.deployment||'')?.purpose==='RESUPPLY')return normalReSupply(e,'accept');
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -3256,6 +3262,7 @@ function deliverCoreDeployment(e) {
     if(!deployment)
       return gameplayActionDenied(player,'NO_MISSION_CARGO','Kein aktives Mission Cargo für diese Identität.');
 
+    if(deployment.purpose==='RESUPPLY')return gameplayActionDenied(player,'RESUPPLY_WORKFLOW_REQUIRED','RE-SUPPLY benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(isRestorePurpose(deployment.purpose))return gameplayActionDenied(player,'RESTORE_WORKFLOW_REQUIRED','RESTORE benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(deployment.targetNode!==nodeId)
       return gameplayActionDenied(player,'MISSION_CARGO_WRONG_NODE','Mission Cargo ist an '+deployment.targetNode+' gebunden.');
@@ -4194,6 +4201,7 @@ function getNodeRemovalLoadout(nodeId) {
   return loadout;
 }
 function validateNodeDeinstallation(actor,nodeId) {
+  assertReSupplyUnreserved(nodeId,'','');
   if(!['FOUNDER','FOP'].includes(actor.role))throw new Error('ROLE_DENIED');
   if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
   const event=readCurrentEvent();
@@ -4218,7 +4226,7 @@ function getFopOperations(e) {
     if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state)){
       const sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
       const stockAvailable=getAvailableInstallationCores().length>=3;
-      const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId));
+      const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId).concat(liveReSupplies().map(order=>order.nodeId)));
       const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
       ids.forEach(nodeId=>{
         if(reserved.has(nodeId)||liveExchanges().some(order=>order.nodeId===nodeId)||liveRestores().some(order=>order.nodeId===nodeId))return;
@@ -4330,7 +4338,7 @@ function findEventNodeCode(eventId,nodeId) {
  * AVAILABLE means physically provisioned but not commissioned for field use.
  * Access-code release will be attached here once the event/code register exists.
  */
-function getNodeAccessAuthorization(player,nodeId,nodeStatus,restoreId) {
+function getNodeAccessAuthorization(player,nodeId,nodeStatus,restoreId,resupplyId) {
   const id=String(nodeId||'').trim().toUpperCase();
   const status=String(nodeStatus||'UNDEFINED').trim().toUpperCase();
   if(!id)return {allowed:false,reason:'NODE_ID_INVALID',message:'Node konnte nicht eindeutig identifiziert werden.'};
@@ -4340,6 +4348,7 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus,restoreId) {
   if(!event||event.state!=='FIELD_ACTIVE')return {allowed:false,reason:'EVENT_NOT_FIELD_ACTIVE',message:'Node erkannt. Field Operations sind noch nicht aktiv.'};
 
   const eventNode=findEventNodeCode(event.eventId,id);
+  if(liveReSupplies().some(order=>order.nodeId===id&&order.id!==resupplyId))return {allowed:false,reason:'RESUPPLY_OPERATION_RESERVED',message:'Node für RE-SUPPLY reserviert.'};
   const restoreLock=restoreNodeLock(player,id);if(restoreLock)return restoreLock;
   if(liveRestores().some(order=>order.nodeId===id&&order.id!==restoreId))return {allowed:false,reason:'RESTORE_OPERATION_RESERVED',message:'Node für RESTORE reserviert.'};
   if(!eventNode)return {allowed:false,reason:'NODE_NOT_IN_ACTIVE_EVENT',message:'Node erkannt. Dieser Node gehört nicht zum aktiven Event.'};
@@ -6719,7 +6728,8 @@ function liveExchanges(){
   try{const order=JSON.parse(props[key]);return exchangeIsLive(order)?[order]:[];}catch(error){return [];}
  });
 }
-function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders){
+function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders,resupplyId){
+ assertReSupplyUnreserved(nodeId,identity,coreId,resupplyId);
  if((orders||liveExchanges()).some(order=>order.id!==exchangeId&&(
   (nodeId&&order.nodeId===nodeId)||(identity&&order.identity===identity)||
   (coreId&&order.inventory.concat(order.nodeCores).some(core=>core.coreId===coreId)))))throw new Error('EXCHANGE_ALREADY_RUNNING');
@@ -7123,5 +7133,169 @@ function normalRestoreOne(e,action){
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   try{props.deleteProperty(restorePropertyKey(order));}catch(error){}
   return {...restoreResponse(order,restorePurpose(order)+'_COMPLETE',false),authorized:false,canConfirm:false,capacity:restorePhase(order)+1,totalEnergy:order.projectedEnergy,nodeState:nodeEnergyState(order.projectedEnergy),targetLockSeconds:3600};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* Re-Supply V1: existing Deployment Register owns cargo/reservations; properties
+ * retain the fixed loadout and scan witnesses. No progression or energy booking. */
+const RESUPPLY_PREFIX='NODIV_RESUPPLY_';
+function reSupplyOrders(){
+ const props=PropertiesService.getScriptProperties().getProperties();
+ return Object.keys(props).filter(key=>key.startsWith(RESUPPLY_PREFIX)).flatMap(key=>{try{return [JSON.parse(props[key])];}catch(error){return [];}});
+}
+function liveReSupplies(candidates){
+ const orders=candidates||reSupplyOrders();if(!orders.length)return [];
+ const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')return [];
+ const sheet=getDeploymentRegisterSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
+ return orders.filter(order=>order&&Number.isFinite(order.expiresAt)&&order.expiresAt>Date.now()&&order.eventId===event.eventId&&
+  rows.some(row=>row[0]===order.id&&row[1]===order.cargo.coreId&&row[2]===order.identity&&row[3]==='PIONEER'&&row[4]===order.nodeId&&row[5]==='RESUPPLY'&&row[6]==='IN_TRANSIT'));
+}
+function assertReSupplyUnreserved(nodeId,identity,coreId,orderId){
+ const candidates=reSupplyOrders().filter(order=>order&&order.id!==orderId&&((nodeId&&order.nodeId===nodeId)||(identity&&order.identity===identity)||
+  (coreId&&(order.cargo.coreId===coreId||order.nodeCores.some(core=>core.coreId===coreId)))));
+ if(candidates.length&&liveReSupplies(candidates).length)throw new Error('RESUPPLY_OPERATION_RESERVED');
+}
+function cleanupReSupplies(){
+ const live=new Set(liveReSupplies().map(order=>order.id)),props=PropertiesService.getScriptProperties();
+ for(const order of reSupplyOrders()){
+  if(!order||live.has(order.id))continue;
+  const dep=findDeploymentById(order.id),requests=[];
+  if(dep?.purpose==='RESUPPLY'&&dep.status==='IN_TRANSIT'&&dep.coreId===order.cargo.coreId&&dep.carrierId===order.identity&&dep.targetNode===order.nodeId){
+   const cargo=readCoreState(order.cargo.coreId);
+   // Never overwrite a Core which has since changed UID, ownership or mission.
+   if(restoreSnapshot([cargo])===restoreSnapshot([order.cargo]))requests.push(sheetCellsRequest(getRegisterSheet(),cargo.row,CORE_COL.STATUS,[['RESERVE']]));
+   const tx=appendTransactionLog({eventType:'RESUPPLY_EXPIRED',actorId:order.identity,actorRole:'PIONEER',nodeId:order.nodeId,coreId:order.cargo.coreId,result:'EXPIRED',details:order.id},requests);
+   requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['EXPIRED',dep.createdAt,dep.acceptedAt||'',new Date(),tx]]));
+   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  }
+  props.deleteProperty(RESUPPLY_PREFIX+order.id);
+ }
+}
+function reSupplyPersonal(player,rows){return exchangeOwnedCores('PIONEER',player.identity,rows).filter(core=>core.status==='FIELD');}
+function assertReSupplyEligibility(player){
+ if(player.role!=='PIONEER'||player.status!=='ACTIVE'||!player.nodeAccess||!Number.isInteger(player.coreCapacity)||player.coreCapacity<1||player.coreCapacity>3)throw new Error('RESUPPLY_PIONEER_REQUIRED');
+ const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+ if(reSupplyPersonal(player).length)throw new Error('RESUPPLY_PERSONAL_CORE_PRESENT');
+ assertExchangeUnreserved('',player.identity,'');assertRestoreUnreserved('',player.identity,'');
+ const sheet=getDeploymentRegisterSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];
+ if(rows.some(row=>row[2]===player.identity&&row[3]==='PIONEER'&&['ASSIGNED','IN_TRANSIT'].includes(row[6])&&(!isRestorePurpose(row[5])||restoreDeploymentIsLive(row))))throw new Error('MISSION_CARGO_ALREADY_ACTIVE');
+ return event;
+}
+function selectReSupplyCore(out,reserve){
+ const choices=reserve.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId));
+ return choices.find(core=>core.visibleEnergy>=out.visibleEnergy)||choices.slice().sort((a,b)=>b.visibleEnergy-a.visibleEnergy||a.coreId.localeCompare(b.coreId))[0]||null;
+}
+function selectReSupplyTarget(player,event){
+ const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),reserve=getAvailableInstallationCores(),candidates=[];
+ const depSheet=getDeploymentRegisterSheet(),deployments=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
+ const sheet=getEventNodeCodeSheet(),codes=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
+ for(const nodeId of [...new Set(codes.filter(row=>row[0]===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))]){
+  try{
+   const auth=getNodeAccessAuthorization(player,nodeId,getNodeGameplayStatus(nodeId));if(!auth.allowed)continue;
+   assertExchangeUnreserved(nodeId,'','');assertRestoreUnreserved(nodeId,'','');
+   if(deployments.some(row=>String(row[4])===nodeId&&hasOpenDeploymentForCore(row[1],undefined,deployments)))continue;
+   const eventNode=findEventNodeCode(event.eventId,nodeId),nodeCores=exchangeOwnedCores('NODE',nodeId,rows);
+   if(eventNode.pendingSlot||nodeCores.length!==3||nodeCores.some(core=>!core.uid||!Number.isFinite(core.visibleEnergy)||core.status!=='DEPLOYED'||hasOpenDeploymentForCore(core.coreId)))continue;
+   if(new Set(nodeCores.map(c=>c.uid)).size!==3||new Set(nodeCores.map(c=>c.coreId)).size!==3)continue;
+   const index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[eventNode.activeSlot];if(!/^\d{4}$/.test(eventNode.codes[index]))continue;
+   const out=nodeCores.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId))[0];
+   const core=selectReSupplyCore(out,reserve.filter(c=>!nodeCores.some(n=>n.uid===c.uid||n.coreId===c.coreId)));if(!core)continue;
+   candidates.push({nodeId,eventNode,nodeCores,out,core,totalEnergy:nodeCores.reduce((sum,c)=>sum+c.visibleEnergy,0)});
+  }catch(error){if(!['EXCHANGE_ALREADY_RUNNING','RESTORE_OPERATION_RESERVED','RESUPPLY_OPERATION_RESERVED'].includes(error.message))throw error;}
+ }
+ candidates.sort((a,b)=>a.totalEnergy-b.totalEnergy||a.nodeId.localeCompare(b.nodeId));
+ const last=exchangeLogRows().slice().reverse().find(row=>row[2]==='RESUPPLY_ASSIGNED'&&row[14]==='SUCCESS');
+ return candidates.length>1&&last?candidates.find(c=>c.nodeId!==last[13])||candidates[0]:candidates[0];
+}
+function reSupplyResponse(order,status,includeCode,context){
+ const response={ok:true,session:true,action:true,status,resupply:order.id,nodeId:order.nodeId,accepted:order.accepted,authorized:order.authorized,
+  inCore:{id:order.cargo.coreId,energy:order.cargo.visibleEnergy},inCount:order.incoming.length,outCount:order.outgoing.length,
+  canConfirm:order.authorized&&order.incoming.length===1&&order.outgoing.length===1,expiresAt:order.expiresAt};
+ if(order.nodeScannedToken)response.outCore={id:order.out,energy:order.nodeCores.find(c=>c.coreId===order.out).visibleEnergy};
+ if(includeCode){const node=context.eventNode,index={PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4}[node.activeSlot];if(!/^\d{4}$/.test(node.codes[index]))throw new Error('NODE_CODE_STATE_INVALID');response.accessCode=node.codes[index];}
+ return response;
+}
+function validateReSupply(order,player){
+ if(!liveReSupplies().some(o=>o.id===order.id))throw new Error('RESUPPLY_EXPIRED_OR_COMPLETED');
+ if(order.identity!==player.identity||order.cardId!==player.cardId||player.role!=='PIONEER'||player.coreCapacity!==order.capacity)throw new Error('RESUPPLY_IDENTITY_CAPACITY_MISMATCH');
+ const auth=getNodeAccessAuthorization(player,order.nodeId,getNodeGameplayStatus(order.nodeId),undefined,order.id);if(!auth.allowed)throw new Error(auth.reason);
+ assertExchangeUnreserved(order.nodeId,player.identity,'',undefined,undefined,order.id);assertRestoreUnreserved(order.nodeId,player.identity,'');
+ const event=readCurrentEvent(),eventNode=findEventNodeCode(event.eventId,order.nodeId);if(eventNode.pendingSlot||exchangeNodeFingerprint(order.nodeId,eventNode)!==order.nodeFingerprint)throw new Error('RESUPPLY_NODE_CHANGED');
+ const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),nodeCores=exchangeOwnedCores('NODE',order.nodeId,coreRows),cargo=readCoreState(order.cargo.coreId),dep=findDeploymentById(order.id);
+ if(reSupplyPersonal(player,coreRows).length)throw new Error('RESUPPLY_PERSONAL_CORE_PRESENT');
+ if(restoreSnapshot(nodeCores)!==restoreSnapshot(order.nodeCores)||restoreSnapshot([cargo])!==restoreSnapshot([order.cargo]))throw new Error('RESUPPLY_CORE_STATE_CHANGED');
+ const out=nodeCores.slice().sort((a,b)=>a.visibleEnergy-b.visibleEnergy||a.coreId.localeCompare(b.coreId))[0];
+ if(nodeCores.length!==3||out.coreId!==order.out||nodeCores.some(c=>c.status!=='DEPLOYED')||new Set([cargo,...nodeCores].map(c=>c.coreId)).size!==4||new Set([cargo,...nodeCores].map(c=>c.uid)).size!==4||
+  cargo.ownerType!=='NODIV_RESERVE'||cargo.ownerId!=='HQ'||cargo.status!=='IN_TRANSIT'||dep?.purpose!=='RESUPPLY'||dep.status!=='IN_TRANSIT')throw new Error('RESUPPLY_ASSIGNMENT_INVALID');
+ order.accepted=Boolean(dep.acceptedAt);
+ const sheet=getDeploymentRegisterSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues().filter(row=>row[0]!==order.id):[];
+ if(rows.some(row=>String(row[4])===order.nodeId&&hasOpenDeploymentForCore(row[1],undefined,rows)))throw new Error('RESUPPLY_NODE_RESERVED');
+ for(const core of [cargo,...nodeCores]){if(hasOpenDeploymentForCore(core.coreId,undefined,rows))throw new Error('RESUPPLY_CORE_RESERVED');assertExchangeUnreserved('','',core.coreId,undefined,undefined,order.id);assertRestoreUnreserved('','',core.coreId);}
+ if(order.incoming.length>1||order.outgoing.length>1||order.incoming.some(id=>id!==cargo.coreId)||order.outgoing.some(id=>id!==out.coreId)||(order.outgoing.length&&!order.incoming.length))throw new Error('RESUPPLY_SCANS_INVALID');
+ return {coreRows,nodeCores,cargo,out,dep,eventNode};
+}
+function getReSupplyRoute(e,nodeId){
+ if(!reSupplyOrders().length)return null;
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);cleanupReSupplies();const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return null;
+  const order=liveReSupplies().find(o=>o.identity===session.player.identity);if(!order)return null;
+  if(order.nodeId!==nodeId)return {ok:true,session:true,action:false,status:'RESUPPLY_WRONG_NODE',message:'RE-SUPPLY TARGET // '+order.nodeId};
+  const context=validateReSupply(order,session.player);if(!order.accepted)return {...reSupplyResponse(order,'RESUPPLY_PICKUP_REQUIRED',false),action:false};
+  order.token=normalizeSessionToken(e.parameter.token);order.nodeScannedToken=order.token;PropertiesService.getScriptProperties().setProperty(RESUPPLY_PREFIX+order.id,JSON.stringify(order));
+  return reSupplyResponse(order,order.authorized?'RESUPPLY_RESUMED':'RESUPPLY_TARGET_READY',order.authorized,context);
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function normalReSupply(e,action){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const player=session.player;if(player.role!=='PIONEER')throw new Error('PIONEER_REQUIRED');
+  const props=PropertiesService.getScriptProperties(),id=String(e.parameter.resupply||e.parameter.deployment||''),token=normalizeSessionToken(e.parameter.token);
+  if(action==='confirm'){
+   const row=exchangeLogRows().find(row=>row[2]==='RESUPPLY_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS'&&(()=>{try{const receipt=JSON.parse(row[15]);return receipt.resupply===id&&receipt.cardId===player.cardId;}catch(error){return false;}})());
+   if(row){const receipt=JSON.parse(row[15]);if(e.parameter.node!==receipt.nodeId)throw new Error('RESUPPLY_NODE_MISMATCH');return {...receipt,replayed:true};}
+  }
+  if(action==='state'||action==='assign'){
+   cleanupReSupplies();
+   const existing=liveReSupplies().find(o=>o.identity===player.identity);
+   if(existing){validateReSupply(existing,player);return {...reSupplyResponse(existing,'RESUPPLY_MISSION',false),authorized:false,canConfirm:false};}
+   let event;try{event=assertReSupplyEligibility(player);}catch(error){if(action==='state')return {ok:true,session:true,action:false,status:error.message,eligible:false};throw error;}
+   const selected=selectReSupplyTarget(player,event);if(!selected)return {ok:true,session:true,action:false,eligible:false,status:'NO_SUITABLE_RESUPPLY_TARGET_OR_CORE'};
+   if(action==='state')return {ok:true,session:true,action:true,eligible:true,status:'RESUPPLY_AVAILABLE'};
+   const cargo=readCoreState(selected.core.coreId),order={id:createDeploymentId(),identity:player.identity,cardId:player.cardId,capacity:player.coreCapacity,eventId:event.eventId,nodeId:selected.nodeId,
+    nodeFingerprint:exchangeNodeFingerprint(selected.nodeId,selected.eventNode),nodeCores:selected.nodeCores,out:selected.out.coreId,cargo:{...cargo,status:'IN_TRANSIT'},accepted:false,authorized:false,incoming:[],outgoing:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+   const requests=[],now=new Date(),sheet=getDeploymentRegisterSheet(),tx=appendTransactionLog({eventType:'RESUPPLY_ASSIGNED',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,coreId:cargo.coreId,result:'SUCCESS',details:order.id},requests);
+   requests.push(sheetCellsRequest(getRegisterSheet(),cargo.row,CORE_COL.STATUS,[['IN_TRANSIT']]));
+   requests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,[[order.id,cargo.coreId,player.identity,'PIONEER',order.nodeId,'RESUPPLY','IN_TRANSIT',now,'','',tx]]).updateCells.rows,fields:'userEnteredValue'}});
+   props.setProperty(RESUPPLY_PREFIX+order.id,JSON.stringify(order));Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+   return reSupplyResponse(order,'RESUPPLY_ASSIGNED',false);
+  }
+  const order=JSON.parse(props.getProperty(RESUPPLY_PREFIX+id)||'null');if(!order||order.identity!==player.identity||order.cardId!==player.cardId)throw new Error('RESUPPLY_SESSION_MISMATCH');
+  const context=validateReSupply(order,player);
+  if(action==='accept'){
+   if(normalizeUid(e.parameter.uid)!==order.cargo.uid)throw new Error('RESUPPLY_HQ_CORE_REQUIRED');
+   if(!order.accepted){const requests=[],tx=appendTransactionLog({eventType:'RESUPPLY_ACCEPTED',actorId:player.identity,actorRole:'PIONEER',coreId:order.cargo.coreId,nodeId:order.nodeId,result:'SUCCESS',details:order.id},requests);
+    requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,9,[[new Date(),'',tx]]));Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());order.accepted=true;props.setProperty(RESUPPLY_PREFIX+id,JSON.stringify(order));}
+   return reSupplyResponse(order,'RESUPPLY_IN_TRANSIT',false);
+  }
+  if(!order.accepted||order.token!==token||order.nodeScannedToken!==token||e.parameter.node!==order.nodeId)throw new Error('RESUPPLY_SESSION_NODE_MISMATCH');
+  if(action==='authorize'){order.authorized=true;const response=reSupplyResponse(order,'RESUPPLY_AUTHORIZED',true,context);props.setProperty(RESUPPLY_PREFIX+id,JSON.stringify(order));return response;}
+  if(!order.authorized)throw new Error('RESUPPLY_AUTHORIZATION_REQUIRED');
+  if(action==='scan'){
+   const uid=normalizeUid(e.parameter.uid||''),phase=String(e.parameter.phase||((uid===order.cargo.uid)?'IN':'OUT')).toUpperCase();
+   if(!['IN','OUT'].includes(phase))throw new Error('RESUPPLY_SCAN_PHASE_INVALID');
+   if((uid===order.cargo.uid&&phase!=='IN')||(uid===context.out.uid&&phase!=='OUT'))throw new Error('DUPLICATE_CORE_SCAN');
+   if(uid!==(phase==='IN'?order.cargo.uid:context.out.uid))throw new Error(phase==='IN'?'RESUPPLY_TRANSIT_CORE_REQUIRED':'RESUPPLY_LOWEST_NODE_CORE_REQUIRED');
+   if((phase==='IN'?order.incoming:order.outgoing).length)return {...reSupplyResponse(order,'RESUPPLY_CORE_SCANNED',false),replayed:true};
+   if(phase!==(order.incoming.length?'OUT':'IN'))throw new Error('RESUPPLY_SCAN_PHASE_MISMATCH');
+   if(phase==='IN')order.incoming=[order.cargo.coreId];else order.outgoing=[order.out];props.setProperty(RESUPPLY_PREFIX+id,JSON.stringify(order));return reSupplyResponse(order,'RESUPPLY_CORE_SCANNED',false);
+  }
+  if(action!=='confirm')throw new Error('INVALID_RESUPPLY_ACTION');if(order.incoming.length!==1||order.outgoing.length!==1)throw new Error('RESUPPLY_SCANS_INCOMPLETE');
+  const requests=[];stageValidatedExchangeTransfer(context.cargo,'NODE',order.nodeId,'DEPLOYED','RESUPPLY_IN',player,order.nodeId,requests);
+  stageValidatedExchangeTransfer(context.out,'PIONEER',player.identity,'FIELD','RESUPPLY_OUT',player,order.nodeId,requests);
+  const receipt={...reSupplyResponse(order,'RESUPPLY_COMPLETE',false),authorized:false,canConfirm:false,cardId:player.cardId,acquiredCore:{id:context.out.coreId,energy:context.out.visibleEnergy},replayed:false};
+  const tx=appendTransactionLog({eventType:'RESUPPLY_COMPLETE',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+  requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,7,[['COMPLETED',context.dep.createdAt,context.dep.acceptedAt,new Date(),tx]]));
+  assertPersonalCoreCapacity(requests,context.coreRows);Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  try{props.deleteProperty(RESUPPLY_PREFIX+id);}catch(error){}return receipt;
  }finally{try{lock.releaseLock();}catch(error){}}
 }
