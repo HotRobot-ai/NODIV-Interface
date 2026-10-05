@@ -5192,12 +5192,6 @@ function startCoreTransfer(e) {
       throw new Error(coreId + ' befindet sich nicht in NODIV_RESERVE // HQ.');
     }
 
-    const ownedCount = countCoresOwnedBy('PIONEER', identityId);
-
-    if (ownedCount >= identity.coreCapacity) {
-      throw new Error(identityId + ' hat keine freie N-Core Kapazität.');
-    }
-
     const result = transferCoreOwnership({
       coreId: coreId,
       expectedFromType: 'NODIV_RESERVE',
@@ -5451,6 +5445,14 @@ function transferCoreOwnership(data) {
 
 
 
+  if(toType==='PIONEER'){
+    const planned=(data.batchRequests||[]).concat([
+      sheetCellsRequest(getRegisterSheet(),state.row,CORE_COL.OWNER_TYPE,[[toType,toId]]),
+      sheetCellsRequest(getRegisterSheet(),state.row,CORE_COL.STATUS,[[data.newStatus?String(data.newStatus).trim().toUpperCase():state.status]])
+    ]);
+    assertPersonalCoreCapacity(planned);
+  }
+
   const transactionId = appendTransactionLog({
 
     eventType: data.eventType || 'CORE_TRANSFER',
@@ -5573,6 +5575,32 @@ function writeCoreOwnership(row, ownerType, ownerId, transactionId, batchRequest
   const sheet=getRegisterSheet(),values=[[normalizeOwnerType(ownerType),String(ownerId||'').trim().toUpperCase(),String(transactionId||'').trim(),new Date()]];
   if(batchRequests)batchRequests.push(sheetCellsRequest(sheet,row,CORE_COL.OWNER_TYPE,values));
   else sheet.getRange(row,CORE_COL.OWNER_TYPE,1,4).setValues(values);
+}
+
+/* Read-only capacity projection over existing Sheets requests. No writes/locks here:
+ * callers retain their ScriptLock and commit through the existing ownership/batch path. */
+function assertPersonalCoreCapacity(requests,coreRows,cardRows){
+ const register=getRegisterSheet(),cards=getAccessCardRegisterSheet();
+ coreRows=(coreRows||register.getRange(2,1,200,CORE_COL.UPDATED_AT).getValues()).map(row=>row.slice());
+ cardRows=(cardRows||(cards.getLastRow()>1?cards.getRange(2,1,cards.getLastRow()-1,12).getValues():[])).map(row=>row.slice());
+ const recipients=new Set();
+ for(const request of requests){
+  const update=request.updateCells;if(!update||!update.start)continue;
+  const isCore=update.start.sheetId===register.getSheetId(),isCard=update.start.sheetId===cards.getSheetId();
+  if(!isCore&&!isCard)continue;
+  const target=isCore?coreRows:cardRows;
+  (update.rows||[]).forEach((row,i)=>{const index=update.start.rowIndex+i-1;if(index<0||!target[index])throw new Error('CAPACITY_ROW_INVALID');
+   (row.values||[]).forEach((cell,j)=>{if(cell.userEnteredValue)target[index][update.start.columnIndex+j]=Object.values(cell.userEnteredValue)[0];});
+   if(isCore&&String(target[index][CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='PIONEER')recipients.add(String(target[index][CORE_COL.OWNER_ID-1]).trim().toUpperCase());
+  });
+ }
+ for(const identity of recipients){
+  const card=cardRows.find(row=>String(row[1]).trim().toUpperCase()===identity),capacity=Number(card?.[6]);
+  if(!card||String(card[4]).toUpperCase()!=='ACTIVE'||!Number.isInteger(capacity)||capacity<1||capacity>3)throw new Error('PIONEER_CAPACITY_INVALID // '+identity);
+  const types=new Set(['PIONEER',String(card[2]).trim().toUpperCase()]);
+  const count=coreRows.filter(row=>types.has(String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase())&&String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()===identity&&String(row[CORE_COL.STATUS-1]).trim().toUpperCase()!=='IN_TRANSIT').length;
+  if(count>capacity)throw new Error('PIONEER_CAPACITY_FULL // '+identity+' // '+count+'/'+capacity);
+ }
 }
 
 function countCoresOwnedBy(ownerType, ownerId) {
@@ -6686,7 +6714,7 @@ function exchangeContext(player,nodeId,exchangeId){
  const transactionRows=exchangeLogRows(),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
  const cooldownUntil=logs.reduce((until,row)=>Math.max(until,new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS||0),0);
  if(cooldownUntil>Date.now())throw new Error('NODE_EXCHANGE_COOLDOWN // '+new Date(cooldownUntil).toISOString());
- return {event,eventNode,nodeCores,inventory,personal,capacity,transactionRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
+ return {event,eventNode,nodeCores,inventory,personal,capacity,transactionRows,coreRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
 }
 function exchangePreview(e,player,nodeId){
  const context=exchangeContext(player,nodeId),preview=Utilities.getUuid();
@@ -6794,6 +6822,7 @@ function normalExchange(e,action){
   if(first)appendTransactionLog({eventType:'RESTORE_1_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:'First normal exchange completed; eligibility marker only'},requests);
   if(order.capacity===2&&order.size===2&&context.transactionRows.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS')&&!context.transactionRows.some(row=>['RESTORE_2_ELIGIBLE','RESTORE_2_COMPLETE'].includes(row[2])&&row[3]===player.identity))appendTransactionLog({eventType:'RESTORE_2_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
   appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
+  assertPersonalCoreCapacity(requests,context.coreRows);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   // Completion is durable in the same batch; stale property cannot reserve or replay.
   try{props.deleteProperty(EXCHANGE_PREFIX+order.id);}catch(error){}
@@ -6983,7 +7012,7 @@ function validateRestore(order,player){
   (isFopNodeDeployment(row)?installationReservationIsLive(row,fopOrders):isRestorePurpose(row[5])?restoreDeploymentIsLive(row,restores):true)))throw new Error('RESTORE_CORE_RESERVED');
  for(const core of [cargo,...nodeCores]){assertRestoreUnreserved('','',core.coreId,order.id,restores);assertExchangeUnreserved('','',core.coreId,undefined,exchanges);}
  if(order.incoming.some(id=>id!==cargo.coreId)||order.outgoing.some(id=>id!==order.out)||order.incoming.length>1||order.outgoing.length>1||(order.outgoing.length&&!order.incoming.length))throw new Error('RESTORE_SCANS_INVALID');
- return {cargo,nodeCores,out:lowest,dep,eventNode,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
+ return {cargo,nodeCores,out:lowest,dep,eventNode,coreRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
 }
 function restoreResponse(order,status,includeCode,context){
  const totalEnergy=order.nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0),response={ok:true,session:true,action:true,status,phase:restorePhase(order),restore:order.id,identity:order.identity,nodeId:order.nodeId,
@@ -7044,6 +7073,7 @@ function normalRestoreOne(e,action){
   requests.push(sheetCellsRequest(cardSheet,cardIndex+2,7,[[restorePhase(order)+1]]));
   const tx=appendTransactionLog({eventType:restorePurpose(order)+'_COMPLETE',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,result:'SUCCESS',details:order.id},requests);
   requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,7,[['COMPLETED',context.dep.createdAt,context.dep.acceptedAt,new Date(),tx]]));
+  assertPersonalCoreCapacity(requests,context.coreRows,cardRows);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   try{props.deleteProperty(restorePropertyKey(order));}catch(error){}
   return {...restoreResponse(order,restorePurpose(order)+'_COMPLETE',false),authorized:false,canConfirm:false,capacity:restorePhase(order)+1,totalEnergy:order.projectedEnergy,nodeState:nodeEnergyState(order.projectedEnergy),targetLockSeconds:3600};

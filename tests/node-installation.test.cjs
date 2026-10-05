@@ -707,3 +707,46 @@ test('Lost successful Catch response replays original Ghost deadline even after 
  const f=catchFixture(),r=f.catchPreview(),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(()=>f.catchConfirm(r.catchId),/LOST_RESPONSE/);const original=f.ctx.findIdentityById('P003').ghostUntil,receipt=f.catchConfirm(r.catchId);assert.equal(receipt.ghostUntil,original);assert.equal(f.batches(),1);
  const advanced=Date.now()+301000;f.ctx.Date=class extends Date{constructor(...args){super(...(args.length?args:[advanced]));}static now(){return advanced;}};const before=JSON.stringify(f.sheets);assert.equal(f.catchConfirm(r.catchId).ghostUntil,original);assert.equal(JSON.stringify(f.sheets),before);
 });
+
+test('Capacity guard rejects START_CORE and central incoming transfers at every unlocked limit without mutations',()=>{
+ for(const capacity of [1,2,3])for(const start of [false,true]){
+  const f=exchangeFixture(capacity),row=f.sheets['N-Core Register'].rows[7];row[2]='uid7';row[4]='RESERVE';
+  const before=JSON.stringify(f.sheets);
+  assert.throws(()=>start?f.ctx.startCoreTransfer({parameter:{core:'NC-007',pioneerUid:'p003uid',uid:'uid7'}}):f.ctx.transferCoreOwnership({coreId:'NC-007',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD'}),/PIONEER_CAPACITY_FULL/);
+  assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+ }
+});
+test('Capacity projection includes earlier staged incoming transfers and rejects overflow before any commit',()=>{
+ const f=exchangeFixture(1);f.sheets['Access Card Register'].rows[2][6]=2;const requests=[],before=JSON.stringify(f.sheets);
+ const transfer=n=>f.ctx.transferCoreOwnership({coreId:'NC-00'+n,expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD',batchRequests:requests});
+ transfer(4);assert.ok(requests.length>0);assert.throws(()=>transfer(5),/PIONEER_CAPACITY_FULL/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
+});
+test('Transit ownership consumes no personal slot; promoting transit cargo to FIELD cannot overflow capacity',()=>{
+ const f=exchangeFixture(1),rows=f.sheets['N-Core Register'].rows;rows[6][4]='IN_TRANSIT';
+ f.ctx.transferCoreOwnership({coreId:'NC-004',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD'});
+ assert.equal(rows[4][15],'P003');assert.equal(rows[6][4],'IN_TRANSIT');const before=JSON.stringify(f.sheets);
+ assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-006',expectedFromType:'PIONEER',expectedFromId:'P003',toType:'PIONEER',toId:'P003',newStatus:'FIELD'}),/PIONEER_CAPACITY_FULL/);assert.equal(JSON.stringify(f.sheets),before);
+});
+test('Capacity guard validates current card capacity/status before creating ownership or transaction logs',()=>{
+ for(const invalid of [0,4,'invalid','inactive']){
+  const f=exchangeFixture(1),card=f.sheets['Access Card Register'].rows[2];if(invalid==='inactive')card[4]='INACTIVE';else card[6]=invalid;
+  const before=JSON.stringify(f.sheets);assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-004',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD'}),/PIONEER_CAPACITY_INVALID/);assert.equal(JSON.stringify(f.sheets),before);
+ }
+});
+test('Catch remains possible with one free slot and blocked when full at capacities 1, 2 and 3',()=>{
+ for(const capacity of [1,2,3])for(const full of [false,true]){
+  const f=catchFixture(1),rows=f.sheets['N-Core Register'].rows;f.sheets['Access Card Register'].rows.at(-1)[6]=capacity;
+  for(let n=0;n<capacity-(full?0:1);n++){rows[8+n][2]='uid'+(8+n);rows[8+n][4]='FIELD';rows[8+n][14]='PIONEER';rows[8+n][15]='P009';}
+  const before=JSON.stringify(f.sheets);if(full){assert.throws(f.catchPreview,/CATCHER_CAPACITY_FULL/);assert.equal(JSON.stringify(f.sheets),before);}else{const order=f.catchPreview();assert.equal(f.catchConfirm(order.catchId).status,'CATCH_COMPLETE');assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P009'),capacity);}
+ }
+});
+test('Restore capacity projection rejects an overfilled final inventory before its atomic batch',()=>{
+ const f=restoreFixture();f.assign();f.restoreAuthorize();f.restoreScan(9,'IN');f.restoreScan(4,'OUT');
+ const extra=f.sheets['N-Core Register'].rows[12];extra[2]='uid12';extra[4]='FIELD';extra[14]='PIONEER';extra[15]='P003';
+ const before=JSON.stringify(f.sheets),b=f.batches();assert.throws(f.restoreFinish,/PIONEER_CAPACITY_FULL/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),b);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,1);
+});
+test('Deployment assignment and acceptance keep mission cargo HQ-owned outside a full personal inventory',()=>{
+ const f=exchangeFixture(3),rows=f.sheets['N-Core Register'].rows;rows[7][2]='uid7';rows[7][4]='RESERVE';
+ const assigned=f.ctx.assignCoreDeployment({parameter:{token:'a'.repeat(72),carrier:'P003',uid:'uid7',targetNode:'NODE-001'}});assert.equal(assigned.status,'DEPLOYMENT_ASSIGNED');
+ const accepted=f.ctx.acceptCoreDeployment({parameter:{token:f.e.parameter.token,deployment:assigned.deployment.deploymentId}});assert.equal(accepted.status,'MISSION_CARGO_IN_TRANSIT');assert.equal(rows[7][14],'NODIV_RESERVE');assert.equal(rows[7][15],'HQ');assert.equal(rows[7][4],'IN_TRANSIT');assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),3);
+});
