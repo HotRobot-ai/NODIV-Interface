@@ -351,6 +351,10 @@ function doGet(e) {
 
       result = confirmEventPreflight(e);
 
+    } else if (action === 'preeventreset') {
+
+      result = preEventReset(e);
+
     } else if (action === 'eventinitialize') {
 
       result = initializeEvent(e);
@@ -2511,6 +2515,7 @@ function startPlayerSession(e) {
     identity: player.identity,
     role: player.role,
     cardId: player.cardId,
+    resetEpoch: readPreEventResetEpoch(),
     issuedAt: now.toISOString(),
     expiresAt: expiresAt.toISOString()
   };
@@ -2561,6 +2566,7 @@ function checkPlayerSession(e) {
     throw new Error('Session-Datensatz ist ungültig.');
   }
 
+  if(String(session.resetEpoch||'')!==readPreEventResetEpoch()){cache.remove(PLAYER_SESSION_PREFIX+token);return {ok:true,authenticated:false,session:false,status:'SESSION_RESET'};}
   const player = findIdentityById(session.identity || '');
 
   if (!player || player.status !== 'ACTIVE' ||
@@ -2737,6 +2743,7 @@ function resolvePlayerSession(tokenValue) {
   if(!raw) return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_EXPIRED'}};
   let stored;
   try{stored=JSON.parse(raw)}catch(error){cache.remove(PLAYER_SESSION_PREFIX+token);return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_REVOKED'}}}
+  if(String(stored.resetEpoch||'')!==readPreEventResetEpoch()){cache.remove(PLAYER_SESSION_PREFIX+token);return {ok:false,response:{ok:true,authenticated:false,session:false,route:false,status:'SESSION_RESET'}};}
   const player=findIdentityById(stored.identity||'');
   if(!player||player.status!=='ACTIVE'||player.cardId!==stored.cardId||player.role!==stored.role){
     cache.remove(PLAYER_SESSION_PREFIX+token);
@@ -6757,9 +6764,15 @@ function createResponse(e, data) {
 const EXCHANGE_PREFIX='NODIV_EXCHANGE_';
 const EXCHANGE_PREVIEW_PREFIX='NODIV_EXCHANGE_PREVIEW_';
 const EXCHANGE_COOLDOWN_MS=5*60*1000;
-function exchangeLogRows(){
+function transactionHistoryRows(){
  const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
- return sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,16).getValues():[];
+ return sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,16).getValues():[];
+}
+function readPreEventResetEpoch(){
+ const rows=transactionHistoryRows();for(let i=rows.length-1;i>=0;i--)if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS')return String(rows[i][0]);return '';
+}
+function exchangeLogRows(){
+ const rows=transactionHistoryRows();let start=0;for(let i=rows.length-1;i>=0;i--)if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS'){start=i+1;break;}return rows.slice(start);
 }
 function exchangeCompleted(order){return exchangeLogRows().some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
 function exchangeIsLive(order){
@@ -6933,7 +6946,7 @@ function normalExchange(e,action){
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 
-// Internal staging helper: called only after validateLiveExchange under ScriptLock.
+// Internal staging helper: callers fully validate their operation under ScriptLock.
 // The general transferCoreOwnership path retains every reservation/ownership guard.
 function stageValidatedExchangeTransfer(core,toType,toId,newStatus,eventType,player,nodeId,requests){
  if(!core||!core.uid)throw new Error('EXCHANGE_CORE_INVALID');
@@ -7344,5 +7357,95 @@ function normalReSupply(e,action){
   requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),context.dep.row,7,[['COMPLETED',context.dep.createdAt,context.dep.acceptedAt,new Date(),tx]]));
   assertPersonalCoreCapacity(requests,context.coreRows);Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   try{props.deleteProperty(RESUPPLY_PREFIX+id);}catch(error){}return receipt;
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* PRE-EVENT RESET: read-only diagnosis, one persistent Sheets commit, durable epoch.
+ * Property deletion is postcommit garbage collection; receipt records exact old
+ * values so recovery cannot delete newer metadata. Cache sessions are not enumerated.
+ */
+const PRE_EVENT_RESET_PROPERTY_PREFIXES=['NODIV_INSTALL_ORDER_','NODIV_EXCHANGE_','NODIV_RESTORE_1_','NODIV_RESTORE_2_','NODIV_RESUPPLY_','NODIV_CATCH_V1_','NODIV_HQ_UPLOAD_'];
+function preEventResetProperty(key){return key===RESTORE_TEST_SETUP_KEY||PRE_EVENT_RESET_PROPERTY_PREFIXES.some(prefix=>key.startsWith(prefix));}
+function preEventResetPlan(){
+ const ss=SpreadsheetApp.getActiveSpreadsheet(),read=(name,columns)=>{const sheet=ss.getSheetByName(name);return sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,columns).getValues():[];};
+ const sheets={cores:ss.getSheetByName(SHEET_NAME),nodes:ss.getSheetByName(NODE_SHEET_NAME),cards:ss.getSheetByName(ACCESS_CARD_SHEET_NAME),events:ss.getSheetByName(EVENT_SHEET_NAME),codes:ss.getSheetByName(EVENT_NODE_CODE_SHEET_NAME),deployments:ss.getSheetByName(DEPLOYMENT_SHEET_NAME),preflight:ss.getSheetByName(EVENT_PREFLIGHT_SHEET_NAME)};
+ const coreRows=read(SHEET_NAME,CORE_COL.UPDATED_AT),nodes=read(NODE_SHEET_NAME,6),cards=read(ACCESS_CARD_SHEET_NAME,12),events=read(EVENT_SHEET_NAME,11),codes=read(EVENT_NODE_CODE_SHEET_NAME,13),deployments=read(DEPLOYMENT_SHEET_NAME,11),preflight=read(EVENT_PREFLIGHT_SHEET_NAME,6),history=transactionHistoryRows();
+ const properties=PropertiesService.getScriptProperties().getProperties(),cleanupProperties=Object.fromEntries(Object.entries(properties).filter(([key])=>preEventResetProperty(key)));
+ const blockers=[],changes=[],identities=new Map(),uids=new Set(),registered=[];
+ for(const [name,sheet] of Object.entries(sheets))if(name!=='preflight'&&!sheet)blockers.push('MISSING_REGISTER // '+name);
+ if(events.some(row=>String(row[1]).trim().toUpperCase()==='FIELD_ACTIVE'))blockers.push('FIELD_ACTIVE // FOP DEINSTALLATION AND FIELD EVENT SHUTDOWN REQUIRED');
+ const uniqueUid=(uid,label)=>{if(!uid)return;if(uids.has(uid))blockers.push('DUPLICATE_UID // '+label);uids.add(uid);};
+ cards.forEach((row,index)=>{if(!normalizeUid(row[3]))return;const id=String(row[1]).trim().toUpperCase();uniqueUid(normalizeUid(row[3]),id);if(!id||identities.has(id))blockers.push('INVALID_IDENTITY // '+id);identities.set(id,{row:index+2,role:String(row[2]).trim().toUpperCase()});if(String(row[2]).trim().toUpperCase()==='PIONEER'&&Number(row[6])!==1)changes.push('CAPACITY // '+id);if(row[9])changes.push('GHOST // '+id);});
+ const provisioned=new Map();nodes.forEach((row,index)=>{const uid=normalizeUid(row[1]);if(!uid)return;const id=/^NODE-\d{3}$/.test(String(row[0]).trim().toUpperCase())?String(row[0]).trim().toUpperCase():formatNodeId(index+1);uniqueUid(uid,id);if(provisioned.has(id))blockers.push('DUPLICATE_NODE // '+id);provisioned.set(id,{row:index+2,values:row});if(String(row[2]).toUpperCase()!=='AVAILABLE'||row[4]||row[5])changes.push('NODE // '+id);});
+ const ids=new Set();coreRows.forEach((row,index)=>{if(!normalizeUid(row[2]))return;const id=String(row[0]).trim().toUpperCase();uniqueUid(normalizeUid(row[2]),id);if(!/^NC-\d{3}$/.test(id)||Number(id.slice(3))<1||Number(id.slice(3))>200||ids.has(id)){blockers.push('INVALID_CORE // '+id);return;}ids.add(id);const core=coreStateFromValues(id,index+2,row);registered.push(core);if(![core.visibleEnergy,core.hiddenEnergy,core.actualEnergy].every(value=>value===''||Number.isFinite(value)))blockers.push('INVALID_ENERGY // '+id);
+  if(core.ownerType==='NODIV_RESERVE'){
+   if(core.ownerId!=='HQ'||!['RESERVE','IN_TRANSIT'].includes(core.status))blockers.push('INVALID_RESERVE_OWNERSHIP // '+id);
+  }else if(core.ownerType==='NODE'){
+   if(!provisioned.has(core.ownerId)||core.status!=='DEPLOYED')blockers.push('INVALID_NODE_CORE // '+id);
+  }else{
+   const identity=identities.get(core.ownerId),validRole=core.ownerType==='PIONEER'?['PIONEER','LOCAL','UNBOUND'].includes(identity?.role):identity?.role===core.ownerType;
+   if(!['PIONEER','LOCAL','UNBOUND','FOP'].includes(core.ownerType)||!validRole||!['FIELD','CAUGHT'].includes(core.status))blockers.push('INVALID_PERSONAL_OWNERSHIP // '+id);
+  }
+  if(core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE')changes.push('CORE // '+id);
+ });
+ const nodeOwners=[...new Set(registered.filter(core=>core.ownerType==='NODE').map(core=>core.ownerId))];
+ for(const id of nodeOwners){const owned=registered.filter(core=>core.ownerType==='NODE'&&core.ownerId===id),membership=codes.filter(row=>String(row[1]).trim().toUpperCase()===id&&events.some(event=>String(event[0])===String(row[0])&&String(event[1])==='INITIALIZED'));
+  if(history.some(row=>row[2]==='EVENT_FIELD_ACTIVE'&&row[14]==='SUCCESS'&&String(row[15]).startsWith(String(membership[0]?.[0])+' // '))||owned.length!==3||membership.length!==1||String(membership[0]?.[9])!=='ACTIVE'||!membership[0]?.[7]||membership[0]?.[8]||String(provisioned.get(id)?.values[2])!=='INSTALLED'||!history.some(row=>row[2]==='NODE_INSTALLED'&&row[13]===id&&row[14]==='SUCCESS'&&String(row[15]).startsWith(String(membership[0]?.[0])+' // ')))blockers.push('UNSAFE_NODE_OWNERSHIP // '+id);
+ }
+ const openDeployments=deployments.map((values,index)=>({values,row:index+2})).filter(dep=>['ASSIGNED','IN_TRANSIT'].includes(String(dep.values[6]).toUpperCase()));
+ for(const core of registered.filter(core=>core.status==='IN_TRANSIT')){
+  const matches=openDeployments.filter(dep=>String(dep.values[1]).toUpperCase()===core.coreId&&String(dep.values[6]).toUpperCase()==='IN_TRANSIT');
+  if(matches.length!==1||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'){blockers.push('UNSAFE_TRANSIT // '+core.coreId);continue;}
+  const dep=matches[0].values,purpose=String(dep[5]),carrier=identities.get(String(dep[2]));
+  if(!carrier||carrier.role!==String(dep[3]))blockers.push('INVALID_TRANSIT_CARRIER // '+core.coreId);
+  if(['RESTORE_1','RESTORE_2','RESUPPLY'].includes(purpose)){
+   const prefix=purpose==='RESTORE_1'?RESTORE_PREFIX:purpose==='RESTORE_2'?RESTORE_TWO_PREFIX:RESUPPLY_PREFIX;let order;try{order=JSON.parse(properties[prefix+String(dep[0])]||'null');}catch(error){}
+   if(!order||order.id!==String(dep[0])||order.identity!==String(dep[2])||order.nodeId!==String(dep[4])||!order.eventId||!events.some(row=>String(row[0])===order.eventId)||!order.cargo||restoreSnapshot([core])!==restoreSnapshot([order.cargo]))blockers.push('TRANSIT_SNAPSHOT_MISMATCH // '+core.coreId);
+  }else if(purpose!=='DEPLOYMENT')blockers.push('UNKNOWN_TRANSIT_PURPOSE // '+core.coreId);
+ }
+ for(const dep of openDeployments){
+  const core=registered.find(core=>core.coreId===String(dep.values[1]).toUpperCase());
+  if(!core)blockers.push('DEPLOYMENT_CORE_NOT_REGISTERED // '+dep.values[0]);
+  else if(core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||(String(dep.values[6]).toUpperCase()==='ASSIGNED'&&core.status!=='RESERVE'))blockers.push('DEPLOYMENT_OWNERSHIP_CONFLICT // '+dep.values[0]);
+  if(openDeployments.filter(other=>other.values[1]===dep.values[1]).length!==1)blockers.push('DUPLICATE_DEPLOYMENT_RESERVATION // '+dep.values[1]);
+ }
+ const unknownProperties=Object.keys(properties).filter(key=>key.startsWith('NODIV_')&&!preEventResetProperty(key));
+ if(unknownProperties.length)blockers.push('UNCLASSIFIED_SCRIPT_PROPERTIES // '+unknownProperties.join(','));
+ const openEvents=events.map((values,index)=>({values,row:index+2})).filter(event=>['STANDBY','INITIALIZED'].includes(String(event.values[1]).toUpperCase()));
+ const boundCodes=codes.map((values,index)=>({values,row:index+2})).filter(code=>code.values[7]||code.values[8]||code.values[10]||['ASSIGNED_FOR_INSTALL','ACTIVE','CONFIRM_PENDING'].includes(String(code.values[9])));
+ const latestPreflight=new Map(preflight.map(row=>[String(row[0]),row]));
+ const confirmedPreflight=[...latestPreflight.values()].some(row=>row[1]===true||String(row[1]).toUpperCase()==='TRUE');
+ const sheetCleanup=changes.length>0||openEvents.length>0||boundCodes.length>0||openDeployments.length>0||confirmedPreflight;
+ const lastReset=history.slice().reverse().find(row=>row[2]==='PRE_EVENT_RESET_COMPLETE'&&row[14]==='SUCCESS');let receipt;try{receipt=JSON.parse(lastReset?.[15]||'null');}catch(error){}
+ const propertyDebtOnly=!sheetCleanup&&Object.entries(cleanupProperties).every(([key,value])=>receipt?.cleanupProperties?.[key]===value);
+ const needsCleanup=sheetCleanup||Object.keys(cleanupProperties).length>0;
+ const diagnosis={classification:blockers.length?'BLOCKER':needsCleanup?'CLEANUP_REQUIRED':'ALREADY_CLEAN',blockers,changes,eventStates:events.map(row=>({eventId:row[0],state:row[1]})),nodes:provisioned.size,nodeStates:[...provisioned].map(([id,node])=>({id,status:node.values[2],ownedCores:registered.filter(core=>core.ownerType==='NODE'&&core.ownerId===id).map(core=>core.coreId)})),registeredCores:registered.length,ownership:registered.reduce((result,core)=>{result[core.ownerType]=(result[core.ownerType]||0)+1;return result;},{}),openEventCodes:boundCodes.length,openDeployments:openDeployments.length,deploymentOperations:openDeployments.map(dep=>({id:dep.values[0],core:dep.values[1],carrier:dep.values[2],purpose:dep.values[5],status:dep.values[6]})),operationalOrders:Object.keys(cleanupProperties).map(key=>{let order;try{order=JSON.parse(cleanupProperties[key]);}catch(error){}return {key,identity:order?.identity||order?.fop||'',node:order?.nodeId||'',status:order?.status||'STORED'};}),operationalProperties:Object.fromEntries(PRE_EVENT_RESET_PROPERTY_PREFIXES.map(prefix=>[prefix,Object.keys(cleanupProperties).filter(key=>key.startsWith(prefix)).length])),restoreTestMetadata:Boolean(cleanupProperties[RESTORE_TEST_SETUP_KEY]),sessions:{enumerable:false,invalidatedBy:'durable Transaction Log reset epoch'},preflightConfirmed:confirmedPreflight};
+ return {sheets,registered,nodes,cards,events,codes,openEvents,boundCodes,openDeployments,cleanupProperties,blockers,needsCleanup,sheetCleanup,propertyDebtOnly,diagnosis};
+}
+function preEventReset(e){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const actor=session.player;if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann PRE-EVENT RESET prüfen/bestätigen.');
+  const mode=String(e.parameter.mode||'preview').toLowerCase();if(!['preview','confirm'].includes(mode))throw new Error('INVALID_RESET_MODE');
+  const plan=preEventResetPlan(),status=plan.blockers.length?'PRE_EVENT_RESET_BLOCKED':plan.needsCleanup?'PRE_EVENT_RESET_CLEANUP_REQUIRED':'PRE_EVENT_READY';
+  if(mode==='preview'||plan.blockers.length||!plan.needsCleanup)return {ok:true,authenticated:true,session:true,action:mode==='confirm'&&!plan.blockers.length,status,...plan.diagnosis};
+  const props=PropertiesService.getScriptProperties(),cleanup=()=>{for(const [key,value] of Object.entries(plan.cleanupProperties))if(props.getProperty(key)===value)props.deleteProperty(key);};
+  // A previous successful sheet commit may have lost its response/property cleanup.
+  if(plan.propertyDebtOnly){cleanup();return {ok:true,authenticated:true,session:true,action:true,status:'PRE_EVENT_READY',replayed:true};}
+  const now=new Date(),requests=[];
+  // Entire reset state/reservations already validated above while holding ScriptLock.
+  for(const core of plan.registered)if(core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE')stageValidatedExchangeTransfer(core,'NODIV_RESERVE','HQ','RESERVE','PRE_EVENT_RESET_CORE_RETURN',actor,core.ownerType==='NODE'?core.ownerId:'',requests);
+  plan.nodes.forEach((row,index)=>{if(!normalizeUid(row[1]))return;if(String(row[2]).toUpperCase()!=='AVAILABLE')requests.push(sheetCellsRequest(plan.sheets.nodes,index+2,3,[['AVAILABLE']]));if(row[4]||row[5])requests.push(sheetCellsRequest(plan.sheets.nodes,index+2,5,[['','']]));});
+  plan.cards.forEach((row,index)=>{if(!normalizeUid(row[3]))return;if(String(row[2]).toUpperCase()==='PIONEER'&&Number(row[6])!==1)requests.push(sheetCellsRequest(plan.sheets.cards,index+2,7,[[1]]));if(row[9])requests.push(sheetCellsRequest(plan.sheets.cards,index+2,10,[['']]));});
+  plan.openEvents.forEach(event=>{requests.push(sheetCellsRequest(plan.sheets.events,event.row,2,[['ABORTED']]));requests.push(sheetCellsRequest(plan.sheets.events,event.row,8,[[0]]));requests.push(sheetCellsRequest(plan.sheets.events,event.row,10,[[now]]));});
+  plan.boundCodes.forEach(code=>{requests.push(sheetCellsRequest(plan.sheets.codes,code.row,8,[['','','ABORTED','']]));requests.push(sheetCellsRequest(plan.sheets.codes,code.row,13,[[now]]));});
+  plan.openDeployments.forEach(dep=>requests.push(sheetCellsRequest(plan.sheets.deployments,dep.row,7,[['CANCELLED']])));
+  if(plan.sheets.preflight)requests.push({appendCells:{sheetId:plan.sheets.preflight.getSheetId(),rows:sheetCellsRequest(plan.sheets.preflight,1,1,['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'].map(id=>[id,false,actor.identity,now,'PRE_EVENT_RESET',''])).updateCells.rows,fields:'userEnteredValue'}});
+  const summary={registeredCores:plan.registered.length,returnedCores:plan.diagnosis.changes.filter(item=>item.startsWith('CORE // ')).length,cancelledDeployments:plan.openDeployments.length,abortedEvents:plan.openEvents.length,cleanupProperties:plan.cleanupProperties};
+  appendTransactionLog({eventType:'PRE_EVENT_RESET_COMPLETE',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify(summary)},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  // Sheet epoch is already authoritative even if property garbage collection fails.
+  let cleanupPending=false;try{cleanup();}catch(error){cleanupPending=true;}
+  return {ok:true,authenticated:true,action:true,status:'PRE_EVENT_READY',session:false,reauthenticate:true,cleanupPending,returnedCores:summary.returnedCores};
  }finally{try{lock.releaseLock();}catch(error){}}
 }

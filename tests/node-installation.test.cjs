@@ -1001,3 +1001,73 @@ test('10+2 shutdown covers all 10/11/12 actual members, blocks installed expansi
 test('10+2 expansion retry after lost committed response reuses member and log without another batch',()=>{
  const f=eventLifecycleFixture();f.start();const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(()=>f.expand('NODE-011'),/LOST_RESPONSE/);const before=JSON.stringify(f.sheets),b=f.batches();assert.equal(f.expand('NODE-011').replayed,true);assert.equal(f.batches(),b);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().plannedNodes,11);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='EVENT_NODE_EXPANDED').length,1);
 });
+
+function resetFixture(){
+ const f=fixture({state:'COMPLETED'});
+ f.sheets['Event Node Codes'].rows[1]=['EVT-1','NODE-001','0123','1111','2222','3333','4444','','','DEINSTALLED','','historical'];
+ f.sheets['Access Card Register'].rows.push(['ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true],['P3','P003','PIONEER','p3uid','ACTIVE','',1,true,true],['L1','L001','LOCAL','aabb1234','ACTIVE','',0],['U1','U001','UNBOUND','aabb5678','ACTIVE','',2]);
+ const token='d'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'ROOT'}));
+ f.sheets['Event Preflight']=new f.sheets['Node Register'].constructor(10,[['CHECK','CONFIRMED','BY','AT','NOTE','FINGERPRINT']]);
+ const e={parameter:{token,mode:'preview'}},reset=mode=>{const r=f.ctx.preEventReset({parameter:{...e.parameter,mode}});return r;};
+ function login(){const result=f.ctx.startPlayerSession({parameter:{uid:'rootuid'}});e.parameter.token=result.token;return result;}
+ return {...f,e,reset,login};
+}
+function resetSnapshot(f){return JSON.stringify({sheets:Object.fromEntries(Object.entries(f.sheets).map(([k,s])=>[k,s.rows])),properties:[...f.properties]});}
+function resetLogs(f){return f.sheets['Transaction Log'].rows.filter(row=>row[2]==='PRE_EVENT_RESET_COMPLETE');}
+test('reset clean preview/confirm read-only, Founder only, completed history unchanged',()=>{
+ const f=resetFixture(),before=resetSnapshot(f);assert.equal(f.reset('preview').classification,'ALREADY_CLEAN');assert.equal(f.reset('confirm').status,'PRE_EVENT_READY');assert.equal(resetSnapshot(f),before);assert.equal(f.batches(),0);
+ assert.equal(f.ctx.preEventReset({parameter:{token:'a'.repeat(72),mode:'confirm'}}).status,'ROLE_DENIED');assert.equal(resetSnapshot(f),before);
+});
+test('reset FIELD_ACTIVE anywhere blocks preview and confirm without mutation',()=>{
+ const f=resetFixture();f.sheets['Event Register'].rows.push(['OTHER','FIELD_ACTIVE']);const before=resetSnapshot(f);for(const mode of ['preview','confirm'])assert.equal(f.reset(mode).classification,'BLOCKER');assert.equal(resetSnapshot(f),before);assert.equal(f.batches(),0);
+});
+test('reset returns Pioneer/Local/Unbound cores atomically, preserves registration/energy/status/ledger, resets only Pioneer capacity and ghosts',()=>{
+ const f=resetFixture();for(const [n,type,id] of [[1,'PIONEER','P003'],[2,'LOCAL','L001'],[3,'UNBOUND','U001']]){const row=f.sheets['N-Core Register'].rows[n];row[14]=type;row[15]=id;row[4]='FIELD';}
+ f.sheets['Access Card Register'].rows[3][6]=3;f.sheets['Access Card Register'].rows[3][9]=new Date(Date.now()+300000).toISOString();
+ const energies=JSON.stringify(f.sheets['N-Core Register'].rows.map(row=>[row[1],row[2],row[12],row[13]])),events=JSON.stringify(f.sheets['Event Register'].rows),codes=JSON.stringify(f.sheets['Event Node Codes'].rows);
+ const before=resetSnapshot(f);assert.equal(f.reset('preview').classification,'CLEANUP_REQUIRED');assert.equal(resetSnapshot(f),before);assert.equal(f.reset('confirm').status,'PRE_EVENT_READY');assert.equal(f.batches(),1);
+ for(let n=1;n<=6;n++)assert.deepEqual(f.sheets['N-Core Register'].rows[n].slice(14,16),['NODIV_RESERVE','HQ']);assert.equal(f.sheets['Access Card Register'].rows[3][6],1);assert.equal(f.sheets['Access Card Register'].rows[3][9],'');assert.equal(f.sheets['Access Card Register'].rows[4][6],0);assert.equal(f.sheets['Access Card Register'].rows[5][6],2);assert.ok(f.sheets['Access Card Register'].rows.slice(1).every(row=>row[4]==='ACTIVE'));assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows.map(row=>[row[1],row[2],row[12],row[13]])),energies);assert.equal(JSON.stringify(f.sheets['Event Register'].rows),events);assert.equal(JSON.stringify(f.sheets['Event Node Codes'].rows),codes);assert.equal(resetLogs(f).length,1);
+});
+test('reset safely aborts INITIALIZED installed 3-core test node, preserves code/history and permits new 10-node event',()=>{
+ const f=eventLifecycleFixture();f.initialize();f.install('NODE-001');const oldEvent=f.ctx.readCurrentEvent().eventId,oldCodes=f.sheets['Event Node Codes'].rows.slice(1).map(row=>row.slice(0,7));
+ const r=f.ctx.preEventReset({parameter:{...f.founder.parameter,mode:'confirm'}});assert.equal(r.status,'PRE_EVENT_READY');assert.equal(f.sheets['Event Register'].rows[1][1],'ABORTED');assert.equal(f.ctx.readCurrentEvent(),null);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),0);assert.ok(f.sheets['Node Register'].rows.slice(1).every(row=>row[2]==='AVAILABLE'));assert.deepEqual(f.sheets['Event Node Codes'].rows.slice(1).map(row=>row.slice(0,7)),oldCodes);assert.ok(f.sheets['Transaction Log'].rows.some(row=>row[2]==='NODE_INSTALLED'));
+ f.ctx.Utilities.formatDate=()=> '20261006-170000';const session=f.ctx.startPlayerSession({parameter:{uid:'rootuid'}});const fresh=f.ctx.initializeEvent({parameter:{token:session.token}});assert.equal(fresh.status,'EVENT_INITIALIZED');assert.equal(fresh.event.nodes.length,10);assert.notEqual(fresh.event.eventId,oldEvent);assert.equal(f.sheets['Event Node Codes'].rows.length,21);
+});
+test('reset unsafe node ownership and contradictory ownership block with no writes',()=>{
+ for(const change of [row=>{row[14]='NODE';row[15]='NODE-001';row[4]='DEPLOYED';},row=>{row[14]='PIONEER';row[15]='UNKNOWN';row[4]='FIELD';},row=>{row[15]='NOT_HQ';}]){const f=resetFixture();change(f.sheets['N-Core Register'].rows[1]);const before=resetSnapshot(f);assert.equal(f.reset('confirm').classification,'BLOCKER');assert.equal(resetSnapshot(f),before);assert.equal(f.batches(),0);}
+});
+for(const purpose of ['RESTORE_1','RESTORE_2','RESUPPLY','DEPLOYMENT'])test('reset validated '+purpose+' transit cargo and open deployments terminate without deleting history',()=>{
+ const f=resetFixture();f.sheets['N-Core Register'].rows[1][4]='IN_TRANSIT';const cargo=f.ctx.readCoreState('NC-001'),id='MISSION-1';f.sheets['Deployment Register'].rows.push([id,'NC-001','P003','PIONEER','NODE-001',purpose,'IN_TRANSIT','old','accepted'],['DONE','NC-002','P003','PIONEER','NODE-001',purpose,'DELIVERED','old'],['OPEN','NC-003','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED']);
+ if(purpose!=='DEPLOYMENT')f.properties.set('NODIV_'+purpose+'_'+id,JSON.stringify({id,identity:'P003',nodeId:'NODE-001',eventId:'EVT-1',cargo}));
+ assert.equal(f.reset('confirm').status,'PRE_EVENT_READY');assert.equal(f.sheets['N-Core Register'].rows[1][4],'RESERVE');assert.equal(f.sheets['Deployment Register'].rows[1][6],'CANCELLED');assert.equal(f.sheets['Deployment Register'].rows[2][6],'DELIVERED');assert.equal(f.sheets['Deployment Register'].rows[3][6],'CANCELLED');assert.equal(f.properties.size,0);
+});
+test('reset orphan or mismatched transit cargo is blocker, reservations retained',()=>{
+ for(const mismatch of [false,true]){const f=resetFixture();f.sheets['N-Core Register'].rows[1][4]='IN_TRANSIT';if(mismatch){f.sheets['Deployment Register'].rows.push(['M','NC-001','P003','PIONEER','NODE-001','RESUPPLY','IN_TRANSIT']);f.properties.set('NODIV_RESUPPLY_M',JSON.stringify({id:'M',identity:'P003',nodeId:'NODE-001',eventId:'EVT-1',cargo:{}}));}const before=resetSnapshot(f);assert.equal(f.reset('confirm').classification,'BLOCKER');assert.equal(resetSnapshot(f),before);}
+});
+test('reset clears all operational order namespaces/test metadata, invalidates old sessions and progression without deleting audit',()=>{
+ const f=resetFixture();for(const prefix of ['NODIV_INSTALL_ORDER_','NODIV_EXCHANGE_','NODIV_EXCHANGE_PREVIEW_','NODIV_RESTORE_1_','NODIV_RESTORE_2_','NODIV_RESUPPLY_','NODIV_CATCH_V1_','NODIV_HQ_UPLOAD_'])f.properties.set(prefix+'OLD','{}');f.properties.set('NODIV_RESTORE_TEST_NODE','{}');
+ f.ctx.appendTransactionLog({eventType:'RESTORE_1_COMPLETE',actorId:'P003',actorRole:'PIONEER',result:'SUCCESS'});const historical=f.sheets['Transaction Log'].rows.length;
+ assert.equal(f.reset('confirm').status,'PRE_EVENT_READY');assert.equal(f.properties.size,0);assert.equal(f.ctx.resolvePlayerSession(f.e.parameter.token).response.status,'SESSION_RESET');assert.equal(f.ctx.checkPlayerSession(f.e).authenticated,false);assert.equal(f.ctx.exchangeLogRows().length,0);assert.equal(f.sheets['Transaction Log'].rows.length,historical+1);assert.equal(f.login().authenticated,true);assert.equal(f.ctx.resolvePlayerSession(f.e.parameter.token).ok,true);
+});
+test('reset preflight history invalidated; repeat is clean without transfers, epoch or duplicate logs',()=>{
+ const f=resetFixture();for(const id of ['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'])f.sheets['Event Preflight'].rows.push([id,true,'ROOT','old','','fingerprint']);assert.equal(f.reset('confirm').status,'PRE_EVENT_READY');f.login();assert.ok(f.ctx.readEventPreflight().every(check=>!check.confirmed));assert.equal(f.sheets['Event Preflight'].rows.length,7);assert.ok(f.sheets['Event Preflight'].rows.slice(1,4).every(row=>row[1]===true));const before=resetSnapshot(f),epoch=f.ctx.readPreEventResetEpoch();assert.equal(f.reset('confirm').classification,'ALREADY_CLEAN');assert.equal(resetSnapshot(f),before);assert.equal(f.ctx.readPreEventResetEpoch(),epoch);assert.equal(resetLogs(f).length,1);
+ f.ctx.getEventConfigurationFingerprint=()=> 'fingerprint';const readiness=f.ctx.getEventReadiness(f.e);assert.equal(readiness.ready,false);assert.equal(readiness.preflightReady,false);assert.ok(readiness.preflight.every(check=>!check.confirmed));
+});
+test('reset failed batch preserves complete persistent state including properties, capacity, event and deployments',()=>{
+ const f=resetFixture();f.sheets['Access Card Register'].rows[3][6]=2;f.sheets['N-Core Register'].rows[1][14]='PIONEER';f.sheets['N-Core Register'].rows[1][15]='P003';f.sheets['N-Core Register'].rows[1][4]='FIELD';f.sheets['Event Register'].rows[1][1]='INITIALIZED';f.sheets['Deployment Register'].rows.push(['OPEN','NC-002','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED']);f.properties.set('NODIV_EXCHANGE_OLD','{}');const before=resetSnapshot(f);f.fail();assert.throws(()=>f.reset('confirm'),/BATCH_FAILED/);assert.equal(resetSnapshot(f),before);assert.equal(f.ctx.resolvePlayerSession(f.e.parameter.token).ok,true);assert.equal(resetLogs(f).length,0);
+});
+test('reset lost batch response resumes only property cleanup, no second reset/epoch/transfer',()=>{
+ const f=resetFixture();f.properties.set('NODIV_EXCHANGE_OLD','{}');const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE');};assert.throws(()=>f.reset('confirm'),/LOST_RESPONSE/);assert.equal(resetLogs(f).length,1);assert.equal(f.properties.size,1);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;f.login();const before=JSON.stringify(f.sheets),epoch=f.ctx.readPreEventResetEpoch();assert.equal(f.reset('confirm').replayed,true);assert.equal(f.properties.size,0);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readPreEventResetEpoch(),epoch);assert.equal(resetLogs(f).length,1);
+});
+test('reset preserves all 15 physical Nodes, 200 registered Core energies/UIDs and inactive card status',()=>{
+ const f=resetFixture();f.sheets['Node Register'].rows=[[],...Array.from({length:15},(_,i)=>['NODE-'+String(i+1).padStart(3,'0'),'020000'+String(i+1).padStart(2,'0'),'AVAILABLE'])];
+ f.sheets['N-Core Register'].rows.slice(1).forEach((row,i)=>{row[2]='010000'+String(i+1).padStart(4,'0');row[1]=i+1;row[12]=i%5;row[13]=row[1]+row[12];});f.sheets['Access Card Register'].rows[3][6]=2;f.sheets['Access Card Register'].rows[3][4]='INACTIVE';
+ const nodes=JSON.stringify(f.sheets['Node Register'].rows),cores=JSON.stringify(f.sheets['N-Core Register'].rows);const r=f.reset('confirm');assert.equal(r.status,'PRE_EVENT_READY');assert.equal(JSON.stringify(f.sheets['Node Register'].rows),nodes);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),cores);assert.equal(f.sheets['Access Card Register'].rows[3][4],'INACTIVE');assert.equal(f.sheets['Access Card Register'].rows[3][6],1);f.login();const preview=f.reset('preview');assert.equal(preview.registeredCores,200);assert.equal(preview.nodes,15);assert.equal(preview.classification,'ALREADY_CLEAN');
+});
+test('reset property cleanup failure still invalidates old sessions and can be retried without new mutation',()=>{
+ const f=resetFixture();f.properties.set('NODIV_CATCH_V1_OLD','{}');const get=f.ctx.PropertiesService.getScriptProperties;f.ctx.PropertiesService.getScriptProperties=()=>({...get(),deleteProperty(){throw Error('PROPERTY_FAILED');}});assert.equal(f.reset('confirm').cleanupPending,true);assert.equal(f.ctx.resolvePlayerSession(f.e.parameter.token).response.status,'SESSION_RESET');assert.equal(resetLogs(f).length,1);f.ctx.PropertiesService.getScriptProperties=get;f.login();const before=JSON.stringify(f.sheets);assert.equal(f.reset('confirm').replayed,true);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.properties.size,0);
+});
+test('reset cannot normalize duplicate deployments, duplicate physical UIDs or previously activated Node ownership',()=>{
+ for(const change of [f=>{f.sheets['Deployment Register'].rows.push(['A','NC-001','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED'],['B','NC-001','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED']);},f=>{f.sheets['N-Core Register'].rows[2][2]=f.sheets['N-Core Register'].rows[1][2];}]){const f=resetFixture();change(f);const before=resetSnapshot(f);assert.equal(f.reset('confirm').classification,'BLOCKER');assert.equal(resetSnapshot(f),before);}
+ const f=eventLifecycleFixture();f.initialize();f.install('NODE-001');f.ctx.appendTransactionLog({eventType:'EVENT_FIELD_ACTIVE',actorId:'ROOT',actorRole:'FOUNDER',result:'SUCCESS',details:f.ctx.readCurrentEvent().eventId+' // Field Operations activated'});const before=resetSnapshot(f);assert.equal(f.ctx.preEventReset({parameter:{...f.founder.parameter,mode:'confirm'}}).classification,'BLOCKER');assert.equal(resetSnapshot(f),before);
+});
