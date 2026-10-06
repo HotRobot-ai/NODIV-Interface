@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261006-mission-feed';
+import {routeIdentity} from './router.js?v=20261006-secure-approach';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -31,6 +31,7 @@ export async function startIdentity(){
 
 window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
+ window.dispatchEvent(new CustomEvent('nodiv-upload-terminal-refresh'));
  const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
  try{
   const state=await apiRequest({action:'playerstate',token:sessionToken});
@@ -827,7 +828,9 @@ function renderPioneerUpload(result){
   text.textContent=String(core.energy)+' E // FIELD';label.className='pioneer-core';label.appendChild(input);label.appendChild(text);choices.appendChild(label);
   input.addEventListener('change',()=>{if(input.checked)pioneerUploadSelection.add(core.coreId);else pioneerUploadSelection.delete(core.coreId);document.querySelector('#uploadAuthorize').disabled=pioneerUploadBusy||pioneerUploadSelection.size===0;});
  }
- document.querySelector('#uploadHint').textContent=result.selectable?'1 bis alle verfügbaren Cores auswählen. Kostenlos // kein zusätzlicher Schutz.':'Keine uploadbaren persönlichen FIELD-Cores.';
+ if(result.canConfirm){pioneerUploadSelection=new Set((result.cores||[]).map(core=>core.coreId));choices.hidden=true;document.querySelector('#uploadAuthorize').hidden=true;document.querySelector('#uploadConfirm').hidden=false;document.querySelector('#uploadConfirm').disabled=false;}
+ window.dispatchEvent(new CustomEvent('nodiv-upload-terminal-refresh'));
+ document.querySelector('#uploadHint').textContent=result.canConfirm?'Auswahl autorisiert. Upload verbindlich bestätigen.':result.selectable?'1 bis alle verfügbaren Cores auswählen. Kostenlos // kein zusätzlicher Schutz.':'Keine uploadbaren persönlichen FIELD-Cores.';
 }
 window.addEventListener('nodiv-pioneer-upload',async e=>{
  if(!pioneerUpload||!sessionToken||pioneerUploadBusy||pioneerExchangeBusy||pioneerRestoreBusy||catchBusy)return;
@@ -903,3 +906,48 @@ window.addEventListener('nodiv-pioneer-resupply',async e=>{
   }else await request();
  }catch(error){failed(error);}
 });
+
+// Optional Secure Approach: the server alone owns price, protection and terminal state.
+let secureApproachBusy=false,secureApproachRequest='',pioneerTerminal=null;
+function renderUploadTerminal(result){
+ pioneerTerminal=result;
+ const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach');
+ if(!status)return;
+ status.dataset.state=result.state;
+ const remaining=Math.max(0,Math.ceil((Number(result.expiresAt||0)-Number(result.serverNow||Date.now()))/1000));
+ const timer=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
+ status.textContent='TERMINAL // '+({GREEN:'GRÜN // FREI',YELLOW:'GELB // SECURE APPROACH',RED:'ROT // UPLOAD IN PROGRESS'}[result.state]||'UNAVAILABLE')+(result.state!=='GREEN'?' // '+timer+(result.ownReservation?' // DEIN ZUGANG':''):'');
+ if(button)button.disabled=secureApproachBusy||result.state!=='GREEN';
+ if(result.state!=='GREEN'){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
+}
+async function refreshUploadTerminal(){
+ if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
+ try{const r=await apiRequest({action:'uploadterminalstate',token:sessionToken});if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
+ catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.textContent='TERMINAL // STATUS UNAVAILABLE';status.dataset.state='';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
+}
+window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
+window.addEventListener('nodiv-hq-approach',async e=>{
+ const hint=document.querySelector('#hqApproachHint'),confirm=document.querySelector('#secureApproachConfirm');if(!hint||!confirm||secureApproachBusy)return;
+ await refreshUploadTerminal();
+ if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='Kostenlos // kein zusätzlicher Schutz. Bei GRÜN die reale HQ Upload Bay per NFC scannen.';return;}
+ if(e.detail?.mode!=='secure'||pioneerTerminal?.state!=='GREEN')return;
+ hint.textContent='150 E SECURED werden sofort verbraucht. 05:00 Catch-Schutz und exklusive Upload Bay. Keine Erstattung bei Ablauf.';confirm.hidden=false;confirm.disabled=false;
+});
+window.addEventListener('nodiv-secure-approach-confirm',async()=>{
+ if(!sessionToken||secureApproachBusy)return;
+ const hint=document.querySelector('#hqApproachHint'),confirm=document.querySelector('#secureApproachConfirm');if(!hint||!confirm||confirm.hidden)return;
+ // Keep the request ID through timeout/reload; a retry cannot charge another debit.
+ let storage,storedRequest='';try{storage=window.sessionStorage;storedRequest=storage?.getItem('nodiv-secure-approach-request')||'';}catch(error){}
+ secureApproachRequest=secureApproachRequest||storedRequest||window.crypto?.randomUUID?.()||('sa-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+ try{storage?.setItem('nodiv-secure-approach-request',secureApproachRequest);}catch(error){}
+ secureApproachBusy=true;confirm.disabled=true;const button=document.querySelector('#secureApproach');if(button)button.disabled=true;
+ try{
+  const r=await apiRequest({action:'secureapproach',token:sessionToken,request:secureApproachRequest});if(!r?.ok||!r?.action)throw Error(r?.error||r?.status||'SECURE APPROACH FAILED');
+  renderUploadTerminal(r);confirm.hidden=true;hint.textContent=r.state==='YELLOW'&&r.ownReservation?'SECURE APPROACH ACTIVE // Reale HQ Upload Bay vor Ablauf per NFC scannen.':r.state==='RED'&&r.ownReservation?'UPLOAD IN PROGRESS // Bestehenden Upload fortsetzen.':'RESERVATION ENDED // Keine erneute Abbuchung.';
+  secureApproachRequest='';try{storage?.removeItem('nodiv-secure-approach-request');}catch(error){}
+  window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
+ }catch(error){hint.textContent=String(error.message||error)+' // Mit derselben Anfrage erneut versuchen.';}
+ finally{secureApproachBusy=false;confirm.disabled=false;if(button)button.disabled=pioneerTerminal?.state!=='GREEN';}
+});
+// Server polling reconciles expiry/completion; the browser never releases reservations.
+setInterval(()=>{if(document.querySelector('#uploadTerminalState'))refreshUploadTerminal();},10000);

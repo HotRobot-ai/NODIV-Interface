@@ -300,6 +300,10 @@ function doGet(e) {
 
       result = getPlayerEnergyBalance(e);
 
+    } else if (action === 'uploadterminalstate') {
+      result = getUploadTerminalState(e);
+    } else if (action === 'secureapproach') {
+      result = activateSecureApproach(e);
     } else if (action === 'uploadpreview') {
 
       result = getHqUploadPreview(e);
@@ -2886,8 +2890,8 @@ function getPlayerEnergyBalance(e) {
   return {ok:true,authenticated:true,session:true,identity:player.identity,securedEnergy:readPlayerEnergyBalance(player.identity)};
 }
 
-/* Normal HQ Upload: previews reserve nothing; the durable log receipt and energy
- * entry share the ownership batch. Script properties hold only short-lived choices. */
+/* Normal HQ Upload: a durable terminal claim precedes the existing atomic
+ * ownership/ledger receipt batch. Script properties hold short-lived choices. */
 const HQ_UPLOAD_PREFIX='NODIV_HQ_UPLOAD_';
 function hqUploadContext(player,bayUid){
  if(player.role!=='PIONEER'||player.status!=='ACTIVE')throw new Error('ROLE_DENIED');
@@ -2924,11 +2928,23 @@ function getHqUploadPreview(e){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  const player=session.player,context=hqUploadContext(player,e.parameter.uid||''),props=PropertiesService.getScriptProperties();
-  const existing=props.getProperties();Object.keys(existing).filter(key=>key.startsWith(HQ_UPLOAD_PREFIX)).forEach(key=>{try{if(JSON.parse(existing[key]).expiresAt<=Date.now())props.deleteProperty(key);}catch(error){props.deleteProperty(key);}});
-  const order={id:'UPL-'+Utilities.getUuid().toUpperCase(),identity:player.identity,cardId:player.cardId,bayUid:normalizeUid(e.parameter.uid),bay:context.bay,cores:context.cores,authorized:false,expiresAt:Date.now()+5*60*1000};
+  const player=session.player,context=hqUploadContext(player,e.parameter.uid||''),props=PropertiesService.getScriptProperties(),bay=activeHqUploadBay();
+  if(normalizeUid(e.parameter.uid)!==bay.uid)throw new Error('UPLOAD_BAY_INVALID');
+  const terminal=readUploadTerminalRecord();assertUploadTerminalOwner(terminal,player);
+  if(terminal.eventId&&terminal.eventId!==readCurrentEvent()?.eventId)throw new Error('UPLOAD_EVENT_CHANGED');
+  if(terminal.state==='RED'){
+   const stored=props.getProperty(HQ_UPLOAD_PREFIX+terminal.order.id),order=stored?JSON.parse(stored):terminal.order;
+   if(order.bayUid!==bay.uid)throw new Error('UPLOAD_BAY_CHANGED');
+   return {...hqUploadResponse(order,order.authorized?'HQ_UPLOAD_AUTHORIZED':'HQ_UPLOAD_READY'),selectable:true,replayed:true};
+  }
+  const event=readCurrentEvent(),order={id:'UPL-'+Utilities.getUuid().toUpperCase(),identity:player.identity,cardId:player.cardId,bayUid:bay.uid,bay:context.bay,eventId:event?.eventId||'',cores:context.cores,authorized:false,expiresAt:Date.now()+5*60*1000};
   const response={...hqUploadResponse(order,context.cores.length?'HQ_UPLOAD_READY':'HQ_UPLOAD_EMPTY'),selectable:context.cores.length>0};
-  if(context.cores.length)props.setProperty(HQ_UPLOAD_PREFIX+order.id,JSON.stringify(order));
+  if(context.cores.length){
+   const requests=[];appendTransactionLog({eventType:'UPLOAD_TERMINAL_CLAIMED',actorId:player.identity,actorRole:player.role,result:'SUCCESS',details:JSON.stringify(order)},requests);
+   // The durable claim contains the initial order, so even a lost response is resumable.
+   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+   try{for(const [key,raw] of Object.entries(props.getProperties()))if(key.startsWith(HQ_UPLOAD_PREFIX)){try{if(JSON.parse(raw)?.expiresAt<=Date.now())props.deleteProperty(key);}catch(error){props.deleteProperty(key);}}props.setProperty(HQ_UPLOAD_PREFIX+order.id,JSON.stringify(order));}catch(error){}
+  }
   return response;
  }finally{try{lock.releaseLock();}catch(error){}}
 }
@@ -2942,9 +2958,12 @@ function normalHqUpload(e,action){
    const completed=exchangeLogRows().find(row=>row[2]==='HQ_UPLOAD_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS'&&(()=>{try{const r=JSON.parse(row[15]);return r.upload===id&&r.cardId===player.cardId;}catch(error){return false;}})());
    if(completed)return {...JSON.parse(completed[15]),replayed:true};
   }
-  const order=JSON.parse(props.getProperty(HQ_UPLOAD_PREFIX+id)||'null');
+  const terminal=readUploadTerminalRecord(),order=JSON.parse(props.getProperty(HQ_UPLOAD_PREFIX+id)||'null')||(terminal.state==='RED'&&terminal.order.id===id?terminal.order:null);
   if(!order||order.identity!==player.identity||order.cardId!==player.cardId)throw new Error('UPLOAD_SESSION_MISMATCH');
   if(order.expiresAt<=Date.now())throw new Error('UPLOAD_EXPIRED');
+  assertUploadTerminalOwner(terminal,player);
+  if(terminal.state!=='RED'||terminal.order.id!==id)throw new Error('UPLOAD_TERMINAL_BUSY');
+  if(order.eventId&&readCurrentEvent()?.eventId!==order.eventId)throw new Error('UPLOAD_EVENT_CHANGED');
   const context=hqUploadContext(player,order.bayUid);if(context.bay.id!==order.bay.id)throw new Error('UPLOAD_BAY_CHANGED');
   let selected=order.cores;
   if(action==='authorize'){
@@ -7372,6 +7391,7 @@ function preEventResetPlan(){
  const coreRows=read(SHEET_NAME,CORE_COL.UPDATED_AT),nodes=read(NODE_SHEET_NAME,6),cards=read(ACCESS_CARD_SHEET_NAME,12),events=read(EVENT_SHEET_NAME,11),codes=read(EVENT_NODE_CODE_SHEET_NAME,13),deployments=read(DEPLOYMENT_SHEET_NAME,11),preflight=read(EVENT_PREFLIGHT_SHEET_NAME,6),history=transactionHistoryRows();
  const properties=PropertiesService.getScriptProperties().getProperties(),cleanupProperties=Object.fromEntries(Object.entries(properties).filter(([key])=>preEventResetProperty(key)));
  const blockers=[],changes=[],identities=new Map(),uids=new Set(),registered=[];
+ let uploadTerminal;try{uploadTerminal=readUploadTerminalRecord();}catch(error){uploadTerminal={state:'INVALID'};blockers.push('UPLOAD_TERMINAL_INVALID // '+error.message);}if(uploadTerminal.state!=='GREEN')changes.push('UPLOAD_TERMINAL // '+uploadTerminal.state);
  for(const [name,sheet] of Object.entries(sheets))if(name!=='preflight'&&!sheet)blockers.push('MISSING_REGISTER // '+name);
  if(events.some(row=>String(row[1]).trim().toUpperCase()==='FIELD_ACTIVE'))blockers.push('FIELD_ACTIVE // FOP DEINSTALLATION AND FIELD EVENT SHUTDOWN REQUIRED');
  const uniqueUid=(uid,label)=>{if(!uid)return;if(uids.has(uid))blockers.push('DUPLICATE_UID // '+label);uids.add(uid);};
@@ -7419,7 +7439,7 @@ function preEventResetPlan(){
  const lastReset=history.slice().reverse().find(row=>row[2]==='PRE_EVENT_RESET_COMPLETE'&&row[14]==='SUCCESS');let receipt;try{receipt=JSON.parse(lastReset?.[15]||'null');}catch(error){}
  const propertyDebtOnly=!sheetCleanup&&Object.entries(cleanupProperties).every(([key,value])=>receipt?.cleanupProperties?.[key]===value);
  const needsCleanup=sheetCleanup||Object.keys(cleanupProperties).length>0;
- const diagnosis={classification:blockers.length?'BLOCKER':needsCleanup?'CLEANUP_REQUIRED':'ALREADY_CLEAN',blockers,changes,eventStates:events.map(row=>({eventId:row[0],state:row[1]})),nodes:provisioned.size,nodeStates:[...provisioned].map(([id,node])=>({id,status:node.values[2],ownedCores:registered.filter(core=>core.ownerType==='NODE'&&core.ownerId===id).map(core=>core.coreId)})),registeredCores:registered.length,ownership:registered.reduce((result,core)=>{result[core.ownerType]=(result[core.ownerType]||0)+1;return result;},{}),openEventCodes:boundCodes.length,openDeployments:openDeployments.length,deploymentOperations:openDeployments.map(dep=>({id:dep.values[0],core:dep.values[1],carrier:dep.values[2],purpose:dep.values[5],status:dep.values[6]})),operationalOrders:Object.keys(cleanupProperties).map(key=>{let order;try{order=JSON.parse(cleanupProperties[key]);}catch(error){}return {key,identity:order?.identity||order?.fop||'',node:order?.nodeId||'',status:order?.status||'STORED'};}),operationalProperties:Object.fromEntries(PRE_EVENT_RESET_PROPERTY_PREFIXES.map(prefix=>[prefix,Object.keys(cleanupProperties).filter(key=>key.startsWith(prefix)).length])),restoreTestMetadata:Boolean(cleanupProperties[RESTORE_TEST_SETUP_KEY]),sessions:{enumerable:false,invalidatedBy:'durable Transaction Log reset epoch'},preflightConfirmed:confirmedPreflight};
+ const diagnosis={classification:blockers.length?'BLOCKER':needsCleanup?'CLEANUP_REQUIRED':'ALREADY_CLEAN',blockers,changes,eventStates:events.map(row=>({eventId:row[0],state:row[1]})),nodes:provisioned.size,nodeStates:[...provisioned].map(([id,node])=>({id,status:node.values[2],ownedCores:registered.filter(core=>core.ownerType==='NODE'&&core.ownerId===id).map(core=>core.coreId)})),registeredCores:registered.length,ownership:registered.reduce((result,core)=>{result[core.ownerType]=(result[core.ownerType]||0)+1;return result;},{}),openEventCodes:boundCodes.length,openDeployments:openDeployments.length,deploymentOperations:openDeployments.map(dep=>({id:dep.values[0],core:dep.values[1],carrier:dep.values[2],purpose:dep.values[5],status:dep.values[6]})),operationalOrders:Object.keys(cleanupProperties).map(key=>{let order;try{order=JSON.parse(cleanupProperties[key]);}catch(error){}return {key,identity:order?.identity||order?.fop||'',node:order?.nodeId||'',status:order?.status||'STORED'};}),operationalProperties:Object.fromEntries(PRE_EVENT_RESET_PROPERTY_PREFIXES.map(prefix=>[prefix,Object.keys(cleanupProperties).filter(key=>key.startsWith(prefix)).length])),restoreTestMetadata:Boolean(cleanupProperties[RESTORE_TEST_SETUP_KEY]),sessions:{enumerable:false,invalidatedBy:'durable Transaction Log reset epoch'},preflightConfirmed:confirmedPreflight,uploadTerminal:{state:uploadTerminal.state,expiresAt:uploadTerminal.expiresAt||null}};
  return {sheets,registered,nodes,cards,events,codes,openEvents,boundCodes,openDeployments,cleanupProperties,blockers,needsCleanup,sheetCleanup,propertyDebtOnly,diagnosis};
 }
 function preEventReset(e){
@@ -7447,5 +7467,69 @@ function preEventReset(e){
   // Sheet epoch is already authoritative even if property garbage collection fails.
   let cleanupPending=false;try{cleanup();}catch(error){cleanupPending=true;}
   return {ok:true,authenticated:true,action:true,status:'PRE_EVENT_READY',session:false,reauthenticate:true,cleanupPending,returnedCores:summary.returnedCores};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* One HQ terminal. Existing durable transaction receipts are the reservation;
+ * no independent property write can split Debit/Ghost/Reservation commits.
+ * PRE_EVENT_RESET_COMPLETE scopes these receipts through exchangeLogRows(). */
+const SECURE_APPROACH_COST=150;
+const SECURE_APPROACH_TTL_MS=5*60*1000;
+function activeHqUploadBay(){
+ const sheet=findUploadTerminalSheet(),rows=sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues():[];
+ const bays=rows.filter(row=>String(row[1]).toUpperCase()==='UPLOAD_HQ'&&String(row[3]).toUpperCase()==='ACTIVE'&&normalizeUid(row[2]));
+ if(bays.length!==1)throw new Error('UPLOAD_TERMINAL_CONFIGURATION_INVALID');
+ return {id:String(bays[0][0]),uid:normalizeUid(bays[0][2])};
+}
+function readUploadTerminalRecord(){
+ const rows=exchangeLogRows(),completed=new Set();
+ for(const row of rows)if(row[2]==='HQ_UPLOAD_COMPLETE'&&row[14]==='SUCCESS'){try{completed.add(JSON.parse(row[15]).upload);}catch(error){}}
+ const props=PropertiesService.getScriptProperties();
+ for(let i=rows.length-1;i>=0;i--){
+  const row=rows[i];if(row[14]!=='SUCCESS'||!['SECURE_APPROACH_ACTIVATED','UPLOAD_TERMINAL_CLAIMED'].includes(row[2]))continue;
+  // Corrupt authoritative receipts must never silently make a reserved terminal free.
+  const record=JSON.parse(row[15]);if(!record.id||!record.identity||!record.cardId||!Number.isFinite(record.expiresAt))throw new Error('UPLOAD_TERMINAL_RECEIPT_INVALID');
+  if(row[2]==='SECURE_APPROACH_ACTIVATED')return record.expiresAt>Date.now()?{state:'YELLOW',...record}:{state:'GREEN'};
+  if(completed.has(record.id)||record.expiresAt<=Date.now())return {state:'GREEN'};
+  const raw=props.getProperty(HQ_UPLOAD_PREFIX+record.id),order=raw?JSON.parse(raw):record;
+  if(!order||!Number.isFinite(order.expiresAt)||order.id!==record.id||order.identity!==record.identity||order.cardId!==record.cardId||order.bayUid!==record.bayUid||order.eventId!==record.eventId)throw new Error('UPLOAD_TERMINAL_ORDER_MISMATCH');
+  if(order.expiresAt<=Date.now())return {state:'GREEN'};
+  return {state:'RED',id:record.id,identity:record.identity,cardId:record.cardId,expiresAt:record.expiresAt,order};
+ }
+ // Pre-deployment upload orders use the existing TTL/receipt rules; no migration.
+ const old=Object.entries(props.getProperties()).filter(([key])=>key.startsWith(HQ_UPLOAD_PREFIX)).flatMap(([,raw])=>{try{const order=JSON.parse(raw);return order?.id&&order.identity&&order.cardId&&Number.isFinite(order.expiresAt)&&Array.isArray(order.cores)?[order]:[];}catch(error){return [];}}).filter(order=>order.expiresAt>Date.now()&&!completed.has(order.id)).sort((a,b)=>a.expiresAt-b.expiresAt||a.id.localeCompare(b.id))[0];
+ return old?{state:'RED',id:old.id,identity:old.identity,cardId:old.cardId,expiresAt:old.expiresAt,order:old}:{state:'GREEN'};
+}
+function uploadTerminalResponse(record,player){
+ const now=Date.now(),own=record.identity===player.identity&&record.cardId===player.cardId;
+ return {ok:true,authenticated:true,session:true,status:'UPLOAD_TERMINAL_STATE',state:record.state,serverNow:now,...(record.state!=='GREEN'?{expiresAt:record.expiresAt,remainingMs:Math.max(0,record.expiresAt-now),ownReservation:own}:{})};
+}
+function assertUploadTerminalOwner(record,player){
+ if(record.state!=='GREEN'&&(record.identity!==player.identity||record.cardId!==player.cardId))throw new Error('UPLOAD_TERMINAL_BUSY');
+}
+function getUploadTerminalState(e){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  activeHqUploadBay();return uploadTerminalResponse(readUploadTerminalRecord(),session.player);
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function activateSecureApproach(e){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const player=session.player;if(player.role!=='PIONEER'||player.status!=='ACTIVE')throw new Error('PIONEER_REQUIRED');
+  const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('FIELD_ACTIVE_REQUIRED');
+  const bay=activeHqUploadBay(),request=String(e.parameter.request||'');
+  if(!/^[A-Za-z0-9_-]{8,100}$/.test(request))throw new Error('SECURE_APPROACH_REQUEST_REQUIRED');
+  const previous=exchangeLogRows().find(row=>row[2]==='SECURE_APPROACH_ACTIVATED'&&row[14]==='SUCCESS'&&row[3]===player.identity&&(()=>{const r=JSON.parse(row[15]);return r.request===request&&r.cardId===player.cardId;})());
+  if(previous){const receipt=JSON.parse(previous[15]);if(receipt.eventId!==event.eventId||receipt.bayUid!==bay.uid)throw new Error('SECURE_APPROACH_CONTEXT_CHANGED');const state=uploadTerminalResponse(readUploadTerminalRecord(),player);return {...state,action:true,reservation:receipt.id,reservationExpiresAt:receipt.expiresAt,expiresAt:state.expiresAt||receipt.expiresAt,ghostUntil:receipt.ghostUntil,securedEnergy:readPlayerEnergyBalance(player.identity),replayed:true};}
+  if(readUploadTerminalRecord().state!=='GREEN')throw new Error('UPLOAD_TERMINAL_BUSY');
+  if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAYER_ENERGY_SHEET_NAME)||readPlayerEnergyBalance(player.identity)<SECURE_APPROACH_COST)throw new Error('INSUFFICIENT_SECURED_ENERGY');
+  const now=Date.now(),id='SAP-'+Utilities.getUuid().toUpperCase(),expiresAt=now+SECURE_APPROACH_TTL_MS,ghostUntil=new Date(Math.max(new Date(player.ghostUntil||0).getTime()||0,expiresAt)),requests=[];
+  const debit=bookPlayerEnergy({identity:player.identity,role:player.role,type:'SECURE_APPROACH',amount:-SECURE_APPROACH_COST,reference:id,details:'HQ terminal // 5-minute optional approach'},requests);
+  setAccessCardGhostUntilByUid(player.uid,ghostUntil,requests);
+  const receipt={id,request,identity:player.identity,cardId:player.cardId,eventId:event.eventId,bayUid:bay.uid,expiresAt,ghostUntil:ghostUntil.toISOString(),energyEntry:debit.entryId,securedEnergy:debit.balance};
+  appendTransactionLog({eventType:'SECURE_APPROACH_ACTIVATED',actorId:player.identity,actorRole:player.role,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  return {...uploadTerminalResponse({state:'YELLOW',...receipt},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,replayed:false};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
