@@ -7587,7 +7587,7 @@ function preEvacuationProjection(requests=[]){
  names.forEach((name,i)=>{const sheet=ss.getSheetByName(name);if(!sheet)throw new Error('PRE_EVACUATION_REGISTER_MISSING');view[name]={id:sheet.getSheetId(),rows:sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),columns[i]).getValues()};});
  for(const request of requests){const update=request.updateCells||request.appendCells;if(!update)continue;const table=Object.values(view).find(table=>table.id===(update.sheetId??update.start.sheetId));if(!table)continue;
   const rows=update.rows.map(row=>row.values.map(cell=>Object.values(cell.userEnteredValue||{})[0]??''));
-  if(request.appendCells)table.rows.push(...rows);else rows.forEach((values,i)=>values.forEach((value,j)=>{table.rows[update.start.rowIndex+i]??=[];table.rows[update.start.rowIndex+i][update.start.columnIndex+j]=value;}));
+  if(request.appendCells)table.rows.push(...rows);else rows.forEach((values,i)=>values.forEach((value,j)=>{if(table.rows[update.start.rowIndex+i]==null)table.rows[update.start.rowIndex+i]=[];table.rows[update.start.rowIndex+i][update.start.columnIndex+j]=value;}));
  }
  const logs=view[TRANSACTION_LOG_SHEET_NAME].rows.slice(1);let start=0;for(let i=logs.length-1;i>=0;i--)if(logs[i][2]==='PRE_EVENT_RESET_COMPLETE'&&logs[i][14]==='SUCCESS'){start=i+1;break;}view.logs=logs.slice(start);return view;
 }
