@@ -2,7 +2,11 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-function ui({operation='INSTALL',empty=false}={}){
+// Strip named static imports structurally; module URLs and cache versions are irrelevant.
+function prepareIdentitySource(source){
+ return source.replace(/^[ \t]*import\s*\{[^}]*\}\s*from\s*(['"])[^'"\r\n]+\1[ \t]*;?[ \t]*(?:\r?\n|$)/gm,'').replace('export async function','async function');
+}
+function ui({operation='INSTALL',empty=false,identitySource=fs.readFileSync('app/js/identity.js','utf8')}={}){
  class Element{
   constructor(){this.textContent='';this.children=[];this.hidden=false;this.disabled=false;this.dataset={};this.value=''}
   addEventListener(name,fn){this.listeners??={};this.listeners[name]=fn}
@@ -15,7 +19,7 @@ function ui({operation='INSTALL',empty=false}={}){
  const listeners={},document={querySelector:id=>elements[id]||null,createElement:()=>new Element(),addEventListener(){}},requests=[];
  const ctx={document,console,AbortController,setTimeout,clearTimeout,setInterval:()=>0,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail}},URLSearchParams,emitNodiv(){},window:{addEventListener:(name,fn)=>listeners[name]=fn,dispatchEvent(){}}};
  ctx.window.NDEFReader=ctx.NDEFReader=class{async scan(){ctx.reader=this}};
- vm.createContext(ctx);vm.runInContext(fs.readFileSync('app/js/identity.js','utf8').replace(/^import .*\n/gm,'').replace('export async function','async function'),ctx);vm.runInContext("sessionToken='test'",ctx);
+ vm.createContext(ctx);vm.runInContext(prepareIdentitySource(identitySource),ctx);vm.runInContext("sessionToken='test'",ctx);
  const assigned=[{id:'NC-017',energy:175},{id:'NC-034',energy:246},{id:'NC-089',energy:281}],nodeId=operation==='DEINSTALL'?'NODE-001':'NODE-002';let scanned=[],complete=false;
  ctx.apiRequest=async p=>{
   requests.push(p);
@@ -250,5 +254,7 @@ test('No-active Restore response never erases active Re-Supply board; absent Res
  f.ctx.renderPioneerReSupply({...supply,accepted:true});assert.match(e['#pioneerRestoreBoard'].innerHTML,/zum Ziel-Node bringen/);f.ctx.renderPioneerReSupply({...supply,status:'RESUPPLY_COMPLETE',acquiredCore:{energy:105}});assert.equal(feed.hidden,true);assert.equal(e['#pioneerMissionCount'].textContent,'NO ACTIVE MISSION');
  });
  test('Recovered server mission restores Board and attention feed after reload without independent attention state',async()=>{
- for(const kind of ['restore','resupply']){const f=ui();f.ctx.apiRequest=async()=>({ok:true,session:true,[kind]:'RECOVERED',phase:2,nodeId:'NODE-002',status:kind==='restore'?'RESTORE_IN_TRANSIT':'RESUPPLY_MISSION',accepted:true,inCore:{id:'NC-009',energy:251},outCore:{id:'NC-004',energy:105},inCount:0,outCount:0});await f.listeners['nodiv-pioneer-'+kind+'-status']();assert.equal(f.elements['#pioneerFeed'].hidden,false);assert.match(f.elements['#pioneerFeed'].children[0].textContent,kind==='restore'?/RESTORE #2.*NODE-002/:/RE-SUPPLY.*NODE-002/);assert.equal(f.elements['#pioneerMissionCount'].textContent,'1 ACTIVE MISSION');}
+ const source=fs.readFileSync('app/js/identity.js','utf8');
+ const imports=["import {routeIdentity} from './router.js?v=future-version';",'  import { routeIdentity } from "./router.js?v=another-version&cache=42";',"import {\n routeIdentity\n} from './router.js';"];
+ for(const declaration of imports)for(const kind of ['restore','resupply']){const identitySource=source.replace(/^import[^\n]+/,declaration),f=ui({identitySource});assert.doesNotMatch(prepareIdentitySource(identitySource),/^[ \t]*import\b/m);f.ctx.apiRequest=async()=>({ok:true,session:true,[kind]:'RECOVERED',phase:2,nodeId:'NODE-002',status:kind==='restore'?'RESTORE_IN_TRANSIT':'RESUPPLY_MISSION',accepted:true,inCore:{id:'NC-009',energy:251},outCore:{id:'NC-004',energy:105},inCount:0,outCount:0});await f.listeners['nodiv-pioneer-'+kind+'-status']();assert.equal(f.elements['#pioneerFeed'].hidden,false);assert.match(f.elements['#pioneerFeed'].children[0].textContent,kind==='restore'?/RESTORE #2.*NODE-002/:/RE-SUPPLY.*NODE-002/);assert.equal(f.elements['#pioneerMissionCount'].textContent,'1 ACTIVE MISSION');}
  });
