@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261006-resupply-auto';
+import {routeIdentity} from './router.js?v=20261006-mission-board';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -619,13 +619,30 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
 });
 
 let pioneerRestore=null,pioneerRestoreBusy=false,founderRestoreOptions=[];
+function renderPioneerMissionBoard(){
+ const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount');
+ const restore=pioneerRestore?.restore&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore.status)?pioneerRestore:null;
+ const supply=pioneerReSupply?.resupply&&pioneerReSupply.status!=='RESUPPLY_COMPLETE'?pioneerReSupply:null;
+ const mission=restore||supply;
+ if(count)count.textContent=mission?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
+ if(!board)return;
+ if(!mission){board.innerHTML='<div><b>FIELD COMMS</b><span>STANDBY</span></div><p>Keine aktive Mission.</p>';return;}
+ const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+ const label=restore?'RESTORE #'+Number(mission.phase||1):'RE-SUPPLY';
+ let instruction='Transport-Core übernehmen.';
+ if(mission.canConfirm||mission.outCount)instruction='Physischen Tausch bestätigen.';
+ else if(mission.inCount)instruction='Vorgegebenen niedrigsten Node-Core entnehmen und scannen.';
+ else if(mission.authorized)instruction='Transport-Core einsetzen und scannen.';
+ else if(mission.atNode)instruction='Ziel-Node autorisieren.';
+ else if(mission.accepted)instruction='Transport-Core zum Ziel-Node bringen und Node scannen.';
+ board.innerHTML='<div><b>'+label+'</b><span>AKTIV</span></div><p>'+escape(mission.nodeId)+' // '+instruction+'</p>';
+}
 function renderPioneerRestore(result,atNode=false){
  pioneerRestore={...result,atNode};
- const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount'),panel=document.querySelector('#pioneerRestore');
+ const panel=document.querySelector('#pioneerRestore');
  const phase=Number(result.phase||1),complete=['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(result.status),active=result.restore&&!complete;
  const missionLabel=document.querySelector('#restoreMissionLabel');if(missionLabel)missionLabel.textContent='RESTORE #'+phase;
- if(board)board.innerHTML=active?'<div><b>RESTORE #'+phase+'</b><span>AKTIV</span></div><p>'+result.nodeId+' wartet auf dich. Öffne die Mission und folge nur dem jeweils markierten Schritt.</p>':'<div><b>FIELD COMMS</b><span>STANDBY</span></div><p>Keine aktive RESTORE-Mission.</p>';
- if(count)count.textContent=active?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
+ renderPioneerMissionBoard();
  if(!panel)return;panel.hidden=!result.restore;
  document.querySelector('#restoreNode').textContent=result.nodeId;
  const inCard=document.querySelector('#restoreInCard'),outCard=document.querySelector('#restoreOutCard');
@@ -660,8 +677,8 @@ function renderPioneerRestore(result,atNode=false){
 }
 window.addEventListener('nodiv-pioneer-restore-status',async()=>{
  if(!sessionToken)return;
- try{const r=await apiRequest({action:'restorestate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE STATE FAILED');if(r.restore)renderPioneerRestore(r,false);}
- catch(err){const board=document.querySelector('#pioneerRestoreBoard');if(board)board.textContent=String(err.message||err);}
+ try{const r=await apiRequest({action:'restorestate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'RESTORE STATE FAILED');if(r.restore)renderPioneerRestore(r,false);else{pioneerRestore=null;renderPioneerMissionBoard();}}
+ catch(err){const hint=document.querySelector('#restoreHint');if(hint)hint.textContent=String(err.message||err);}
 });
 window.addEventListener('nodiv-pioneer-restore',async e=>{
  const action=e.detail?.action;if(pioneerRestoreBusy||pioneerExchangeBusy||!pioneerRestore?.atNode||!sessionToken)return;
@@ -835,6 +852,7 @@ function renderPioneerReSupply(result,atNode=false){
  const panel=document.querySelector('#pioneerReSupply');if(!panel)return;
  const complete=result.status==='RESUPPLY_COMPLETE',mission=Boolean(result.resupply),active=mission&&!complete;
  if(mission)pioneerReSupply={...result,atNode};else pioneerReSupply=null;
+ renderPioneerMissionBoard();
  panel.hidden=!mission;
  document.querySelector('#resupplyNode').textContent=result.nodeId||'PERSÖNLICHER CORE BENÖTIGT';
  const accept=document.querySelector('#resupplyAccept'),authorize=document.querySelector('#resupplyAuthorize'),scan=document.querySelector('#resupplyScan'),confirm=document.querySelector('#resupplyConfirm');

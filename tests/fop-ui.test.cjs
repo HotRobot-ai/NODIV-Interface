@@ -222,3 +222,20 @@ test('Re-Supply becomes available again after a later full upload at zero invent
  f.ctx.apiRequest=async p=>p.action==='playerstate'?{ok:true,session:true,player:{coreCapacity:3},cores:[],carriedEnergy:0,securedEnergy:100}:{ok:true,session:true,action:true,resupply:'NEW',nodeId:'NODE-002',inCore:{energy:100},accepted:false,status:'RESUPPLY_ASSIGNED'};
  await f.listeners['nodiv-pioneer-live']();assert.ok(events.includes('nodiv-pioneer-resupply-status'));await f.listeners['nodiv-pioneer-resupply-status']();assert.equal(f.elements['#resupplyAccept'].hidden,false);assert.equal(f.elements['#resupplyNode'].textContent,'NODE-002');assert.equal(f.elements['#resupplyResult'].hidden,true);
 });
+
+test('Unified Pioneer Mission Board uses existing Restore/Re-Supply state and clears only the completed mission',()=>{
+ const f=ui(),e=f.elements;f.ctx.renderPioneerMissionBoard();assert.equal(e['#pioneerMissionCount'].textContent,'NO ACTIVE MISSION');assert.match(e['#pioneerRestoreBoard'].innerHTML,/FIELD COMMS.*STANDBY/);
+ const restore={restore:'RST-2',phase:2,nodeId:'NODE-002',status:'RESTORE_IN_TRANSIT',inCore:{id:'NC-1',energy:100},outCore:{id:'NC-2',energy:50},inCount:0,outCount:0};
+ f.ctx.renderPioneerRestore(restore);assert.equal(e['#pioneerMissionCount'].textContent,'1 ACTIVE MISSION');assert.match(e['#pioneerRestoreBoard'].innerHTML,/RESTORE #2.*NODE-002.*Transport-Core übernehmen/s);
+ f.ctx.renderPioneerReSupply({status:'NO_ACTIVE_MISSION'});assert.match(e['#pioneerRestoreBoard'].innerHTML,/RESTORE #2/);
+ f.ctx.renderPioneerRestore({...restore,status:'RESTORE_2_COMPLETE'});assert.equal(e['#pioneerMissionCount'].textContent,'NO ACTIVE MISSION');assert.match(e['#pioneerRestoreBoard'].innerHTML,/FIELD COMMS.*STANDBY/);
+ const supply={resupply:'DEP-RS',nodeId:'NODE-001',status:'RESUPPLY_ASSIGNED',inCore:{energy:100},accepted:false,inCount:0,outCount:0};
+ f.ctx.renderPioneerReSupply(supply);assert.equal(e['#pioneerMissionCount'].textContent,'1 ACTIVE MISSION');assert.match(e['#pioneerRestoreBoard'].innerHTML,/RE-SUPPLY.*NODE-001.*Transport-Core übernehmen/s);
+ f.ctx.renderPioneerReSupply({...supply,accepted:true});assert.match(e['#pioneerRestoreBoard'].innerHTML,/zum Ziel-Node bringen/);
+ f.ctx.renderPioneerReSupply({...supply,accepted:true,authorized:true,inCount:1,outCore:{energy:50}},true);assert.match(e['#pioneerRestoreBoard'].innerHTML,/niedrigsten Node-Core entnehmen/);
+ f.ctx.renderPioneerReSupply({...supply,status:'RESUPPLY_COMPLETE',acquiredCore:{energy:50}});assert.equal(e['#pioneerMissionCount'].textContent,'NO ACTIVE MISSION');assert.match(e['#pioneerRestoreBoard'].innerHTML,/FIELD COMMS.*STANDBY/);
+});
+test('No-active Restore response never erases active Re-Supply board; absent Restore clears stale board',async()=>{
+ const f=ui();f.ctx.renderPioneerReSupply({resupply:'DEP-RS',nodeId:'NODE-002',status:'RESUPPLY_ASSIGNED',inCore:{energy:100}});f.ctx.apiRequest=async()=>({ok:true,session:true,status:'NO_ACTIVE_RESTORE'});await f.listeners['nodiv-pioneer-restore-status']();assert.match(f.elements['#pioneerRestoreBoard'].innerHTML,/RE-SUPPLY.*NODE-002/s);
+ f.ctx.renderPioneerReSupply({status:'NO_ACTIVE_MISSION'});assert.equal(f.elements['#pioneerMissionCount'].textContent,'NO ACTIVE MISSION');
+});
