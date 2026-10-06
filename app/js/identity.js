@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261006-mission-board';
+import {routeIdentity} from './router.js?v=20261006-mission-feed';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -620,15 +620,19 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
 
 let pioneerRestore=null,pioneerRestoreBusy=false,founderRestoreOptions=[];
 function renderPioneerMissionBoard(){
- const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount');
+ const board=document.querySelector('#pioneerRestoreBoard'),count=document.querySelector('#pioneerMissionCount'),feed=document.querySelector('#pioneerFeed');
  const restore=pioneerRestore?.restore&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore.status)?pioneerRestore:null;
  const supply=pioneerReSupply?.resupply&&pioneerReSupply.status!=='RESUPPLY_COMPLETE'?pioneerReSupply:null;
- const mission=restore||supply;
+ const mission=restore||supply,label=restore?'RESTORE #'+Number(restore.phase||1):'RE-SUPPLY';
+ if(feed){
+  feed.hidden=!mission;
+  const message=mission?'⚠ MISSION ACTIVE // '+label+' // '+mission.nodeId+' // OPEN MISSION BOARD ⚠':'';
+  if(feed.dataset.message!==message){feed.replaceChildren();if(message){const line=document.createElement('div');line.textContent=message;feed.appendChild(line);}feed.dataset.message=message;}
+ }
  if(count)count.textContent=mission?'1 ACTIVE MISSION':'NO ACTIVE MISSION';
  if(!board)return;
  if(!mission){board.innerHTML='<div><b>FIELD COMMS</b><span>STANDBY</span></div><p>Keine aktive Mission.</p>';return;}
  const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
- const label=restore?'RESTORE #'+Number(mission.phase||1):'RE-SUPPLY';
  let instruction='Transport-Core übernehmen.';
  if(mission.canConfirm||mission.outCount)instruction='Physischen Tausch bestätigen.';
  else if(mission.inCount)instruction='Vorgegebenen niedrigsten Node-Core entnehmen und scannen.';
