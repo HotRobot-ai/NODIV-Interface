@@ -852,7 +852,7 @@ function reSupplyFixture({capacity=1,second=false}={}){
 }
 function readyReSupply(f){const r=f.reSupplyAssign();const order=JSON.parse(f.properties.get('NODIV_RESUPPLY_'+r.resupply));f.reSupplyAccept(Number(order.cargo.coreId.slice(3)));f.reSupplyTarget();f.reSupplyAuthorize();f.reSupplyScan(Number(order.cargo.coreId.slice(3)),'IN');f.reSupplyScan(Number(order.out.slice(3)),'OUT');return order;}
 test('Re-Supply eligibility counts FIELD only, rejects personal Cores, invalid role/event and colliding cargo',()=>{
- const f=reSupplyFixture();assert.equal(f.reSupplyState().eligible,true);const row=f.sheets['N-Core Register'].rows[12];row[2]='uid12';row[14]='PIONEER';row[15]='P003';row[4]='IN_TRANSIT';assert.equal(f.reSupplyState().eligible,true);row[4]='FIELD';assert.equal(f.reSupplyState().status,'RESUPPLY_PERSONAL_CORE_PRESENT');assert.throws(f.reSupplyAssign,/RESUPPLY_PERSONAL_CORE_PRESENT/);
+ const f=reSupplyFixture();assert.ok(f.reSupplyState().resupply);const gTransit=reSupplyFixture(),row=gTransit.sheets['N-Core Register'].rows[12];row[2]='uid12';row[14]='PIONEER';row[15]='P003';row[4]='IN_TRANSIT';assert.ok(gTransit.reSupplyState().resupply);const personal=reSupplyFixture();const owned=personal.sheets['N-Core Register'].rows[12];owned[2]='uid12';owned[14]='PIONEER';owned[15]='P003';owned[4]='FIELD';assert.equal(personal.reSupplyState().status,'RESUPPLY_PERSONAL_CORE_PRESENT');assert.throws(personal.reSupplyAssign,/RESUPPLY_PERSONAL_CORE_PRESENT/);assert.equal(personal.batches(),0);
  const g=reSupplyFixture();g.sheets['Deployment Register'].rows.push(['OTHER','NC-007','P003','PIONEER','NODE-001','DEPLOYMENT','ASSIGNED']);assert.equal(g.reSupplyState().status,'MISSION_CARGO_ALREADY_ACTIVE');g.sheets['Event Register'].rows[1][1]='COMPLETED';assert.equal(g.reSupplyState().status,'EVENT_NOT_FIELD_ACTIVE');g.reSupplyE.parameter.token='a'.repeat(72);assert.throws(g.reSupplyState,/PIONEER_REQUIRED/);
 });
 test('Re-Supply selects weakest eligible Event Node and smallest non-degrading HQ Core, with strongest fallback and deterministic ties',()=>{
@@ -860,8 +860,8 @@ test('Re-Supply selects weakest eligible Event Node and smallest non-degrading H
  const select=f.ctx.selectReSupplyCore,out={visibleEnergy:120},cores=[{coreId:'NC-003',visibleEnergy:110},{coreId:'NC-002',visibleEnergy:110},{coreId:'NC-004',visibleEnergy:50}];assert.equal(select(out,cores).coreId,'NC-002');assert.equal(select({visibleEnergy:100},cores).coreId,'NC-002');
 });
 test('Re-Supply avoids immediately repeated target with alternative, permits sole target and excludes invalid/foreign Nodes',()=>{
- const f=reSupplyFixture({second:true});f.sheets['Transaction Log'].rows.push(['previous',new Date(),'RESUPPLY_ASSIGNED','P004','PIONEER','','','','','','','','','NODE-002','SUCCESS','previous']);assert.equal(f.reSupplyAssign().nodeId,'NODE-001');
- const g=reSupplyFixture();g.sheets['Transaction Log'].rows.push(['previous',new Date(),'RESUPPLY_ASSIGNED','P004','PIONEER','','','','','','','','','NODE-001','SUCCESS','previous']);assert.equal(g.reSupplyAssign().nodeId,'NODE-001');
+ const f=reSupplyFixture({second:true});f.sheets['Transaction Log'].rows.push(['previous',new Date(),'RESUPPLY_COMPLETE','P004','PIONEER','','','','','','','','','NODE-002','SUCCESS','previous']);assert.equal(f.reSupplyAssign().nodeId,'NODE-001');
+ const g=reSupplyFixture();g.sheets['Transaction Log'].rows.push(['previous',new Date(),'RESUPPLY_COMPLETE','P004','PIONEER','','','','','','','','','NODE-001','SUCCESS','previous']);assert.equal(g.reSupplyAssign().nodeId,'NODE-001');
  for(const mutate of [f=>f.sheets['Event Node Codes'].rows.pop(),f=>f.sheets['N-Core Register'].rows[6][15]='HQ',f=>f.sheets['Node Register'].rows[2][2]='OFFLINE']){const h=reSupplyFixture({second:true});mutate(h);assert.equal(h.reSupplyAssign().nodeId,'NODE-001');}
 });
 test('Re-Supply cargo is HQ-owned, protected from catch/upload/exchange/transfers, slot-free and reserves the Node against FOP/Restore',()=>{
@@ -917,3 +917,17 @@ test('Parallel Re-Supply assignments reserve disjoint Nodes and HQ Cores and can
 test('Re-Supply fixed lowest OUT has deterministic ties; forged IN/OUT fields never override the server snapshot',()=>{
  const f=reSupplyFixture();f.sheets['N-Core Register'].rows[2][1]=100;const order=readyReSupply(f);assert.equal(order.out,'NC-001');f.reSupplyE.parameter.out='NC-002';f.reSupplyE.parameter.inCore='NC-010';const r=f.reSupplyConfirm();assert.equal(r.acquiredCore.id,'NC-001');assert.equal(f.ctx.readCoreState('NC-002').ownerType,'NODE');assert.equal(f.ctx.readCoreState('NC-010').ownerType,'NODIV_RESERVE');assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
 });
+
+ test('Re-Supply state automatically assigns once at capacity 3 and reuses the exact mission on reload without writes',()=>{
+ const f=reSupplyFixture({capacity:3}),first=f.reSupplyState(),before=JSON.stringify(f.sheets),b=f.batches(),properties=JSON.stringify([...f.properties]);assert.equal(first.status,'RESUPPLY_ASSIGNED');assert.ok(first.resupply);assert.equal(b,1);
+ for(let i=0;i<3;i++){const again=f.reSupplyState();assert.equal(again.resupply,first.resupply);assert.equal(again.inCore.id,first.inCore.id);assert.equal(again.nodeId,first.nodeId);assert.equal(f.batches(),b);assert.equal(JSON.stringify(f.sheets),before);assert.equal(JSON.stringify([...f.properties]),properties);}
+ });
+ test('Re-Supply target uses globally lowest visible Core rather than Node total energy',()=>{
+ const f=reSupplyFixture({second:true});for(const [n,e] of [[1,50],[2,400],[3,450]])f.sheets['N-Core Register'].rows[n][1]=f.sheets['N-Core Register'].rows[n][13]=e;assert.equal(f.reSupplyState().nodeId,'NODE-001');
+ });
+ test('Re-Supply target rotation uses successful completion, never a merely assigned target',()=>{
+ const f=reSupplyFixture({second:true});f.sheets['Transaction Log'].rows.push(['completed',new Date(),'RESUPPLY_COMPLETE','P004','PIONEER','','','','','','','','','NODE-002','SUCCESS','receipt'],['assigned',new Date(),'RESUPPLY_ASSIGNED','P004','PIONEER','','','','','','','','','NODE-001','SUCCESS','order']);assert.equal(f.reSupplyState().nodeId,'NODE-001');
+ });
+ test('Re-Supply automatic assignment survives lost response without second reservation or batch',()=>{
+ const f=reSupplyFixture({capacity:3}),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(f.reSupplyState,/LOST_RESPONSE/);const order=JSON.parse([...f.properties].find(([key])=>key.startsWith('NODIV_RESUPPLY_'))[1]),before=JSON.stringify(f.sheets);const r=f.reSupplyState();assert.equal(r.resupply,order.id);assert.equal(r.inCore.id,order.cargo.coreId);assert.equal(f.batches(),1);assert.equal(JSON.stringify(f.sheets),before);
+ });

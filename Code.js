@@ -7203,8 +7203,8 @@ function selectReSupplyTarget(player,event){
    candidates.push({nodeId,eventNode,nodeCores,out,core,totalEnergy:nodeCores.reduce((sum,c)=>sum+c.visibleEnergy,0)});
   }catch(error){if(!['EXCHANGE_ALREADY_RUNNING','RESTORE_OPERATION_RESERVED','RESUPPLY_OPERATION_RESERVED'].includes(error.message))throw error;}
  }
- candidates.sort((a,b)=>a.totalEnergy-b.totalEnergy||a.nodeId.localeCompare(b.nodeId));
- const last=exchangeLogRows().slice().reverse().find(row=>row[2]==='RESUPPLY_ASSIGNED'&&row[14]==='SUCCESS');
+ candidates.sort((a,b)=>a.out.visibleEnergy-b.out.visibleEnergy||a.nodeId.localeCompare(b.nodeId));
+ const last=exchangeLogRows().slice().reverse().find(row=>row[2]==='RESUPPLY_COMPLETE'&&row[14]==='SUCCESS');
  return candidates.length>1&&last?candidates.find(c=>c.nodeId!==last[13])||candidates[0]:candidates[0];
 }
 function reSupplyResponse(order,status,includeCode,context){
@@ -7260,7 +7260,7 @@ function normalReSupply(e,action){
    if(existing){validateReSupply(existing,player);return {...reSupplyResponse(existing,'RESUPPLY_MISSION',false),authorized:false,canConfirm:false};}
    let event;try{event=assertReSupplyEligibility(player);}catch(error){if(action==='state')return {ok:true,session:true,action:false,status:error.message,eligible:false};throw error;}
    const selected=selectReSupplyTarget(player,event);if(!selected)return {ok:true,session:true,action:false,eligible:false,status:'NO_SUITABLE_RESUPPLY_TARGET_OR_CORE'};
-   if(action==='state')return {ok:true,session:true,action:true,eligible:true,status:'RESUPPLY_AVAILABLE'};
+   // State and explicit assignment share the same locked, atomic reservation path.
    const cargo=readCoreState(selected.core.coreId),order={id:createDeploymentId(),identity:player.identity,cardId:player.cardId,capacity:player.coreCapacity,eventId:event.eventId,nodeId:selected.nodeId,
     nodeFingerprint:exchangeNodeFingerprint(selected.nodeId,selected.eventNode),nodeCores:selected.nodeCores,out:selected.out.coreId,cargo:{...cargo,status:'IN_TRANSIT'},accepted:false,authorized:false,incoming:[],outgoing:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
    const requests=[],now=new Date(),sheet=getDeploymentRegisterSheet(),tx=appendTransactionLog({eventType:'RESUPPLY_ASSIGNED',actorId:player.identity,actorRole:'PIONEER',nodeId:order.nodeId,coreId:cargo.coreId,result:'SUCCESS',details:order.id},requests);
