@@ -713,7 +713,7 @@ test('Capacity guard rejects START_CORE and central incoming transfers at every 
  for(const capacity of [1,2,3])for(const start of [false,true]){
   const f=exchangeFixture(capacity),row=f.sheets['N-Core Register'].rows[7];row[2]='uid7';row[4]='RESERVE';
   const before=JSON.stringify(f.sheets);
-  assert.throws(()=>start?f.ctx.startCoreTransfer({parameter:{core:'NC-007',pioneerUid:'p003uid',uid:'uid7'}}):f.ctx.transferCoreOwnership({coreId:'NC-007',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD'}),/PIONEER_CAPACITY_FULL/);
+  assert.throws(()=>start?f.ctx.startCoreTransfer({parameter:{core:'NC-007',pioneerUid:'p003uid',uid:'uid7'}}):f.ctx.transferCoreOwnership({coreId:'NC-007',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'PIONEER',toId:'P003',newStatus:'FIELD'}),start?/START_CORE_CAPACITY_REQUIRED|START_CORE_PERSONAL_CORE_PRESENT/:/PIONEER_CAPACITY_FULL/);
   assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);
  }
 });
@@ -1159,4 +1159,41 @@ test('Expired/completed RED receipt cannot be permanently blocked by corrupted l
 test('Secure Approach replay cannot cross Event or Access Card identity, and damaged live upload metadata blocks safely until authoritative TTL',()=>{
  const f=secureApproachFixture();f.activate();f.sheets['Event Register'].rows[1][0]='OTHER';const before=resetSnapshot(f);assert.throws(f.activate,/CONTEXT_CHANGED/);assert.equal(resetSnapshot(f),before);
  const g=secureApproachFixture(),first=g.uploadPreview();g.properties.set('NODIV_HQ_UPLOAD_'+first.upload,'null');assert.throws(g.terminal,/ORDER_MISMATCH/);g.advance(300000);assert.equal(g.terminal().state,'GREEN');
+});
+
+function startCoreFixture(){
+ const f=fixture({state:'FIELD_ACTIVE'});f.sheets['Access Card Register'].rows.push(['CARD-P','P003','PIONEER','B003','ACTIVE','',1,true]);
+ const e={parameter:{core:'NC-001',pioneerUid:'B003',uid:'uid1'}};
+ return {...f,startE:e,issue:()=>f.ctx.startCoreTransfer(e)};
+}
+test('START_CORE grants ACTIVE 0/1 Pioneer one registered HQ RESERVE Core under ScriptLock with authoritative card identity',()=>{
+ const f=startCoreFixture();let held=false;f.ctx.LockService.getScriptLock=()=>({waitLock(){assert.equal(held,false);held=true;},releaseLock(){held=false;}});const transfer=f.ctx.transferCoreOwnership;f.ctx.transferCoreOwnership=args=>{assert.equal(held,true);return transfer(args);};
+ f.startE.parameter.identity='FORGED';f.startE.parameter.capacity=3;const r=f.issue();assert.equal(r.identity,'P003');assert.equal(r.cardId,'CARD-P');assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),1);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,1);const core=f.ctx.readCoreState('NC-001');assert.equal(core.ownerType,'PIONEER');assert.equal(core.ownerId,'P003');assert.equal(core.status,'FIELD');assert.equal(held,false);
+ const log=f.sheets['Transaction Log'].rows.filter(row=>row[2]==='START_CORE');assert.equal(log.length,1);assert.equal(log[0][3],'P003');assert.equal(log[0][5],'NC-001');assert.match(log[0][15],/^EVT-1 \/\/ /);
+});
+test('START_CORE requires current FIELD_ACTIVE Event; missing, STANDBY, INITIALIZED, COMPLETED and ABORTED reject without mutation',()=>{
+ for(const state of [null,'STANDBY','INITIALIZED','COMPLETED','ABORTED']){const f=startCoreFixture();if(state===null)f.sheets['Event Register'].rows=[[]];else f.sheets['Event Register'].rows[1][1]=state;const before=resetSnapshot(f);assert.throws(f.issue,/FIELD_ACTIVE_REQUIRED/);assert.equal(resetSnapshot(f),before);}
+});
+test('START_CORE rejects non-ACTIVE/unknown Access Card and every non-Pioneer role without mutation',()=>{
+ for(const role of ['FOUNDER','FOP','LOCAL','UNBOUND','INACTIVE','UNKNOWN']){const f=startCoreFixture();if(role==='INACTIVE')f.sheets['Access Card Register'].rows[2][4]='INACTIVE';else if(role==='UNKNOWN')f.startE.parameter.pioneerUid='B999';else f.sheets['Access Card Register'].rows[2][2]=role;const before=resetSnapshot(f);assert.throws(f.issue,/nicht ACTIVE|nicht registriert|kein PIONEER/);assert.equal(resetSnapshot(f),before);}
+});
+test('START_CORE requires exactly capacity 1 and zero personal Cores at any existing inventory size',()=>{
+ for(const capacity of [0,2,3,1.5]){const f=startCoreFixture();f.sheets['Access Card Register'].rows[2][6]=capacity;const before=resetSnapshot(f);assert.throws(f.issue,/START_CORE_CAPACITY_REQUIRED/);assert.equal(resetSnapshot(f),before);}
+ for(const count of [1,2,3]){const f=startCoreFixture();for(let n=2;n<2+count;n++){const row=f.sheets['N-Core Register'].rows[n];row[14]='PIONEER';row[15]='P003';row[4]='FIELD';}const before=resetSnapshot(f);assert.throws(f.issue,/START_CORE_PERSONAL_CORE_PRESENT/);assert.equal(resetSnapshot(f),before);}
+});
+test('START_CORE rejects non-reserve Owner/Status, unknown Core registration and mismatched physical UID before any write',()=>{
+ for(const kind of ['owner','hq','transit','field','deployed','unregistered','uid','foreign-core-id']){const f=startCoreFixture(),row=f.sheets['N-Core Register'].rows[1];if(kind==='owner')row[14]='FOP';if(kind==='hq')row[15]='OTHER';if(kind==='transit')row[4]='IN_TRANSIT';if(kind==='field')row[4]='FIELD';if(kind==='deployed')row[4]='DEPLOYED';if(kind==='unregistered')row[2]='';if(kind==='uid')f.startE.parameter.uid='B999';if(kind==='foreign-core-id')f.startE.parameter.core='NC-002';const before=resetSnapshot(f);assert.throws(f.issue,/NODIV_RESERVE|RESERVE_REQUIRED|nicht registriert|UID stimmt nicht/);assert.equal(resetSnapshot(f),before);}
+});
+test('START_CORE retries/same or second Core cannot issue again; first Core and successful log remain unchanged',()=>{
+ const f=startCoreFixture();f.issue();const first=f.ctx.readCoreState('NC-001'),before=resetSnapshot(f);assert.throws(f.issue,/PERSONAL_CORE_PRESENT/);f.startE.parameter.core='NC-002';f.startE.parameter.uid='uid2';assert.throws(f.issue,/PERSONAL_CORE_PRESENT/);assert.equal(resetSnapshot(f),before);assert.equal(f.ctx.readCoreState('NC-001').lastTransaction,first.lastTransaction);assert.equal(f.ctx.readCoreState('NC-002').ownerId,'HQ');assert.equal(f.sheets['Transaction Log'].rows.filter(row=>row[2]==='START_CORE').length,1);
+});
+test('START_CORE existing issuance receipt prevents reacquisition after a legal personal Core return, including legacy receipts',()=>{
+ for(const legacy of [false,true]){const f=startCoreFixture();f.issue();if(legacy)f.sheets['Transaction Log'].rows[1][15]='Start-Core issued from NODIV reserve // Access Card verified by UID';f.ctx.transferCoreOwnership({coreId:'NC-001',expectedFromType:'PIONEER',expectedFromId:'P003',toType:'NODIV_RESERVE',toId:'HQ',newStatus:'RESERVE',eventType:'CORE_RETURN'});assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),0);f.startE.parameter.core='NC-002';f.startE.parameter.uid='uid2';const before=resetSnapshot(f);assert.throws(f.issue,/START_CORE_ALREADY_ISSUED/);assert.equal(resetSnapshot(f),before);}
+});
+test('START_CORE retains existing reservation guards and prior-event history does not block fresh event issuance',()=>{
+ const f=startCoreFixture();f.sheets['Deployment Register'].rows.push(['DEP','NC-001','F001','FOP','NODE-001','DEPLOYMENT','ASSIGNED']);const before=resetSnapshot(f);assert.throws(f.issue,/ASSIGNED|RESERV/);assert.equal(resetSnapshot(f),before);
+ const g=startCoreFixture();g.ctx.appendTransactionLog({eventType:'START_CORE',actorId:'P003',actorRole:'PIONEER',result:'SUCCESS',details:'prior Event'});g.ctx.appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:'ROOT',actorRole:'FOUNDER',result:'SUCCESS',details:'EVT-1 // 10 Nodes // mechanical code sets generated'});assert.equal(g.issue().identity,'P003');assert.equal(g.ctx.countCoresOwnedBy('PIONEER','P003'),1);
+});
+test('START_CORE rejected batch leaves ownership and issuance log unchanged, and permits a valid retry',()=>{
+ const f=startCoreFixture(),batch=f.ctx.Sheets.Spreadsheets.batchUpdate,before=resetSnapshot(f);f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED');};assert.throws(f.issue,/BATCH_FAILED/);assert.equal(resetSnapshot(f),before);assert.equal(f.ctx.countCoresOwnedBy('PIONEER','P003'),0);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.issue().transfer.core.ownerId,'P003');assert.equal(f.batches(),1);assert.equal(f.sheets['Transaction Log'].rows.filter(row=>row[2]==='START_CORE').length,1);
 });

@@ -5260,6 +5260,9 @@ function startCoreTransfer(e) {
 
     lock.waitLock(10000);
 
+    const event=readCurrentEvent();
+    if(!event||event.state!=='FIELD_ACTIVE')throw new Error('FIELD_ACTIVE_REQUIRED');
+
     const coreId = normalizeCoreId(e.parameter.core || '');
     const pioneerUid = normalizeUid(e.parameter.pioneerUid || '');
     const scannedUid = normalizeUid(e.parameter.uid || '');
@@ -5306,6 +5309,14 @@ function startCoreTransfer(e) {
     }
 
 
+    if(identity.coreCapacity!==1)throw new Error('START_CORE_CAPACITY_REQUIRED');
+    if(countCoresOwnedBy('PIONEER',identityId)!==0)throw new Error('START_CORE_PERSONAL_CORE_PRESENT');
+    // Existing audit history is the issuance proof, including legacy START_CORE rows.
+    // A new Event initialization/reset separates the next event's start entitlement.
+    const logs=exchangeLogRows();let eventStart=0;
+    for(let i=logs.length-1;i>=0;i--)if(logs[i][2]==='EVENT_INITIALIZED'&&logs[i][14]==='SUCCESS'&&String(logs[i][15]).startsWith(event.eventId+' // ')){eventStart=i+1;break;}
+    if(logs.slice(eventStart).some(row=>row[2]==='START_CORE'&&row[3]===identityId&&row[14]==='SUCCESS'))throw new Error('START_CORE_ALREADY_ISSUED');
+
     const state = readCoreState(coreId);
 
     if (!state.uid) {
@@ -5320,6 +5331,10 @@ function startCoreTransfer(e) {
       throw new Error(coreId + ' befindet sich nicht in NODIV_RESERVE // HQ.');
     }
 
+    if(state.status!=='RESERVE')throw new Error('START_CORE_RESERVE_REQUIRED');
+    if(hasOpenDeploymentForCore(coreId))throw new Error('CORE_ALREADY_ASSIGNED');
+
+    const requests=[];
     const result = transferCoreOwnership({
       coreId: coreId,
       expectedFromType: 'NODIV_RESERVE',
@@ -5330,8 +5345,13 @@ function startCoreTransfer(e) {
       actorId: identityId,
       actorRole: 'PIONEER',
       newStatus: 'FIELD',
-      details: 'Start-Core issued from NODIV reserve // Access Card verified by UID'
+      batchRequests: requests,
+      details: event.eventId + ' // Start-Core issued from NODIV reserve // Access Card verified by UID'
     });
+
+    // Issuance proof and ownership must commit together; a failed batch leaves entitlement intact.
+    Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+    result.core=readCoreState(coreId);
 
     return {
       ok: true,
