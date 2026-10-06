@@ -919,8 +919,9 @@ test('Re-Supply fixed lowest OUT has deterministic ties; forged IN/OUT fields ne
 });
 
  test('Re-Supply state automatically assigns once at capacity 3 and reuses the exact mission on reload without writes',()=>{
- const f=reSupplyFixture({capacity:3}),first=f.reSupplyState(),before=JSON.stringify(f.sheets),b=f.batches(),properties=JSON.stringify([...f.properties]);assert.equal(first.status,'RESUPPLY_ASSIGNED');assert.ok(first.resupply);assert.equal(b,1);
+ const f=reSupplyFixture({capacity:3}),first=f.reSupplyState(),before=JSON.stringify(f.sheets),b=f.batches(),properties=JSON.stringify([...f.properties]);assert.equal(first.status,'RESUPPLY_MISSION');assert.ok(first.resupply);assert.equal(b,1);
  for(let i=0;i<3;i++){const again=f.reSupplyState();assert.equal(again.resupply,first.resupply);assert.equal(again.inCore.id,first.inCore.id);assert.equal(again.nodeId,first.nodeId);assert.equal(f.batches(),b);assert.equal(JSON.stringify(f.sheets),before);assert.equal(JSON.stringify([...f.properties]),properties);}
+ assert.equal(f.sheets['Deployment Register'].rows.slice(1).filter(row=>row[5]==='RESUPPLY').length,1);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='RESUPPLY_ASSIGNED').length,1);assert.equal(f.sheets['N-Core Register'].rows.slice(1).filter(row=>row[4]==='IN_TRANSIT').length,1);
  });
  test('Re-Supply target uses globally lowest visible Core rather than Node total energy',()=>{
  const f=reSupplyFixture({second:true});for(const [n,e] of [[1,50],[2,400],[3,450]])f.sheets['N-Core Register'].rows[n][1]=f.sheets['N-Core Register'].rows[n][13]=e;assert.equal(f.reSupplyState().nodeId,'NODE-001');

@@ -7267,7 +7267,7 @@ function normalReSupply(e,action){
    requests.push(sheetCellsRequest(getRegisterSheet(),cargo.row,CORE_COL.STATUS,[['IN_TRANSIT']]));
    requests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,[[order.id,cargo.coreId,player.identity,'PIONEER',order.nodeId,'RESUPPLY','IN_TRANSIT',now,'','',tx]]).updateCells.rows,fields:'userEnteredValue'}});
    props.setProperty(RESUPPLY_PREFIX+order.id,JSON.stringify(order));Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-   return reSupplyResponse(order,'RESUPPLY_ASSIGNED',false);
+   return reSupplyResponse(order,action==='state'?'RESUPPLY_MISSION':'RESUPPLY_ASSIGNED',false);
   }
   const order=JSON.parse(props.getProperty(RESUPPLY_PREFIX+id)||'null');if(!order||order.identity!==player.identity||order.cardId!==player.cardId)throw new Error('RESUPPLY_SESSION_MISMATCH');
   const context=validateReSupply(order,player);
