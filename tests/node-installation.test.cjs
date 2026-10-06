@@ -931,3 +931,14 @@ test('Re-Supply fixed lowest OUT has deterministic ties; forged IN/OUT fields ne
  test('Re-Supply automatic assignment survives lost response without second reservation or batch',()=>{
  const f=reSupplyFixture({capacity:3}),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(f.reSupplyState,/LOST_RESPONSE/);const order=JSON.parse([...f.properties].find(([key])=>key.startsWith('NODIV_RESUPPLY_'))[1]),before=JSON.stringify(f.sheets);const r=f.reSupplyState();assert.equal(r.resupply,order.id);assert.equal(r.inCore.id,order.cargo.coreId);assert.equal(f.batches(),1);assert.equal(JSON.stringify(f.sheets),before);
  });
+
+test('Automatic Re-Supply state rejects inactive Pioneers and zero capacity without any reservation',()=>{
+ for(const mutate of [f=>f.sheets['Access Card Register'].rows.find(row=>row[1]==='P003')[4]='INACTIVE',f=>f.sheets['Access Card Register'].rows.find(row=>row[1]==='P003')[6]=0]){
+  const f=reSupplyFixture({capacity:3});mutate(f);const before=JSON.stringify(f.sheets);const result=f.reSupplyState();assert.equal(Boolean(result.resupply),false);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);assert.equal(f.ctx.reSupplyOrders().length,0);
+ }
+});
+test('Automatic Re-Supply state without a suitable Node or HQ Core creates no partial reservation',()=>{
+ for(const mutate of [f=>f.sheets['Event Node Codes'].rows.splice(1),f=>{for(const row of f.sheets['N-Core Register'].rows.slice(1))if(row[14]==='NODIV_RESERVE')row[4]='OFFLINE';}]){
+  const f=reSupplyFixture({capacity:3});mutate(f);const before=JSON.stringify(f.sheets),result=f.reSupplyState();assert.equal(result.status,'NO_SUITABLE_RESUPPLY_TARGET_OR_CORE');assert.equal(result.action,false);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);assert.equal(f.ctx.reSupplyOrders().length,0);
+ }
+});
