@@ -339,6 +339,8 @@ function doGet(e) {
 
       result = getHqLiveOperations(e);
 
+    } else if (['preevacuationstart','preevacuationstate'].includes(action)) {
+      result = preEvacuationWithdrawal(e,action==='preevacuationstart');
     } else if (action === 'eventstatus') {
 
       result = getEventStatus(e);
@@ -4091,6 +4093,8 @@ function getNodeOperationOrder(e,operation) {
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
+    const withdrawal=readPreEvacuationRecord(context.event.eventId);
+    if(e.parameter.withdrawal)assertPreEvacuationTarget(withdrawal,String(e.parameter.withdrawal),nodeId,operation);
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
@@ -4126,7 +4130,7 @@ function getNodeOperationOrder(e,operation) {
     }
     if(operation==='DEINSTALL'&&loadout.some(core=>hasOpenDeploymentForCore(core.id)))throw new Error('CORE_ALREADY_ASSIGNED');
     const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
-      identity:actor.identity,sessionToken:token,operation,legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+      identity:actor.identity,sessionToken:token,operation,...(operation==='DEINSTALL'&&withdrawal?.targets.includes(nodeId)?{withdrawalId:withdrawal.id}:{}),legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
     const props=PropertiesService.getScriptProperties(),sheet=getDeploymentRegisterSheet(),now=new Date();
     const requests=[{appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,loadout.map(core=>[
       installationDeploymentId(order.id,core.id),core.id,actor.identity,actor.role,nodeId,nodeOperationPurpose(operation),'ASSIGNED',now,'','',''
@@ -4155,6 +4159,7 @@ function readNodeInstallation(e,actor,operation='INSTALL') {
   if(!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)throw new Error('INSTALL_SESSION_EXPIRED');
   const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,order.nodeId):validateNodeInstallation(actor,order.nodeId);
   if(order.eventId!==context.event.eventId||order.eventState!==context.event.state||order.legacy!==context.legacy)throw new Error('INSTALL_EVENT_STATE_CHANGED');
+  if(order.withdrawalId)assertPreEvacuationTarget(readPreEvacuationRecord(context.event.eventId),order.withdrawalId,order.nodeId,operation);
   if(!Array.isArray(order.loadout)||order.loadout.length!==3||new Set(order.loadout.map(core=>core.id)).size!==3)throw new Error('INSTALL_LOADOUT_INVALID');
   return {key,order,context};
 }
@@ -4295,19 +4300,22 @@ function getFopOperations(e) {
     if(!session.ok)return session.response;
     const actor=session.player;
     if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOP/FOUNDER können Operations abrufen.');
-    const event=readCurrentEvent(),operations=[];
+    const event=readCurrentEvent(),operations=[],withdrawal=event?readPreEvacuationRecord(event.eventId):null;
+    const withdrawalPending=withdrawal&&!readPreEvacuationCompletion(withdrawal);
     if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state)){
       const sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
       const stockAvailable=getAvailableInstallationCores().length>=3;
       const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId).concat(liveReSupplies().map(order=>order.nodeId)));
       const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
       ids.forEach(nodeId=>{
+        if(withdrawalPending&&!withdrawal.targets.includes(nodeId))return;
         if(reserved.has(nodeId)||liveExchanges().some(order=>order.nodeId===nodeId)||liveRestores().some(order=>order.nodeId===nodeId))return;
         for(const type of ['INSTALL','DEINSTALL']){
           try{
+            if(withdrawalPending&&type!=='DEINSTALL')continue;
             if(type==='INSTALL'){if(!stockAvailable)continue;validateNodeInstallation(actor,nodeId);}
             else{validateNodeDeinstallation(actor,nodeId);if(getNodeRemovalLoadout(nodeId).some(core=>hasOpenDeploymentForCore(core.id)))continue;}
-            operations.push({id:type+':'+nodeId,type,nodeId,label:type+' // '+nodeId});
+            operations.push({id:type+':'+nodeId,type,nodeId,label:(withdrawalPending?'PRE-EVACUATION // ':'')+type+' // '+nodeId,...(withdrawalPending?{withdrawal:withdrawal.id}:{})});
           }catch(error){/* Unavailable operations are omitted, never repaired. */}
         }
       });
@@ -4343,6 +4351,7 @@ function confirmNodeDeinstallation(e) {
     requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,10,[[now]]));
     appendTransactionLog({eventType:'NODE_DEINSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
       details:order.eventId+' // '+order.id+' // 3/3 CORES RETURNED // '+order.cores.map(core=>core.id).join(',')},requests);
+    stagePreEvacuationCompletion(context.event,requests,actor,order.id);
     SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
     CacheService.getScriptCache().remove(key);
@@ -7551,5 +7560,92 @@ function activateSecureApproach(e){
   appendTransactionLog({eventType:'SECURE_APPROACH_ACTIVATED',actorId:player.identity,actorRole:player.role,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   return {...uploadTerminalResponse({state:'YELLOW',...receipt},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,replayed:false};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* PRE-EVACUATION uses the Event/Expansion and existing FOP recovery audit only.
+ * Durable log receipts survive Session changes; the reset epoch scopes old events.
+ * The completion receipt is staged in the existing final FOP recovery batch. */
+const PRE_EVACUATION_WAIT_MS=30*60*1000;
+function readPreEvacuationRecord(eventId,logs=exchangeLogRows()){
+ for(let i=logs.length-1;i>=0;i--)if(logs[i][2]==='PRE_EVACUATION_WITHDRAWAL_STARTED'&&logs[i][14]==='SUCCESS'){
+  const record=JSON.parse(logs[i][15]);if(record.eventId===eventId)return record;
+ }
+ return null;
+}
+function readPreEvacuationCompletion(record,logs=exchangeLogRows()){
+ for(let i=logs.length-1;i>=0;i--)if(logs[i][2]==='PRE_EVACUATION_WITHDRAWAL_COMPLETE'&&logs[i][14]==='SUCCESS'){
+  const receipt=JSON.parse(logs[i][15]);if(receipt.eventId===record.eventId&&receipt.withdrawal===record.id)return receipt;
+ }
+ return null;
+}
+function assertPreEvacuationTarget(record,id,nodeId,operation){
+ if(!record||record.id!==id||operation!=='DEINSTALL'||!record.targets.includes(nodeId))throw new Error('PRE_EVACUATION_TARGET_NOT_ASSIGNED');
+}
+function preEvacuationProjection(requests=[]){
+ const ss=SpreadsheetApp.getActiveSpreadsheet(),names=[SHEET_NAME,NODE_SHEET_NAME,EVENT_SHEET_NAME,EVENT_NODE_CODE_SHEET_NAME,DEPLOYMENT_SHEET_NAME,TRANSACTION_LOG_SHEET_NAME],columns=[CORE_COL.UPDATED_AT,6,11,13,11,16],view={};
+ names.forEach((name,i)=>{const sheet=ss.getSheetByName(name);if(!sheet)throw new Error('PRE_EVACUATION_REGISTER_MISSING');view[name]={id:sheet.getSheetId(),rows:sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),columns[i]).getValues()};});
+ for(const request of requests){const update=request.updateCells||request.appendCells;if(!update)continue;const table=Object.values(view).find(table=>table.id===(update.sheetId??update.start.sheetId));if(!table)continue;
+  const rows=update.rows.map(row=>row.values.map(cell=>Object.values(cell.userEnteredValue||{})[0]??''));
+  if(request.appendCells)table.rows.push(...rows);else rows.forEach((values,i)=>values.forEach((value,j)=>{table.rows[update.start.rowIndex+i]??=[];table.rows[update.start.rowIndex+i][update.start.columnIndex+j]=value;}));
+ }
+ const logs=view[TRANSACTION_LOG_SHEET_NAME].rows.slice(1);let start=0;for(let i=logs.length-1;i>=0;i--)if(logs[i][2]==='PRE_EVENT_RESET_COMPLETE'&&logs[i][14]==='SUCCESS'){start=i+1;break;}view.logs=logs.slice(start);return view;
+}
+function preEvacuationNodes(event,view){
+ const members=view[EVENT_NODE_CODE_SHEET_NAME].rows.slice(1).filter(row=>row[0]===event.eventId),ids=members.map(row=>String(row[1]).toUpperCase());
+ const targets=[...new Set(view.logs.filter(row=>row[2]==='EVENT_NODE_EXPANDED'&&row[14]==='SUCCESS'&&String(row[15]).startsWith(event.eventId+' // ')).map(row=>String(row[13]).toUpperCase()))].sort();
+ const startNodes=ids.filter(id=>!targets.includes(id)).sort();
+ if(ids.length<10||ids.length>12||new Set(ids).size!==ids.length||ids.length!==event.plannedNodes||startNodes.length!==10||targets.length>2||targets.some(id=>!ids.includes(id)))throw new Error('PRE_EVACUATION_EVENT_NODES_INVALID');
+ return {members,startNodes,targets};
+}
+function preEvacuationInstalledNode(id,membership,view){
+ const code=membership.members.find(row=>row[1]===id),cores=view[SHEET_NAME].rows.slice(1).filter(row=>String(row[14]).toUpperCase()==='NODE'&&String(row[15]).toUpperCase()===id);
+ return Boolean(code&&code[9]==='ACTIVE'&&code[7]&&!code[8]&&view[NODE_SHEET_NAME].rows.some(row=>row[0]===id&&row[2]==='INSTALLED')&&cores.length===3&&new Set(cores.map(row=>row[0])).size===3&&new Set(cores.map(row=>normalizeUid(row[2]))).size===3&&cores.every(row=>normalizeUid(row[2])&&row[4]==='DEPLOYED'&&Number.isFinite(Number(row[1]))));
+}
+function assessPreEvacuation(event,record,view,finishingOrder){
+ const membership=preEvacuationNodes(event,view),blockers=[],pending=[],returned=[];
+ if(JSON.stringify(membership.startNodes)!==JSON.stringify(record.startNodes)||JSON.stringify(membership.targets)!==JSON.stringify(record.targets))blockers.push('EVENT_EXPANSION_CHANGED');
+ const coreRows=view[SHEET_NAME].rows.slice(1),nodes=view[NODE_SHEET_NAME].rows.slice(1),deps=view[DEPLOYMENT_SHEET_NAME].rows.slice(1);
+ const owned=id=>coreRows.filter(row=>String(row[14]).toUpperCase()==='NODE'&&String(row[15]).toUpperCase()===id);
+ const validInstalled=id=>preEvacuationInstalledNode(id,membership,view);
+ record.startNodes.forEach(id=>{if(!validInstalled(id))blockers.push(id+': START_NODE_NOT_INSTALLED_3_OF_3');});
+ for(const id of record.targets){
+  if(validInstalled(id)){pending.push(id);continue;}
+  const code=membership.members.find(row=>row[1]===id),log=view.logs.slice().reverse().find(row=>row[2]==='NODE_DEINSTALLED'&&row[13]===id&&row[14]==='SUCCESS'&&String(row[15]).startsWith(event.eventId+' // ')),parts=String(log?.[15]||'').split(' // '),coreIds=parts[3]?.split(',')||[];
+  let valid=code?.[9]==='DEINSTALLED'&&!code[7]&&!code[8]&&owned(id).length===0&&nodes.some(row=>row[0]===id&&row[2]==='AVAILABLE')&&parts[2]==='3/3 CORES RETURNED'&&coreIds.length===3&&new Set(coreIds).size===3;
+  for(const coreId of coreIds){const cores=coreRows.filter(row=>row[0]===coreId),core=cores[0],transfers=view.logs.filter(row=>row[2]==='NODE_RECOVERY_CORE'&&row[5]===coreId&&row[6]==='NODE'&&row[7]===id&&row[8]==='NODIV_RESERVE'&&row[9]==='HQ'&&row[13]===id&&row[14]==='SUCCESS'&&String(row[15]).startsWith(event.eventId+' // '+parts[1]+' // ')),dep=deps.find(row=>row[0]===installationDeploymentId(parts[1],coreId));
+   valid=valid&&cores.length===1&&core&&normalizeUid(core[2])&&core[14]==='NODIV_RESERVE'&&core[15]==='HQ'&&core[4]==='RESERVE'&&transfers.length===1&&dep?.[6]==='DELIVERED'&&dep[1]===coreId&&dep[4]===id&&dep[5]==='NODE_DEINSTALLATION'&&dep[10]===transfers[0][0];
+  }
+  if(valid)returned.push(...coreIds);else{pending.push(id);blockers.push(id+': HQ_RECOVERY_NOT_CONFIRMED');}
+ }
+ if(new Set(returned).size!==returned.length)blockers.push('DUPLICATE_RETURNED_CORE');
+ readInstallationOrders().filter(order=>order.eventId===event.eventId&&order.id!==finishingOrder&&installationOrderIsLive(order)&&record.startNodes.concat(record.targets).includes(order.nodeId)).forEach(order=>blockers.push(order.nodeId+': OPEN_NODE_OPERATION'));
+ const projectedEvent=view[EVENT_SHEET_NAME].rows.find(row=>row[0]===event.eventId);
+ if(!pending.length&&Number(projectedEvent?.[7])!==10)blockers.push('ACTIVE_NODES_NOT_10');
+ return {blockers,pending,returned,complete:pending.length===0&&blockers.length===0};
+}
+function stagePreEvacuationCompletion(event,requests,actor,finishingOrder,initialRecord){
+ const record=initialRecord||readPreEvacuationRecord(event.eventId);if(!record||readPreEvacuationCompletion(record))return;
+ const view=preEvacuationProjection(requests);
+ const assessment=assessPreEvacuation(event,record,view,finishingOrder);if(!assessment.complete)return;
+ const completedAt=Date.now(),receipt={eventId:event.eventId,withdrawal:record.id,targets:record.targets,startNodes:record.startNodes,returnedCores:assessment.returned,completedAt,readyAt:completedAt+PRE_EVACUATION_WAIT_MS};
+ appendTransactionLog({eventType:'PRE_EVACUATION_WITHDRAWAL_COMPLETE',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+}
+function preEvacuationResponse(event,record){
+ if(!record)return {ok:true,authenticated:true,session:true,status:'PRE_EVACUATION_NOT_STARTED',eventId:event.eventId,evacuationReady:false};
+ const receipt=readPreEvacuationCompletion(record),now=Date.now();
+ if(receipt){const view=preEvacuationProjection(),membership=preEvacuationNodes(event,view),unchanged=JSON.stringify(membership.targets)===JSON.stringify(record.targets)&&JSON.stringify(membership.startNodes)===JSON.stringify(record.startNodes)&&event.activeNodes===10&&record.startNodes.every(id=>preEvacuationInstalledNode(id,membership,view));return {ok:true,authenticated:true,session:true,status:!unchanged?'PRE_EVACUATION_BLOCKED':now>=receipt.readyAt?'EVACUATION_READY':'PRE_EVACUATION_WITHDRAWAL_COMPLETE',eventId:event.eventId,withdrawal:record.id,targets:record.targets,completedAt:receipt.completedAt,readyAt:receipt.readyAt,serverNow:now,remainingMs:Math.max(0,receipt.readyAt-now),evacuationReady:unchanged&&now>=receipt.readyAt,...(!unchanged?{blockers:['EVENT_NODES_CHANGED_AFTER_WITHDRAWAL']}:{}),automaticEvacuation:false};}
+ const assessment=assessPreEvacuation(event,record,preEvacuationProjection());return {ok:true,authenticated:true,session:true,status:assessment.blockers.length?'PRE_EVACUATION_BLOCKED':'PRE_EVACUATION_WITHDRAWAL_PENDING',eventId:event.eventId,withdrawal:record.id,targets:record.targets,pendingNodes:assessment.pending,blockers:assessment.blockers,evacuationReady:false,serverNow:now};
+}
+function preEvacuationWithdrawal(e,start){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;const actor=session.player;
+  if(actor.role!=='FOUNDER')throw new Error('ROLE_DENIED');const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  if((start||e.parameter.event)&&String(e.parameter.event||'')!==event.eventId)throw new Error('EVENT_MISMATCH');
+  const existing=readPreEvacuationRecord(event.eventId);if(existing||!start)return {...preEvacuationResponse(event,existing),...(existing&&start?{action:true,replayed:true}:{})};
+  const view=preEvacuationProjection(),membership=preEvacuationNodes(event,view),record={id:'PEW-'+Utilities.getUuid().toUpperCase(),eventId:event.eventId,createdAt:Date.now(),startNodes:membership.startNodes,targets:membership.targets},assessment=assessPreEvacuation(event,record,view);
+  if(assessment.blockers.length)throw new Error('PRE_EVACUATION_BLOCKED // '+assessment.blockers.join(' // '));
+  const requests=[];appendTransactionLog({eventType:'PRE_EVACUATION_WITHDRAWAL_STARTED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify(record)},requests);
+  stagePreEvacuationCompletion(event,requests,actor,undefined,record);Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {...preEvacuationResponse(event,record),action:true,replayed:false};
  }finally{try{lock.releaseLock();}catch(error){}}
 }

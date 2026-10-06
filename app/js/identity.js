@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261006-secure-approach';
+import {routeIdentity} from './router.js?v=20261006-pre-evacuation';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -237,6 +237,7 @@ async function refreshFounderEventStatus(){
   if(init)init.disabled=!founderCanInitialize();
   if(activate)activate.disabled=ev.state!=='INITIALIZED';
   const shutdown=document.querySelector('#shutdownFieldEvent');if(shutdown){shutdown.disabled=ev.state!=='FIELD_ACTIVE';shutdown.dataset.eventId=ev.eventId||'';}
+  const withdrawal=document.querySelector('#startPreEvacuation');if(withdrawal){withdrawal.disabled=ev.state!=='FIELD_ACTIVE';withdrawal.dataset.eventId=ev.eventId||'';window.dispatchEvent(new CustomEvent('nodiv-preevacuation-refresh'));}
  }catch(err){if(hint)hint.textContent=String(err.message||err)}
 }
 window.addEventListener('nodiv-founder-status',()=>{setTimeout(refreshFounderEventStatus,0)});
@@ -430,7 +431,7 @@ window.addEventListener('nodiv-fop-install-order',async()=>{
  const node=operation.nodeId;
  fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
-  const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node});
+  const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node,...(operation.withdrawal?{withdrawal:operation.withdrawal}:{})});
   if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
   fopInstallation=r;
   if(panel)panel.hidden=false;
@@ -951,3 +952,29 @@ window.addEventListener('nodiv-secure-approach-confirm',async()=>{
 });
 // Server polling reconciles expiry/completion; the browser never releases reservations.
 setInterval(()=>{if(document.querySelector('#uploadTerminalState'))refreshUploadTerminal();},10000);
+
+// Founder preparation only. Render the server's remaining time; never start evacuation.
+let preEvacuationBusy=false;
+function renderPreEvacuation(result){
+ const state=document.querySelector('#preEvacuationState'),hint=document.querySelector('#preEvacuationHint'),button=document.querySelector('#startPreEvacuation');if(!state||!hint)return;
+ state.textContent=result.status;
+ if(button)button.disabled=preEvacuationBusy||Boolean(result.withdrawal);
+ if(result.status==='PRE_EVACUATION_NOT_STARTED'){hint.textContent='Nur über EVENT_NODE_EXPANDED hinzugefügte Nodes werden zurückgezogen. Die ursprünglichen 10 bleiben im Feld.';return;}
+ if(result.evacuationReady===true){hint.textContent='30 Minuten abgeschlossen. Founder-Freigabe bereit. Keine Evakuierung wurde gestartet.';return;}
+ if(result.completedAt!==undefined){const seconds=Math.ceil(Math.max(0,Number(result.remainingMs||0))/1000);hint.textContent='SERVER COUNTDOWN // '+String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')+' // '+(result.blockers?.join(' // ')||'10 Start-Nodes verbleiben im Feld.');return;}
+ hint.textContent='FOP WITHDRAWAL // '+(result.pendingNodes||result.targets||[]).join(' // ')+(result.blockers?.length?' // '+result.blockers.join(' // '):' // Zusatznodes über bestehenden 3/3-Rückbau an HQ zurückführen.');
+}
+async function refreshPreEvacuation(){
+ const button=document.querySelector('#startPreEvacuation');if(!sessionToken||!button?.dataset.eventId||preEvacuationBusy)return;
+ try{const r=await apiRequest({action:'preevacuationstate',token:sessionToken,event:button.dataset.eventId});if(!r?.ok||!r?.session)throw Error(r?.error||r?.status||'PRE-EVACUATION UNAVAILABLE');renderPreEvacuation(r);}
+ catch(error){const hint=document.querySelector('#preEvacuationHint');if(hint)hint.textContent=String(error.message||error);}
+}
+window.addEventListener('nodiv-preevacuation-refresh',refreshPreEvacuation);
+window.addEventListener('nodiv-preevacuation-start',async()=>{
+ const button=document.querySelector('#startPreEvacuation'),hint=document.querySelector('#preEvacuationHint');if(!sessionToken||!button?.dataset.eventId||preEvacuationBusy)return;
+ preEvacuationBusy=true;button.disabled=true;
+ try{const r=await apiRequest({action:'preevacuationstart',token:sessionToken,event:button.dataset.eventId});if(!r?.ok||r.action!==true)throw Error(r?.error||r?.status||'PRE-EVACUATION BLOCKED');preEvacuationBusy=false;renderPreEvacuation(r);}
+ catch(error){if(hint)hint.textContent=String(error.message||error);button.disabled=false;}
+ finally{preEvacuationBusy=false;}
+});
+setInterval(()=>{const button=document.querySelector('#startPreEvacuation');if(button?.dataset.eventId)refreshPreEvacuation();},10000);
