@@ -275,7 +275,8 @@ test('recovery then shutdown atomically completes event, preserves history and p
  assert.equal(f.ctx.getNodeAccessAuthorization({nodeAccess:true},'NODE-001','AVAILABLE').allowed,false);
  // Real preflight remains mandatory; isolate lifecycle eligibility in this test.
  f.ctx.getEventReadiness=()=>({ok:true,authenticated:true,ready:true});let number=0;f.ctx.generateMechanicalCode=used=>{const code=String(++number).padStart(4,'0');used[code]=true;return code};
- const next=f.ctx.initializeEvent({parameter:{...e.parameter,nodes:'NODE-001,NODE-002'}});assert.equal(next.status,'EVENT_INITIALIZED');assert.notEqual(next.event.eventId,'EVT-1');assert.equal(f.ctx.readCurrentEvent().state,'INITIALIZED');assert.equal(f.sheets['Event Register'].rows[1][1],'COMPLETED');assert.deepEqual(f.sheets['Event Node Codes'].rows[1],beforeCodes);
+ for(let n=3;n<=10;n++)f.sheets['Node Register'].rows[n]=['NODE-'+String(n).padStart(3,'0'),'nodeuid'+n,'AVAILABLE'];
+ const next=f.ctx.initializeEvent({parameter:{...e.parameter}});assert.equal(next.status,'EVENT_INITIALIZED');assert.notEqual(next.event.eventId,'EVT-1');assert.equal(f.ctx.readCurrentEvent().state,'INITIALIZED');assert.equal(f.sheets['Event Register'].rows[1][1],'COMPLETED');assert.deepEqual(f.sheets['Event Node Codes'].rows[1],beforeCodes);
 });
 test('shutdown batch failure preserves event phase, timestamps and audit log',()=>{
  const f=recoveryFixture();f.removal();[6,4,3].forEach(f.removeScan);f.finish();const e=f.addFounder(),before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows));f.fail();assert.throws(()=>f.ctx.shutdownFieldEvent(e),/BATCH_FAILED/);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
@@ -942,4 +943,61 @@ test('Automatic Re-Supply state without a suitable Node or HQ Core creates no pa
  for(const mutate of [f=>f.sheets['Event Node Codes'].rows.splice(1),f=>{for(const row of f.sheets['N-Core Register'].rows.slice(1))if(row[14]==='NODIV_RESERVE')row[4]='OFFLINE';}]){
   const f=reSupplyFixture({capacity:3});mutate(f);const before=JSON.stringify(f.sheets),result=f.reSupplyState();assert.equal(result.status,'NO_SUITABLE_RESUPPLY_TARGET_OR_CORE');assert.equal(result.action,false);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);assert.equal(f.ctx.reSupplyOrders().length,0);
  }
+});
+
+
+function eventLifecycleFixture(provisioned=15){
+ const f=fixture();f.sheets['Event Register'].rows=[[]];f.sheets['Event Node Codes'].rows=[[]];
+ f.sheets['Node Register'].rows=[[],...Array.from({length:provisioned},(_,i)=>['NODE-'+String(i+1).padStart(3,'0'),'nodeuid'+(i+1),'AVAILABLE'])];
+ for(let n=1;n<=40;n++)f.sheets['N-Core Register'].rows[n][2]='uid'+n;
+ f.sheets['Access Card Register'].rows.push(['ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true]);const token='d'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'ROOT'}));
+ // Isolate event membership from the separately tested real Preflight workflow.
+ f.ctx.getEventReadiness=()=>({ok:true,authenticated:true,ready:true});let seq=0;f.ctx.Utilities.getUuid=()=>String(++seq).padStart(8,'0')+'-0000-0000-0000-000000000000';
+ const founder={parameter:{token}},initialize=nodes=>f.ctx.initializeEvent({parameter:{token,...(nodes!==undefined?{nodes}:{})}});
+ function install(nodeId){f.e.parameter.node=nodeId;const order=f.order();for(const core of order.loadout){f.e.parameter.uid=f.ctx.readCoreState(core.id).uid;f.ctx.scanNodeInstallationCore(f.e);}return f.ctx.confirmNodeInstallation(f.e);}
+ function expand(nodeId){return f.ctx.expandEventNode({parameter:{token,event:f.ctx.readCurrentEvent().eventId,node:nodeId}});}
+ function remove(nodeId){f.e.parameter.node=nodeId;const order=f.ctx.getNodeDeinstallOrder(f.e);f.e.parameter.installation=order.installation;for(const core of order.loadout){f.e.parameter.uid=f.ctx.readCoreState(core.id).uid;f.ctx.scanNodeDeinstallationCore(f.e);}return f.ctx.confirmNodeDeinstallation(f.e);}
+ function start(){initialize();for(let n=1;n<=10;n++)install('NODE-'+String(n).padStart(3,'0'));assert.equal(f.ctx.activateEvent(founder).status,'FIELD_ACTIVE');}
+ return {...f,founder,initialize,install,expand,remove,start};
+}
+test('10+2 initialize deterministically selects exactly 10 of 15 physical Nodes, keeps reserve untouched and writes planned 10 active 0',()=>{
+ const f=eventLifecycleFixture(),reserve=JSON.stringify(f.sheets['Node Register'].rows.slice(11)),r=f.initialize();assert.equal(r.event.nodes.length,10);assert.deepEqual(Array.from(r.event.nodes),Array.from({length:10},(_,i)=>'NODE-'+String(i+1).padStart(3,'0')));assert.equal(f.ctx.readCurrentEvent().plannedNodes,10);assert.equal(f.ctx.readCurrentEvent().activeNodes,0);assert.equal(f.sheets['Event Node Codes'].rows.length,11);assert.ok(f.sheets['Event Node Codes'].rows.slice(1).every(row=>row[9]==='ASSIGNED_FOR_INSTALL'));assert.equal(JSON.stringify(f.sheets['Node Register'].rows.slice(11)),reserve);
+});
+test('10+2 initialize rejects fewer provisioned Nodes, 9/11 selections, duplicates and unknown Nodes without writes',()=>{
+ const ids=Array.from({length:10},(_,i)=>'NODE-'+String(i+1).padStart(3,'0'));
+ for(const [count,nodes,reason] of [[9,undefined,/10_PROVISIONED/],[15,ids.slice(0,9).join(','),/EXACTLY_10/],[15,[...ids,'NODE-011'].join(','),/EXACTLY_10/],[15,[...ids.slice(0,9),'NODE-001'].join(','),/DUPLICATE/],[15,[...ids.slice(0,9),'NODE-099'].join(','),/Nicht provisionierte/]]){const f=eventLifecycleFixture(count),before=JSON.stringify(f.sheets);assert.throws(()=>f.initialize(nodes),reason);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),0);}
+ const f=eventLifecycleFixture();assert.equal(f.initialize(ids.slice().reverse().join(',')).status,'EVENT_INITIALIZED');
+});
+test('10+2 initialization batch failure leaves no event, code rows or success log',()=>{
+ const f=eventLifecycleFixture(),before=JSON.stringify(f.sheets);f.fail();assert.throws(f.initialize,/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent(),null);
+});
+test('10+2 activation requires all 10 Start Nodes with 3 Cores; unselected reserve does not block',()=>{
+ const f=eventLifecycleFixture();f.initialize();for(let n=1;n<=9;n++)f.install('NODE-'+String(n).padStart(3,'0'));assert.equal(f.ctx.activateEvent(f.founder).status,'NODES_NOT_INSTALLED');assert.equal(f.ctx.readCurrentEvent().activeNodes,0);f.install('NODE-010');const extra=f.sheets['N-Core Register'].rows[40];extra[14]='NODE';extra[15]='NODE-010';assert.equal(f.ctx.activateEvent(f.founder).status,'NODES_NOT_INSTALLED');extra[14]='NODIV_RESERVE';extra[15]='HQ';assert.equal(f.ctx.activateEvent(f.founder).status,'FIELD_ACTIVE');assert.equal(f.ctx.readCurrentEvent().activeNodes,10);assert.equal(f.sheets['Node Register'].rows[11][2],'AVAILABLE');
+});
+test('10+2 expansion is idempotent, stays inactive until FOP 3/3 confirm and blocks a thirteenth Event Node',()=>{
+ const f=eventLifecycleFixture();f.start();const reserve=JSON.stringify(f.sheets['Node Register'].rows.slice(11));const first=f.expand('NODE-011');assert.equal(first.plannedNodes,11);assert.equal(first.activeNodes,10);assert.equal(f.ctx.findEventNodeCode(first.eventId,'NODE-011').changeStatus,'ASSIGNED_FOR_INSTALL');const before=JSON.stringify(f.sheets),b=f.batches();assert.equal(f.expand('NODE-011').replayed,true);assert.equal(f.expand('NODE-001').replayed,true);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),b);assert.equal(JSON.stringify(f.sheets['Node Register'].rows.slice(11)),reserve);
+ assert.ok(f.ctx.getFopOperations(f.e).operations.some(o=>o.nodeId==='NODE-011'&&o.type==='INSTALL'));f.e.parameter.node='NODE-011';const order=f.order();for(const core of order.loadout){f.e.parameter.uid=f.ctx.readCoreState(core.id).uid;f.ctx.scanNodeInstallationCore(f.e);}assert.equal(f.ctx.readCurrentEvent().activeNodes,10);assert.equal(f.ctx.confirmNodeInstallation(f.e).status,'NODE_INSTALLED');assert.equal(f.ctx.readCurrentEvent().activeNodes,11);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-011'),3);
+ assert.equal(f.expand('NODE-012').plannedNodes,12);const unchanged=JSON.stringify(f.sheets);assert.throws(()=>f.expand('NODE-013'),/LIMIT_12/);assert.equal(JSON.stringify(f.sheets),unchanged);f.install('NODE-012');assert.equal(f.ctx.readCurrentEvent().activeNodes,12);assert.equal(f.ctx.getFopOperations(f.e).operations.some(o=>o.nodeId==='NODE-013'),false);
+});
+test('10+2 expansion requires Founder, current FIELD_ACTIVE Event, provisioned empty reserve and no other open membership',()=>{
+ const f=eventLifecycleFixture();f.initialize();assert.throws(()=>f.expand('NODE-011'),/NOT_FIELD_ACTIVE/);for(let n=1;n<=10;n++)f.install('NODE-'+String(n).padStart(3,'0'));f.ctx.activateEvent(f.founder);
+ assert.equal(f.ctx.expandEventNode({parameter:{token:f.e.parameter.token,event:f.ctx.readCurrentEvent().eventId,node:'NODE-011'}}).status,'ROLE_DENIED');assert.throws(()=>f.ctx.expandEventNode({parameter:{...f.founder.parameter,event:'OTHER',node:'NODE-011'}}),/EVENT_MISMATCH/);assert.throws(()=>f.expand('NODE-099'),/NOT_REGISTERED/);
+ const eventId=f.ctx.readCurrentEvent().eventId;f.sheets['Event Register'].rows.unshift([]);f.sheets['Event Register'].rows[1]=['OTHER','INITIALIZED'];f.sheets['Event Node Codes'].rows.push(['OTHER','NODE-011']);const before=JSON.stringify(f.sheets);assert.throws(()=>f.expand('NODE-011'),/OTHER_OPEN_EVENT/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().eventId,eventId);
+});
+test('10+2 expansion batch failure creates no partial member, counter or log and retry is safe',()=>{
+ const f=eventLifecycleFixture();f.start();const batch=f.ctx.Sheets.Spreadsheets.batchUpdate,before=JSON.stringify(f.sheets);f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(()=>f.expand('NODE-011'),/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.expand('NODE-011').plannedNodes,11);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='EVENT_NODE_EXPANDED').length,1);
+});
+test('10+2 shutdown covers all 10/11/12 actual members, blocks installed expansion and preserves unused reserve',()=>{
+ for(const size of [10,11,12]){const f=eventLifecycleFixture();f.start();for(let n=11;n<=size;n++){f.expand('NODE-'+String(n).padStart(3,'0'));f.install('NODE-'+String(n).padStart(3,'0'));}const reserve=JSON.stringify(f.sheets['Node Register'].rows.slice(size+1)),event=f.ctx.readCurrentEvent();const request={parameter:{...f.founder.parameter,event:event.eventId}};for(let n=1;n<=10;n++)f.remove('NODE-'+String(n).padStart(3,'0'));if(size>10){const blocked=f.ctx.shutdownFieldEvent(request);assert.equal(blocked.status,'FIELD_SHUTDOWN_BLOCKED');assert.ok(blocked.blockers.some(x=>x.startsWith('NODE-011:')));}for(let n=11;n<=size;n++)f.remove('NODE-'+String(n).padStart(3,'0'));assert.equal(f.ctx.shutdownFieldEvent(request).eventState,'COMPLETED');assert.equal(f.ctx.readCurrentEvent(),null);assert.equal(JSON.stringify(f.sheets['Node Register'].rows.slice(size+1)),reserve);}
+});
+
+ test('10+2 expansion reserves operation boundaries, generates fresh codes and cannot mutate on conflicting reserve',()=>{
+ for(const mutate of [f=>{f.sheets['N-Core Register'].rows[40][14]='NODE';f.sheets['N-Core Register'].rows[40][15]='NODE-011';},f=>f.sheets['Node Register'].rows[11][2]='OFFLINE',f=>f.sheets['Deployment Register'].rows.push(['OTHER','NC-040','F001','FOP','NODE-011','DEPLOYMENT','ASSIGNED'])]){const f=eventLifecycleFixture();f.start();mutate(f);const before=JSON.stringify(f.sheets);assert.throws(()=>f.expand('NODE-011'),/NOT_AVAILABLE|OPERATION_RESERVED/);assert.equal(JSON.stringify(f.sheets),before);}
+ const f=eventLifecycleFixture();f.start();f.expand('NODE-011');f.expand('NODE-012');const codes=f.sheets['Event Node Codes'].rows.slice(1).flatMap(row=>row.slice(2,7));assert.equal(codes.length,60);assert.equal(new Set(codes).size,60);
+ });
+ test('10+2 expansion installation batch failure preserves ownership and ACTIVE count; successful retry increments once',()=>{
+ const f=eventLifecycleFixture();f.start();f.expand('NODE-011');f.e.parameter.node='NODE-011';const order=f.order();for(const core of order.loadout){f.e.parameter.uid=f.ctx.readCoreState(core.id).uid;f.ctx.scanNodeInstallationCore(f.e);}const before=JSON.stringify(f.sheets),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(()=>f.ctx.confirmNodeInstallation(f.e),/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().activeNodes,10);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;f.ctx.confirmNodeInstallation(f.e);assert.equal(f.ctx.readCurrentEvent().activeNodes,11);const committed=JSON.stringify(f.sheets);assert.throws(()=>f.ctx.confirmNodeInstallation(f.e));assert.equal(JSON.stringify(f.sheets),committed);
+ });
+test('10+2 expansion retry after lost committed response reuses member and log without another batch',()=>{
+ const f=eventLifecycleFixture();f.start();const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{batch(...args);throw Error('LOST_RESPONSE')};assert.throws(()=>f.expand('NODE-011'),/LOST_RESPONSE/);const before=JSON.stringify(f.sheets),b=f.batches();assert.equal(f.expand('NODE-011').replayed,true);assert.equal(f.batches(),b);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().plannedNodes,11);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='EVENT_NODE_EXPANDED').length,1);
 });

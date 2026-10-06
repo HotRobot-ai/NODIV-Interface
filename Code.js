@@ -355,6 +355,10 @@ function doGet(e) {
 
       result = initializeEvent(e);
 
+    } else if (action === 'eventexpand') {
+
+      result = expandEventNode(e);
+
     } else if (action === 'eventactivate') {
 
       result = activateEvent(e);
@@ -3749,28 +3753,63 @@ function initializeEvent(e) {
     const existing=readCurrentEvent();
     if(existing&&['INITIALIZED','FIELD_ACTIVE'].includes(existing.state))return gameplayActionDenied(actor,'EVENT_ALREADY_INITIALIZED','Es existiert bereits ein initialisiertes oder aktives Event.');
 
-    const nodes=listProvisionedNodeIds();
-    if(!nodes.length)return gameplayActionDenied(actor,'NO_PROVISIONED_NODES','Kein provisionierter Node vorhanden.');
+    const nodes=[...new Set(listProvisionedNodeIds())].sort();
+    if(nodes.length<10)throw new Error('EVENT_REQUIRES_10_PROVISIONED_NODES');
 
     const requested=String(e.parameter.nodes||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
-    const selected=requested.length?requested:nodes.slice();
+    const selected=requested.length?requested:nodes.slice(0,10);
+    if(selected.length!==10)throw new Error('EVENT_REQUIRES_EXACTLY_10_START_NODES');
+    if(new Set(selected).size!==10)throw new Error('EVENT_DUPLICATE_NODE');
     const invalid=selected.filter(id=>!nodes.includes(id));
     if(invalid.length)throw new Error('Nicht provisionierte Nodes: '+invalid.join(', '));
-    if(selected.length>15)throw new Error('Maximal 15 Nodes pro Event.');
 
     const eventId='EVT-'+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyyMMdd-HHmmss')+'-'+Utilities.getUuid().slice(0,4).toUpperCase();
-    const used={}, codeSheet=getEventNodeCodeSheet(), now=new Date();
+    const used={}, codeSheet=getEventNodeCodeSheet(), now=new Date(),requests=[];
     selected.forEach(nodeId=>{
       const codes=[];for(let i=0;i<5;i++)codes.push(generateMechanicalCode(used));
-      codeSheet.appendRow([eventId,nodeId,codes[0],codes[1],codes[2],codes[3],codes[4],'','PRIMARY','ASSIGNED_FOR_INSTALL','', '',now]);
+      stageEventNodeCodes(requests,codeSheet,eventId,nodeId,codes,now);
     });
 
     const eventSheet=getEventRegisterSheet();
-    eventSheet.appendRow([eventId,'INITIALIZED',now,now,'',actor.identity,selected.length,0,'INITIALIZED_BASELINE',now]);
-    appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'});
-    SpreadsheetApp.flush();
+    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now]]).updateCells.rows,fields:'userEnteredValue'}});
+    appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'},requests);
+    Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected}};
   }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+// Existing Event Node Codes + Sheets batch: no separate expansion registry.
+function stageEventNodeCodes(requests,sheet,eventId,nodeId,codes,now){
+ requests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,[[eventId,nodeId,...codes,'','PRIMARY','ASSIGNED_FOR_INSTALL','','',now]]).updateCells.rows,fields:'userEnteredValue'}});
+}
+function expandEventNode(e){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  const actor=session.player;if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Event-Nodes hinzufügen.');
+  const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  if(String(e.parameter.event||'')!==event.eventId)throw new Error('EVENT_MISMATCH');
+  const nodeId=String(e.parameter.node||'').trim().toUpperCase();
+  if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
+  const sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[],members=rows.filter(row=>String(row[0])===event.eventId);
+  if(members.length!==event.plannedNodes||new Set(members.map(row=>String(row[1]).trim().toUpperCase())).size!==members.length||members.length<10||members.length>12)throw new Error('EVENT_NODE_COUNT_MISMATCH');
+  if(members.some(row=>String(row[1]).trim().toUpperCase()===nodeId))return {ok:true,authenticated:true,session:true,action:true,status:'EVENT_NODE_ALREADY_ASSIGNED',eventId:event.eventId,nodeId,plannedNodes:event.plannedNodes,replayed:true};
+  if(members.length>=12)throw new Error('EVENT_NODE_LIMIT_12');
+  const eventSheet=getEventRegisterSheet(),eventRows=eventSheet.getRange(2,1,eventSheet.getLastRow()-1,10).getValues();
+  const open=new Set(eventRows.filter(row=>['STANDBY','INITIALIZED','FIELD_ACTIVE'].includes(String(row[1]).trim().toUpperCase())).map(row=>String(row[0])));
+  if(rows.some(row=>String(row[1]).trim().toUpperCase()===nodeId&&open.has(String(row[0]))))throw new Error('NODE_IN_OTHER_OPEN_EVENT');
+  if(countCoresOwnedBy('NODE',nodeId)!==0||!['AVAILABLE','RESERVE'].includes(getNodeGameplayStatus(nodeId)))throw new Error('NODE_NOT_AVAILABLE');
+  if(readInstallationOrders().some(order=>order.nodeId===nodeId&&installationOrderIsLive(order)))throw new Error('NODE_OPERATION_RESERVED');
+  assertExchangeUnreserved(nodeId,'','');assertRestoreUnreserved(nodeId,'','');
+  const dep=getDeploymentRegisterSheet(),deployments=dep.getLastRow()>1?dep.getRange(2,1,dep.getLastRow()-1,11).getValues():[];
+  if(deployments.some(row=>String(row[4]).trim().toUpperCase()===nodeId&&['ASSIGNED','IN_TRANSIT'].includes(String(row[6]).trim().toUpperCase())))throw new Error('NODE_OPERATION_RESERVED');
+  const used={};rows.filter(row=>String(row[0])===event.eventId).forEach(row=>row.slice(2,7).forEach(code=>{used[String(code)]=true;}));
+  const codes=[];for(let i=0;i<5;i++)codes.push(generateMechanicalCode(used));
+  const now=new Date(),requests=[];stageEventNodeCodes(requests,sheet,event.eventId,nodeId,codes,now);
+  requests.push(sheetCellsRequest(eventSheet,event.row,7,[[members.length+1]]));requests.push(sheetCellsRequest(eventSheet,event.row,10,[[now]]));
+  appendTransactionLog({eventType:'EVENT_NODE_EXPANDED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',details:event.eventId+' // '+(members.length+1)+'/12 // ASSIGNED_FOR_INSTALL'},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  return {ok:true,authenticated:true,session:true,action:true,status:'EVENT_NODE_ASSIGNED_FOR_INSTALL',eventId:event.eventId,nodeId,plannedNodes:members.length+1,activeNodes:event.activeNodes};
+ }finally{try{lock.releaseLock();}catch(error){}}
 }
 
 function activateEvent(e) {
@@ -3785,9 +3824,12 @@ function activateEvent(e) {
     if(!event||event.state!=='INITIALIZED')return gameplayActionDenied(actor,'EVENT_NOT_INITIALIZED','Event muss zuerst initialisiert werden.');
 
     const codes=getEventNodeCodeSheet(), rows=codes.getLastRow()>1?codes.getRange(2,1,codes.getLastRow()-1,13).getValues():[];
-    const pending=rows.filter(r=>String(r[0])===event.eventId&&(String(r[9]||'').toUpperCase()!=='ACTIVE'||countCoresOwnedBy('NODE',String(r[1]||'').trim().toUpperCase())!==3));
+    const members=rows.filter(r=>String(r[0])===event.eventId);
+    const pending=members.filter(r=>String(r[9]||'').toUpperCase()!=='ACTIVE'||!['PRIMARY','RESERVE 1','RESERVE 2','RESERVE 3','RESERVE 4'].includes(String(r[7]))||Boolean(r[8])||getNodeGameplayStatus(String(r[1]).trim().toUpperCase())!=='INSTALLED'||countCoresOwnedBy('NODE',String(r[1]||'').trim().toUpperCase())!==3);
     if(pending.length)return gameplayActionDenied(actor,'NODES_NOT_INSTALLED',pending.length+' Node(s) sind noch nicht physisch installiert/bestätigt.');
 
+    if(event.plannedNodes!==10||members.length!==10||new Set(members.map(row=>String(row[1]).trim().toUpperCase())).size!==10)throw new Error('EVENT_START_NODE_COUNT_INVALID');
+    members.forEach(row=>getNodeRemovalLoadout(String(row[1]).trim().toUpperCase()));
     const sheet=getEventRegisterSheet(), now=new Date();
     sheet.getRange(event.row,2).setValue('FIELD_ACTIVE');
     sheet.getRange(event.row,5).setValue(now);
@@ -3855,7 +3897,8 @@ function validateNodeInstallation(actor, nodeId) {
   if(count!==0)throw new Error(count===3?'NODE_ALREADY_INSTALLED':'NODE_CORE_COUNT_INVALID // '+count+'/3 // manuelle Prüfung erforderlich');
   const legacy=eventNode.changeStatus==='ACTIVE'&&eventNode.activeSlot==='PRIMARY'&&!eventNode.pendingSlot;
   const restoreTestReinstall=event.state==='FIELD_ACTIVE'&&eventNode.changeStatus==='DEINSTALLED'&&restoreTestSetupFor({event,eventNode},nodeId);
-  if(!legacy&&!restoreTestReinstall&&(event.state!=='INITIALIZED'||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
+  const expansion=event.state==='FIELD_ACTIVE'&&exchangeLogRows().some(row=>row[2]==='EVENT_NODE_EXPANDED'&&row[13]===nodeId&&row[14]==='SUCCESS'&&String(row[15]).startsWith(event.eventId+' // '));
+  if(!legacy&&!restoreTestReinstall&&((event.state!=='INITIALIZED'&&!expansion)||eventNode.changeStatus!=='ASSIGNED_FOR_INSTALL'||eventNode.pendingSlot!=='PRIMARY'))throw new Error('INSTALL_ORDER_REQUIRED');
   return {event,eventNode,assigned,legacy,restoreTestReinstall};
 }
 
@@ -4178,6 +4221,10 @@ function confirmNodeInstallation(e) {
     requests.push(sheetCellsRequest(codeSheet,context.eventNode.row,8,[['PRIMARY','','ACTIVE',context.assigned||actor.identity,now,now]]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,3,[['INSTALLED']]));
     requests.push(sheetCellsRequest(nodeSheet,nodeRow,5,[[actor.identity,now]]));
+    if(context.event.state==='FIELD_ACTIVE'&&context.eventNode.changeStatus!=='ACTIVE'){
+      if(context.event.activeNodes>=context.event.plannedNodes)throw new Error('EVENT_ACTIVE_NODE_COUNT_INVALID');
+      requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,8,[[context.event.activeNodes+1]]));
+    }
     appendTransactionLog({eventType:'NODE_INSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
       details:order.eventId+' // '+order.id+' // 3/3 // '+order.cores.map(core=>core.id).join(',')+(order.legacy?' // explicit legacy completion':'')},requests);
 
