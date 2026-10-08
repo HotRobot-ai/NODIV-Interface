@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NODIV // HQ VR V2 // CENTRAL OPERATIONS WUERZBURG</title>
+<script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+<style>
+html,body{margin:0;background:#02070c;font-family:Arial,sans-serif}
+#boot{position:fixed;z-index:10;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#70eaff;letter-spacing:.22em;text-align:center;text-shadow:0 0 18px #00bde8;background:radial-gradient(circle at center,#06202a 0,#02070c 55%,#000 100%);animation:boot 3.2s forwards}
+#boot b{font-size:clamp(28px,7vw,70px);display:block}.sub{font-size:12px;margin-top:14px;opacity:.75}
+@keyframes boot{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}
+</style>
+<script>
+AFRAME.registerComponent('holo-pulse', {
+  init:function(){ this.phase=Math.random()*Math.PI*2; },
+  tick:function(t){ const y=1+Math.sin(t/700+this.phase)*.06; this.el.object3D.scale.set(y,y,y); }
+});
+
+
+AFRAME.registerComponent('quest-locomotion', {
+  schema:{speed:{default:2.0}, snap:{default:30}, deadzone:{default:.22}},
+  init:function(){
+    this.left={x:0,y:0}; this.right={x:0,y:0}; this.turnReady=true;
+    const rig=this.el, left=document.querySelector('#leftHand'), right=document.querySelector('#rightHand');
+    const axis=(hand,side)=>e=>{ const a=e.detail.axis||[]; hand.x=a.length>2?(a[2]||0):(a[0]||0); hand.y=a.length>3?(a[3]||0):(a[1]||0); };
+    if(left) left.addEventListener('axismove',axis(this.left,'left'));
+    if(right) right.addEventListener('axismove',axis(this.right,'right'));
+  },
+  tick:function(t,dt){
+    if(!dt) return;
+    const cam=document.querySelector('#playerCamera'); if(!cam) return;
+    const dz=this.data.deadzone, lx=Math.abs(this.left.x)>dz?this.left.x:0, ly=Math.abs(this.left.y)>dz?this.left.y:0;
+    if(lx||ly){
+      const yaw=THREE.MathUtils.degToRad(cam.object3D.rotation.y + this.el.object3D.rotation.y);
+      const f=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+      const r=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+      const v=f.multiplyScalar(-ly).add(r.multiplyScalar(lx)).multiplyScalar(this.data.speed*dt/1000);
+      this.el.object3D.position.add(v);
+    }
+    const rx=this.right.x;
+    if(Math.abs(rx)<dz) this.turnReady=true;
+    if(this.turnReady && Math.abs(rx)>.72){
+      this.el.object3D.rotation.y-=THREE.MathUtils.degToRad(Math.sign(rx)*this.data.snap);
+      this.turnReady=false;
+    }
+  }
+});
+
+AFRAME.registerComponent('node-console', {
+  init: function () {
+    const detail = document.querySelector('#nodeDetail');
+    const base = document.querySelector('#nodeBase');
+    let open = false;
+    this.el.addEventListener('click', () => {
+      open = !open;
+      detail.setAttribute('visible', open);
+      base.setAttribute('visible', !open);
+      this.el.setAttribute('material', 'color', open ? '#07546a' : '#03141d');
+    });
+  }
+});
+
+const NODIV_API = 'https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
+
+function hqSetText(id, value) {
+  const el = document.querySelector(id);
+  if (el) el.setAttribute('value', value);
+}
+
+function hqLoadLiveOperations() {
+  const callback = 'nodivHqLive_' + Date.now();
+  const script = document.createElement('script');
+  window[callback] = function (data) {
+    try {
+      if (!data || !data.ok) throw new Error('HQ data unavailable');
+
+      const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+      const deployments = Array.isArray(data.deployments) ? data.deployments : [];
+      const registered = Number(data.network && data.network.registeredNodes || 0);
+      const networkStatus = String(data.network && data.network.status || 'UNKNOWN');
+      const cargo = deployments.find(d => d.status === 'IN_TRANSIT') || deployments[0] || null;
+      const liveNodes = nodes.filter(n => n.registered);
+      const n1 = liveNodes.find(n => n.id === 'NODE-001') || liveNodes[0] || null;
+      const n1Energy = n1 ? Number(n1.energy ?? n1.totalEnergy ?? n1.energyTotal ?? 0) : 0;
+      const n1State = n1 ? String(n1.status || (n1Energy >= 600 ? 'STABLE' : n1Energy >= 450 ? 'DEGRADED' : 'CRITICAL')) : 'OFFLINE';
+      const stateColor = n1State === 'STABLE' ? '#62ffad' : n1State === 'DEGRADED' ? '#ffd36a' : '#ff657a';
+      hqSetText('#holoNodeTitle', n1 ? n1.id + ' // ' + n1State : 'NODE-001 // OFFLINE');
+      hqSetText('#holoNodeEnergy', n1 ? 'ENERGY  //  ' + (n1Energy || '--') + ' E' : 'ENERGY  //  --');
+      const beacon=document.querySelector('#holoNodeBeacon');
+      if(beacon) beacon.setAttribute('material','color',stateColor);
+
+      hqSetText('#missionLiveText',
+        'SYSTEM  //  ' + networkStatus +
+        '\\nMISSION CARGO  //  ' + String(deployments.length).padStart(2,'0') +
+        '\\nFIELD  //  LIVE');
+
+      hqSetText('#nodeLiveText',
+        'NETWORK  //  LIVE' +
+        '\\nNODES  //  ' + registered +
+        '\\nLINK  //  SECURE');
+
+      const nodeLines = nodes.filter(n => n.registered).slice(0,3)
+        .map(n => n.id + '   ' + n.status);
+      hqSetText('#nodeTacticalText',
+        (nodeLines.length ? nodeLines.join('\\n') : 'NO REGISTERED NODES') +
+        '\\n\\nNETWORK   ' + registered + ' NODES' +
+        '\\nSTATUS    ' + networkStatus);
+
+      if (cargo) {
+        hqSetText('#fieldLiveTitle', 'MISSION CARGO // ' + cargo.status);
+        hqSetText('#fieldLiveText',
+          'TARGET  //  ' + (cargo.targetNode || '—') +
+          '\\nENERGY  //  ' + (cargo.energy === '' ? '—' : cargo.energy + ' E') +
+          '\\nCARRIER  //  ' + (cargo.carrierId || '—'));
+      } else {
+        hqSetText('#fieldLiveTitle', 'FIELD OPERATIONS');
+        hqSetText('#fieldLiveText',
+          'MISSION CARGO  //  CLEAR' +
+          '\\nDEPLOYMENTS  //  00' +
+          '\\nSTATUS  //  NOMINAL');
+      }
+    } catch (error) {
+      hqSetText('#missionLiveText','SYSTEM  //  DATA LINK ERROR\\nMISSION CARGO  //  --\\nFIELD  //  OFFLINE');
+    } finally {
+      delete window[callback];
+      script.remove();
+    }
+  };
+  script.onerror = function () {
+    hqSetText('#missionLiveText','SYSTEM  //  DATA LINK ERROR\\nMISSION CARGO  //  --\\nFIELD  //  OFFLINE');
+    delete window[callback];
+    script.remove();
+  };
+  script.src = NODIV_API + '?action=hqstatus&callback=' + encodeURIComponent(callback) + '&_=' + Date.now();
+  document.body.appendChild(script);
+}
+
+window.addEventListener('load', function () {
+  setTimeout(hqLoadLiveOperations, 1200);
+  setInterval(hqLoadLiveOperations, 15000);
+});
+</script>
+</head>
+<body>
+<div id="boot"><div><b>NODIV</b><div class="sub">CENTRAL OPERATIONS // WUERZBURG<br>SYSTEM INITIALIZING</div></div></div>
+<a-scene background="color:#010509" fog="type: exponential; color:#020b10; density:0.025" renderer="antialias:true; colorManagement:true; physicallyCorrectLights:true; highRefreshRate:true">
+<a-assets>
+<a-mixin id="panel" geometry="primitive:plane;width:3.7;height:2.05" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:.92;transparent:true;side:double"></a-mixin>
+</a-assets>
+
+<!-- HQ VR V2 // cinematic command chamber -->
+<a-entity id="architecture">
+  <a-cylinder position="0 -.18 -1.5" radius="10.8" height=".34" segments-radial="48" material="color:#03080c;metalness:.88;roughness:.32"></a-cylinder>
+  <a-ring position="0 .012 -1.5" rotation="-90 0 0" radius-inner="8.7" radius-outer="8.78" material="color:#0a5262;emissive:#00b8d8;emissiveIntensity:.55"></a-ring>
+  <a-cylinder position="0 .12 -2.25" radius="3.15" height=".22" segments-radial="40" material="color:#061118;metalness:.86;roughness:.25"></a-cylinder>
+  <a-ring position="0 .245 -2.25" rotation="-90 0 0" radius-inner="2.72" radius-outer="2.82" material="color:#1b7485;emissive:#00dfff;emissiveIntensity:.75"></a-ring>
+  <a-entity position="0 5.65 -1.5">
+    <a-ring rotation="90 0 0" radius-inner="4.7" radius-outer="5.05" segments-theta="48" material="color:#071117;metalness:.9;roughness:.28"></a-ring>
+    <a-ring rotation="90 0 0" radius-inner="4.58" radius-outer="4.63" material="color:#0e8297;emissive:#00cbe9;emissiveIntensity:.75"></a-ring>
+  </a-entity>
+  <a-box position="0 5.55 -7" width="13.6" height=".16" depth=".34" material="color:#071116;metalness:.9"></a-box>
+  <a-box position="0 5.46 -6.8" width="8.2" height=".025" depth=".08" material="color:#19c9e5;emissive:#00dfff;emissiveIntensity:1.1"></a-box>
+  <a-box position="-5.9 3.1 -6.9" rotation="0 0 -18" width=".22" height="5.4" depth=".42" material="color:#09151c;metalness:.92"></a-box>
+  <a-box position="5.9 3.1 -6.9" rotation="0 0 18" width=".22" height="5.4" depth=".42" material="color:#09151c;metalness:.92"></a-box>
+  <a-entity position="0 1.15 4.8">
+    <a-box width="5.4" height="2.3" depth=".22" material="color:#040b10;metalness:.8;roughness:.35"></a-box>
+    <a-text value="NODIV // CENTRAL OPERATIONS" align="center" width="4.3" position="0 .25 -.13" rotation="0 180 0" color="#8eefff"></a-text>
+    <a-text value="AUTHORIZED PERSONNEL ONLY" align="center" width="2.7" position="0 -.2 -.13" rotation="0 180 0" color="#2b9db0"></a-text>
+  </a-entity>
+</a-entity>
+
+<!-- floor / room -->
+<a-plane rotation="-90 0 0" width="24" height="24" material="color:#050a0d;metalness:.65;roughness:.42"></a-plane>
+<a-ring position="0 .025 0" rotation="-90 0 0" radius-inner="3.1" radius-outer="3.14" material="color:#00d9ff;emissive:#00a8d0;emissiveIntensity:1"></a-ring>
+<a-ring position="0 .028 0" rotation="-90 0 0" radius-inner="6.3" radius-outer="6.33" material="color:#12313a;emissive:#063b48;emissiveIntensity:.4"></a-ring>
+<a-cylinder position="0 .92 -2.25" radius="1.75" height=".12" material="color:#071116;metalness:.8;roughness:.25"></a-cylinder>
+<a-cylinder position="0 .39 -2.25" radius=".52" height="1.1" material="color:#061015;metalness:.8;roughness:.3"></a-cylinder>
+
+<!-- holographic Würzburg tactical city model -->
+<a-cylinder position="0 2.15 -2.25" radius="1.9" height="2.4" material="color:#00dfff;opacity:.018;transparent:true;side:double"></a-cylinder>
+<a-ring position="0 2.5 -2.25" rotation="90 0 0" radius-inner="1.82" radius-outer="1.85" material="color:#2ceaff;opacity:.22;transparent:true;emissive:#00dfff;emissiveIntensity:.8" animation="property:rotation;to:90 360 0;loop:true;dur:24000;easing:linear"></a-ring>
+<a-entity position="0 1.08 -2.25" scale=".82 .82 .82">
+  <a-cylinder radius="1.62" height=".025" material="color:#00bfe8;opacity:.08;transparent:true;emissive:#00dfff;emissiveIntensity:.55"></a-cylinder>
+  <!-- Main: segmented luminous river -->
+  <a-box position="-1.18 .055 .46" rotation="0 18 0" width=".72" height=".018" depth=".15" material="color:#38dfff;opacity:.42;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="-.57 .055 .24" rotation="0 20 0" width=".65" height=".018" depth=".15" material="color:#38dfff;opacity:.48;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="-.02 .055 .02" rotation="0 25 0" width=".58" height=".018" depth=".15" material="color:#38dfff;opacity:.52;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position=".55 .055 -.17" rotation="0 14 0" width=".65" height=".018" depth=".15" material="color:#38dfff;opacity:.48;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+  <a-box position="1.18 .055 -.38" rotation="0 20 0" width=".72" height=".018" depth=".15" material="color:#38dfff;opacity:.42;transparent:true;emissive:#00bcd4;emissiveIntensity:.8"></a-box>
+
+  <!-- Festung Marienberg -->
+  <a-entity position="-.9 .08 -.08">
+    <a-box position="0 .24 0" width=".58" height=".32" depth=".42" material="color:#64eaff;opacity:.34;transparent:true;wireframe:true"></a-box>
+    <a-box position="-.25 .41 -.12" width=".12" height=".3" depth=".12" material="color:#8ff3ff;opacity:.52;transparent:true;wireframe:true"></a-box>
+    <a-box position=".24 .4 .1" width=".12" height=".28" depth=".12" material="color:#8ff3ff;opacity:.52;transparent:true;wireframe:true"></a-box>
+    <a-text value="FESTUNG" width=".72" align="center" position="0 .61 0" color="#8cefff"></a-text>
+  </a-entity>
+
+  <!-- Alte Mainbrücke -->
+  <a-entity position="-.38 .13 .18" rotation="0 -18 0">
+    <a-box width=".72" height=".035" depth=".075" material="color:#a4f5ff;opacity:.72;transparent:true;emissive:#00bcd4;emissiveIntensity:.55"></a-box>
+    <a-text value="ALTE MAINBRUECKE" width=".66" align="center" position="0 .13 0" color="#74ddea"></a-text>
+  </a-entity>
+
+  <!-- Altstadt block field -->
+  <a-entity position=".34 .06 .13">
+    <a-box position="-.28 .11 .35" width=".18" height=".22" depth=".16" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <a-box position="0 .17 .31" width=".2" height=".34" depth=".18" material="color:#45d9f2;opacity:.46;transparent:true;wireframe:true"></a-box>
+    <a-box position=".31 .1 .25" width=".22" height=".2" depth=".16" material="color:#45d9f2;opacity:.4;transparent:true;wireframe:true"></a-box>
+    <a-box position="-.18 .1 -.02" width=".22" height=".2" depth=".2" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <a-box position=".18 .14 -.05" width=".26" height=".28" depth=".2" material="color:#45d9f2;opacity:.44;transparent:true;wireframe:true"></a-box>
+    <a-box position=".5 .09 -.13" width=".2" height=".18" depth=".24" material="color:#45d9f2;opacity:.38;transparent:true;wireframe:true"></a-box>
+    <a-box position=".02 .09 -.36" width=".2" height=".18" depth=".2" material="color:#45d9f2;opacity:.38;transparent:true;wireframe:true"></a-box>
+    <a-box position=".38 .13 -.42" width=".22" height=".26" depth=".18" material="color:#45d9f2;opacity:.42;transparent:true;wireframe:true"></a-box>
+    <!-- Dom landmark -->
+    <a-box position=".06 .3 .04" width=".2" height=".48" depth=".24" material="color:#87efff;opacity:.56;transparent:true;wireframe:true"></a-box>
+    <a-cone position="-.01 .67 .04" radius-bottom=".055" radius-top="0" height=".28" material="color:#9af5ff;opacity:.6;transparent:true;wireframe:true"></a-cone>
+    <a-cone position=".13 .67 .04" radius-bottom=".055" radius-top="0" height=".28" material="color:#9af5ff;opacity:.6;transparent:true;wireframe:true"></a-cone>
+    <a-text value="ALTSTADT" width=".82" align="center" position=".18 .79 .18" color="#69ddec"></a-text>
+  </a-entity>
+
+  <a-ring radius="1.48" radius-tubular=".006" rotation="90 0 0" material="color:#00e5ff;opacity:.38;transparent:true;emissive:#00dfff;emissiveIntensity:.7" animation="property:rotation;to:90 360 0;loop:true;dur:18000;easing:linear"></a-ring>
+  <a-ring radius=".92" radius-tubular=".004" rotation="90 0 0" material="color:#00e5ff;opacity:.22;transparent:true"></a-ring>
+
+  <!-- live NODIV node layer -->
+  <a-entity position=".55 .22 -.24">
+    <a-cylinder id="holoNodeBeacon" holo-pulse radius=".045" height=".48" material="color:#67eaff;opacity:.92;transparent:true;emissive:#00dfff;emissiveIntensity:1.2"></a-cylinder>
+    <a-ring radius-inner=".12" radius-outer=".14" rotation="-90 0 0" position="0 -.23 0" material="color:#67eaff;opacity:.9;transparent:true;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+    <a-text id="holoNodeTitle" value="NODE-001 // SYNC" width="1.45" position=".12 .22 0" color="#d8faff"></a-text>
+    <a-text id="holoNodeEnergy" value="ENERGY  //  --" width="1.1" position=".12 .06 0" color="#86ddea"></a-text>
+  </a-entity>
+  <a-text value="WUERZBURG // TACTICAL GRID" align="center" width="2.7" position="0 1.02 0" color="#67eaff"></a-text>
+</a-entity>
+
+<!-- front wall -->
+<a-plane position="0 3.15 -7.2" width="15" height="6.4" material="color:#03090d;metalness:.55;roughness:.55"></a-plane>
+<a-text value="NODIV" position="0 5.25 -7.05" align="center" width="8" color="#9af2ff" material="emissive:#00bfe8;emissiveIntensity:.8"></a-text>
+<a-text value="CENTRAL OPERATIONS // WUERZBURG" position="0 4.72 -7.04" align="center" width="4.5" color="#2bbbd3"></a-text>
+
+<!-- spatial operations projections -->
+<a-entity position="0 3.05 -6.88">
+  <a-box position="-5.52 0 0" width=".05" height="2.35" depth=".12" material="color:#20cbe5;emissive:#00dfff;emissiveIntensity:.9"></a-box>
+  <a-box position="5.52 0 0" width=".05" height="2.35" depth=".12" material="color:#20cbe5;emissive:#00dfff;emissiveIntensity:.9"></a-box>
+</a-entity>
+<!-- screens -->
+<a-entity position="-3.55 3.05 -6.95" rotation="0 10 0">
+<a-plane mixin="panel"></a-plane>
+<a-text value="MISSION CONTROL" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text id="missionLiveText" value="SYSTEM  //  CONNECTING\nMISSION CARGO  //  --\nFIELD  //  SYNC" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1" animation="property:rotation;to:0 0 360;loop:true;dur:5000;easing:linear"></a-ring>
+</a-entity>
+
+<a-entity position="0 3.05 -7.05">
+<a-plane class="clickable" node-console mixin="panel"></a-plane>
+<a-entity id="nodeBase">
+<a-text value="NODE NETWORK" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text id="nodeLiveText" value="NETWORK  //  CONNECTING\nNODES  //  --\nLINK  //  SYNC" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".34" radius-outer=".36" position=".82 -.33 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+</a-entity>
+<a-entity id="nodeDetail" visible="false" position="0 0 .04">
+  <a-text value="NODE NETWORK // TACTICAL" align="center" width="3.0" position="0 .68 0" color="#7defff"></a-text>
+  <a-text id="nodeTacticalText" value="LIVE DATA CONNECTING...\n\nNETWORK   --\nSTATUS    SYNC" width="2.8" position="-1.42 .12 0" color="#b8edf5"></a-text>
+  <a-text value="SELECT PANEL TO RETURN" align="center" width="2.2" position="0 -.76 0" color="#34bdd2"></a-text>
+</a-entity>
+</a-entity>
+
+<a-entity position="3.55 3.05 -6.95" rotation="0 -10 0">
+<a-plane mixin="panel"></a-plane>
+<a-text id="fieldLiveTitle" value="FIELD OPERATIONS" align="center" width="3.2" position="0 .67 .02" color="#63eaff"></a-text>
+<a-text id="fieldLiveText" value="MISSION CARGO  //  SYNC\nDEPLOYMENTS  //  --\nSTATUS  //  CONNECTING" width="3.0" position="-1.35 .17 .025" color="#a9dce5"></a-text>
+<a-ring radius-inner=".23" radius-outer=".25" position=".92 -.38 .03" material="color:#00e5ff;emissive:#00dfff;emissiveIntensity:1"></a-ring>
+</a-entity>
+
+<!-- side architecture / lights -->
+<a-box position="-7 2.1 -1" width=".12" height="4.2" depth="11" material="color:#050b0f;metalness:.7"></a-box>
+<a-box position="7 2.1 -1" width=".12" height="4.2" depth="11" material="color:#050b0f;metalness:.7"></a-box>
+<a-box position="-6.92 2.4 -2" width=".03" height=".08" depth="7" material="color:#00aeca;emissive:#00c9ed;emissiveIntensity:1"></a-box>
+<a-box position="6.92 2.4 -2" width=".03" height=".08" depth="7" material="color:#00aeca;emissive:#00c9ed;emissiveIntensity:1"></a-box>
+<a-sky color="#010407"></a-sky>
+<a-light type="ambient" color="#58b8cc" intensity=".2"></a-light>
+<a-light type="point" position="0 3 -2.8" color="#00d9ff" intensity="1.15" distance="8"></a-light>
+<a-light type="point" position="-5 2 -5.5" color="#0b6f86" intensity=".32" distance="5"></a-light>
+<a-light type="point" position="5 2 -5.5" color="#0b6f86" intensity=".32" distance="5"></a-light>
+
+<!-- player rig: desktop WASD + Quest controllers -->
+<a-entity id="rig" position="0 0 2.7" quest-locomotion="speed:2.1;snap:30">
+  <a-camera id="playerCamera" position="0 1.65 0" wasd-controls="acceleration:18" look-controls>
+    <a-cursor color="#58e8ff" fuse="false" raycaster="objects:.clickable"></a-cursor>
+  </a-camera>
+  <a-entity id="leftHand" laser-controls="hand:left" raycaster="objects:.clickable"></a-entity>
+  <a-entity id="rightHand" laser-controls="hand:right" raycaster="objects:.clickable"></a-entity>
+</a-entity>
+</a-scene>
+</body>
+</html>
