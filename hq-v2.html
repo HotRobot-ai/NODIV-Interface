@@ -146,7 +146,7 @@ window.addEventListener('load', function () {
 <div id="boot"><div><b>NODIV</b><div class="sub">CENTRAL OPERATIONS // WUERZBURG<br>SYSTEM INITIALIZING</div></div></div>
 <a-scene background="color:#010509" fog="type: exponential; color:#020b10; density:0.025" renderer="antialias:true; colorManagement:true; physicallyCorrectLights:true; highRefreshRate:true">
 <a-assets>
-<a-mixin id="panel" geometry="primitive:plane;width:3.7;height:2.05" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:.92;transparent:true;side:double"></a-mixin>
+<a-mixin id="panel" geometry="primitive:plane;width:3.7;height:2.05" material="color:#03141d;emissive:#003d50;emissiveIntensity:.18;opacity:1;transparent:false;side:double"></a-mixin>
 </a-assets>
 
 <!-- HQ VR V2 // cinematic command chamber -->
@@ -178,7 +178,7 @@ window.addEventListener('load', function () {
 <a-cylinder position="0 .39 -2.25" radius=".52" height="1.1" material="color:#061015;metalness:.8;roughness:.3"></a-cylinder>
 
 <!-- holographic Würzburg tactical city model -->
-<a-cylinder position="0 2.15 -2.25" radius="1.9" height="2.4" material="color:#00dfff;opacity:.018;transparent:true;side:double"></a-cylinder>
+<!-- V2.2 Quest fix: removed large transparent holo-volume; it occluded distant panels in WebXR -->
 <a-ring position="0 2.5 -2.25" rotation="90 0 0" radius-inner="1.82" radius-outer="1.85" material="color:#2ceaff;opacity:.22;transparent:true;emissive:#00dfff;emissiveIntensity:.8" animation="property:rotation;to:90 360 0;loop:true;dur:24000;easing:linear"></a-ring>
 <a-entity position="0 1.08 -2.25" scale=".82 .82 .82">
   <a-cylinder radius="1.62" height=".025" material="color:#00bfe8;opacity:.08;transparent:true;emissive:#00dfff;emissiveIntensity:.55"></a-cylinder>
@@ -284,7 +284,7 @@ window.addEventListener('load', function () {
 <a-light type="point" position="5 2 -5.5" color="#0b6f86" intensity=".32" distance="5"></a-light>
 
 <!-- player rig: desktop WASD + Quest controllers -->
-<a-entity id="rig" position="0 0 2.7" quest-locomotion="speed:2.1;snap:30">
+<a-entity id="rig" position="0 0 3.8" rotation="0 0 0" quest-locomotion="speed:2.1;snap:30">
   <a-camera id="playerCamera" position="0 1.65 0" wasd-controls="acceleration:18" look-controls>
     <a-cursor color="#58e8ff" fuse="false" raycaster="objects:.clickable"></a-cursor>
   </a-camera>
