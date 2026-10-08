@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261006-pre-evacuation';
+import {routeIdentity} from './router.js?v=20261008-evac-1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -38,6 +38,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
   const capacity=Math.max(0,Number(state.player?.coreCapacity||0)),cores=Array.isArray(state.cores)?state.cores:[];
   renderPioneerGhost(state.player,state.serverNow);
+  if(state.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:state.evacuation});
   if(capacity>0&&cores.length===0&&(!pioneerReSupply||pioneerReSupply.status==='RESUPPLY_COMPLETE')&&!pioneerReSupplyBusy)window.dispatchEvent(new CustomEvent('nodiv-pioneer-resupply-status'));
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
   if(total)total.textContent=String(state.carriedEnergy??0)+' E';
@@ -380,6 +381,7 @@ async function refreshFopOperations(){
  try{
   const r=await apiRequest({action:'fopoperations',token:sessionToken});
   if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'OPERATIONS QUEUE UNAVAILABLE');
+  if(r.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:r.evacuation,eventId:r.eventId});
   fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
   select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'OPERATION AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
   for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value='';
@@ -414,7 +416,7 @@ function renderFopInstallation(result){
  if(!fopInstallBusy)setText('#fopInstallScan',removal?'REMOVAL CORE SCANNEN':'CODE EINGESTELLT // CORE SCANNEN');
  for(const id of ['#fopPrimaryPanel','#fopScanProgress','#fopInstallActions']){const el=document.querySelector(id);if(el)el.hidden=complete}
  const panel=document.querySelector('#fopInstallCode');if(panel)panel.hidden=!result||complete;
- const summary=document.querySelector('#fopDeploymentComplete');if(summary){summary.hidden=!complete;summary.textContent=complete?(removal?'RECOVERY COMPLETE // '+result.node.id+' // 3/3 CORES RETURNED':'DEPLOYMENT COMPLETE // '+result.node.id+' // 3/3 // '+result.totalEnergy+' E // '+result.nodeState):''}
+ const summary=document.querySelector('#fopDeploymentComplete');if(summary){summary.hidden=!complete;summary.textContent=complete?(removal?(result.evacuationTeam?'NODE EVACUATED // '+result.node.id+' // 3/3 EVACUATION CARGO → '+result.cargoCarrier:'RECOVERY COMPLETE // '+result.node.id+' // 3/3 CORES RETURNED'):'DEPLOYMENT COMPLETE // '+result.node.id+' // 3/3 // '+result.totalEnergy+' E // '+result.nodeState):''}
  if(scan)scan.disabled=!result||complete||result.count>=3||fopInstallBusy;
  if(confirm)confirm.disabled=complete||!result?.canConfirm||fopInstallBusy;
  const cancel=document.querySelector('#fopInstallCancel');if(cancel)cancel.disabled=!result||complete||fopInstallBusy;
@@ -431,12 +433,13 @@ window.addEventListener('nodiv-fop-install-order',async()=>{
  const node=operation.nodeId;
  fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
-  const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node,...(operation.withdrawal?{withdrawal:operation.withdrawal}:{})});
+  let evacuationParams={};if(operation.evacuation){if(hint)hint.textContent='ZUGEWIESENEN NODE NFC SCANNEN // '+node;evacuationParams={evacuation:operation.evacuation,uid:await scanEvacuationUid()};}
+  const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node,...evacuationParams,...(operation.withdrawal?{withdrawal:operation.withdrawal}:{})});
   if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
   fopInstallation=r;
   if(panel)panel.hidden=false;
   if(value)value.textContent=r.node.code;
-  if(hint)hint.textContent=node+' // '+r.instruction;
+  if(hint)hint.textContent=node+' // '+(r.cargoCarrier?'CARGO → '+r.cargoCarrier+' // ':'')+r.instruction;
  }catch(err){if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
  finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
 });
@@ -978,3 +981,40 @@ window.addEventListener('nodiv-preevacuation-start',async()=>{
  finally{preEvacuationBusy=false;}
 });
 setInterval(()=>{const button=document.querySelector('#startPreEvacuation');if(button?.dataset.eventId)refreshPreEvacuation();},10000);
+
+// Minimal EVAC-1 test controls. Durable server team/cargo state is the authority.
+let evacuationBusy=false,evacuationEventId='';
+function renderEvacuation(result){
+ const status=document.querySelector('#evacuationStatus'),details=document.querySelector('#evacuationDetails');if(!status||!details)return;
+ if(result.eventId)evacuationEventId=result.eventId;
+ const team=result.evacuation;status.textContent=team?.status||result.status;
+ details.textContent=team?team.nodes.map((node,i)=>'NODE '+(i+1)+' // '+node.nodeId+' // '+node.status+' // CARGO → '+node.carrier).concat(team.cargo.map(cargo=>cargo.carrier+' // 3 EVACUATION / IN TRANSIT CORES // '+cargo.cores.map(core=>core.energy+' E').join(' + '))).join(' | '):result.teams?.length?result.teams.map(team=>team.teamId+' // '+team.status).join(' | '):result.status==='EVACUATION_IN_PROGRESS'?'FOP bildet physisch ein Team mit genau zwei Pioneers.':'Founder-Start erst nach EVACUATION_READY.';
+ const start=document.querySelector('#evacuationStart'),form=document.querySelector('#evacuationTeam');if(start){start.disabled=evacuationBusy||result.evacuationReady!==true;start.hidden=result.status==='EVACUATION_IN_PROGRESS';}if(form){form.disabled=evacuationBusy||result.status!=='EVACUATION_IN_PROGRESS'||Boolean(team);form.hidden=Boolean(team);}
+}
+async function refreshEvacuation(){
+ if(!sessionToken||!document.querySelector('#evacuationPanel')||evacuationBusy)return;
+ try{const r=await apiRequest({action:'evacuationstate',token:sessionToken});if(!r?.ok||!r?.session)throw Error(r?.error||r?.status||'EVACUATION STATE FAILED');renderEvacuation(r);}
+ catch(error){const status=document.querySelector('#evacuationStatus');if(status)status.textContent=String(error.message||error);}
+}
+function scanEvacuationUid(){
+ return new Promise(async(resolve,reject)=>{
+  const controller=new AbortController();let settled=false;const finish=(error,uid)=>{if(settled)return;settled=true;clearTimeout(timer);controller.abort();error?reject(error):resolve(uid);};
+  const timer=setTimeout(()=>finish(Error('NFC SCAN TIMEOUT // erneut versuchen')),60000);
+  try{const reader=new NDEFReader();await reader.scan({signal:controller.signal});reader.onreading=e=>{const uid=String(e.serialNumber||'').trim();if(uid)finish(null,uid);};reader.onreadingerror=()=>finish(Error('NFC READ FAILED'));}catch(error){finish(error);}
+ });
+}
+window.addEventListener('nodiv-evacuation-refresh',refreshEvacuation);
+window.addEventListener('nodiv-evacuation-start',async()=>{
+ if(evacuationBusy||!evacuationEventId)return;evacuationBusy=true;
+ const button=document.querySelector('#evacuationStart');if(button)button.disabled=true;
+ try{const r=await apiRequest({action:'evacuationstart',token:sessionToken,event:evacuationEventId});if(!r?.ok||r.action!==true)throw Error(r?.error||r?.status||'EVACUATION START FAILED');renderEvacuation(r);}
+ catch(error){document.querySelector('#evacuationStatus').textContent=String(error.message||error);}
+ finally{evacuationBusy=false;await refreshEvacuation();}
+});
+window.addEventListener('nodiv-evacuation-team',async()=>{
+ if(evacuationBusy)return;const button=document.querySelector('#evacuationTeam'),status=document.querySelector('#evacuationStatus');if(!button||button.disabled)return;evacuationBusy=true;button.disabled=true;
+ try{status.textContent='PIONEER A ACCESS CARD SCANNEN';const pioneerAUid=await scanEvacuationUid();status.textContent='PIONEER B ACCESS CARD SCANNEN';const pioneerBUid=await scanEvacuationUid();status.textContent='TEAM SERVER VALIDATION';const r=await apiRequest({action:'evacuationteam',token:sessionToken,event:evacuationEventId,pioneerAUid,pioneerBUid});if(!r?.ok||r.action!==true)throw Error(r?.error||r?.status||'TEAM FAILED');renderEvacuation({status:'EVACUATION_IN_PROGRESS',...r});await refreshFopOperations();}
+ catch(error){status.textContent=String(error.message||error);}
+ finally{evacuationBusy=false;if(!button.hidden)button.disabled=false;}
+});
+setInterval(()=>{if(document.querySelector('#evacuationPanel'))refreshEvacuation();},10000);

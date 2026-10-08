@@ -339,6 +339,8 @@ function doGet(e) {
 
       result = getHqLiveOperations(e);
 
+    } else if (['evacuationstart','evacuationteam','evacuationstate'].includes(action)) {
+      result = evacuationAction(e,action);
     } else if (['preevacuationstart','preevacuationstate'].includes(action)) {
       result = preEvacuationWithdrawal(e,action==='preevacuationstart');
     } else if (action === 'eventstatus') {
@@ -2708,6 +2710,8 @@ function getGameplayRoute(e) {
     if(restore)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},restore.action?'RESTORE_MISSION':'NO_ACTION',restore.action,restore.status,restore.message||'RESTORE #1 // Ziel-Node erkannt.',restore.action?{restoreMission:restore}:null);
     const recovery=player.role==='PIONEER'?recoverNormalExchange(e,hit.id):null;
     if(recovery)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},'EXCHANGE_RESUME',true,'EXCHANGE_RESUMED','Autorisierter Exchange wiederhergestellt.',{exchangeResume:recovery});
+    const evacuation=evacuationPlayerState(player);
+    if(evacuation)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},'NO_ACTION',false,'EVACUATION_TEAM_BOUND','EVACUATION // Teamauftrag verwenden.',{evacuation});
     const cargo=findActiveDeploymentForCarrier(player.identity,player.role);
     if(cargo){
       const isTarget=cargo.targetNode===String(hit.id||'').trim().toUpperCase();
@@ -2761,6 +2765,7 @@ function resolvePlayerSession(tokenValue) {
 function routeCoreGameplay(player,core) {
   const object={found:true,type:'N_CORE',id:core.coreId,status:core.status||'UNDEFINED',energy:core.actualEnergy===''?core.visibleEnergy:core.actualEnergy,ownerType:core.ownerType||'',ownerId:core.ownerId||''};
 
+  if(evacuationCoreReserved(core.coreId))return gameplayDecision(player,object,'NO_ACTION',false,'EVACUATION_CARGO_PROTECTED','EVACUATION / IN TRANSIT Cargo ist ausschließlich der Evakuierung zugeordnet.');
   if(core.status==='IN_TRANSIT'&&liveRestores().some(order=>order.cargo.coreId===core.coreId))return gameplayDecision(player,object,'NO_ACTION',false,'RESTORE_CARGO_PROTECTED','RESTORE Mission Cargo ist nur im zugewiesenen Restore-Auftrag nutzbar.');
   if(!core.ownerType||!core.ownerId) return gameplayDecision(player,object,'NO_ACTION',false,'OWNERSHIP_UNDEFINED','N-Core erkannt. Ownership ist nicht vollständig definiert.');
 
@@ -2879,6 +2884,7 @@ function getPlayerState(e) {
   return {
     ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
+    evacuation:evacuationPlayerState(player),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
     cores:cores.slice(0, Math.max(0, Number(player.coreCapacity || 0)))
@@ -3181,7 +3187,7 @@ function getPendingPlayerDeployments(e) {
     const carrierId = String(row[2] || '').trim().toUpperCase();
     const carrierRole = String(row[3] || '').trim().toUpperCase();
     const status = String(row[6] || '').trim().toUpperCase();
-    if (isFopNodeDeployment(row)||isRestorePurpose(row[5])||row[5]==='RESUPPLY') return;
+    if (isFopNodeDeployment(row)||isRestorePurpose(row[5])||['RESUPPLY','EVACUATION'].includes(row[5])) return;
     if (carrierId !== player.identity || carrierRole !== player.role || !['ASSIGNED','IN_TRANSIT'].includes(status)) return;
     const core = readCoreState(String(row[1] || '').trim().toUpperCase());
     deployments.push({
@@ -3210,7 +3216,7 @@ function acceptCoreDeployment(e) {
     const player = session.player;
     const deployment = findDeploymentById(e.parameter.deployment || '');
     if (!deployment) return gameplayActionDenied(player, 'DEPLOYMENT_NOT_FOUND', 'Deployment-Auftrag wurde nicht gefunden.');
-    if (['NODE_INSTALLATION','NODE_DEINSTALLATION','RESTORE_1','RESTORE_2'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
+    if (['NODE_INSTALLATION','NODE_DEINSTALLATION','RESTORE_1','RESTORE_2','EVACUATION'].includes(deployment.purpose)) return gameplayActionDenied(player,'INSTALL_WORKFLOW_REQUIRED','Installations-Cores müssen über FIELD INSTALLATION bestätigt werden.');
     if (deployment.status !== 'ASSIGNED') return gameplayActionDenied(player, 'DEPLOYMENT_NOT_ASSIGNABLE', 'Deployment-Auftrag kann nicht übernommen werden.');
     if (deployment.carrierId !== player.identity || deployment.carrierRole !== player.role) {
       return gameplayActionDenied(player, 'CARRIER_MISMATCH', 'Dieser Deployment-Auftrag ist einer anderen Identität zugewiesen.');
@@ -3294,6 +3300,7 @@ function deliverCoreDeployment(e) {
     if(!deployment)
       return gameplayActionDenied(player,'NO_MISSION_CARGO','Kein aktives Mission Cargo für diese Identität.');
 
+    if(deployment.purpose==='EVACUATION')return gameplayActionDenied(player,'EVACUATION_CARGO_PROTECTED','Evakuierungscargo bleibt geschützt in Transit.');
     if(deployment.purpose==='RESUPPLY')return gameplayActionDenied(player,'RESUPPLY_WORKFLOW_REQUIRED','RE-SUPPLY benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(isRestorePurpose(deployment.purpose))return gameplayActionDenied(player,'RESTORE_WORKFLOW_REQUIRED','RESTORE benötigt den dedizierten Scan-/Confirm-Ablauf.');
     if(deployment.targetNode!==nodeId)
@@ -3815,6 +3822,7 @@ function expandEventNode(e){
   lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const actor=session.player;if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Event-Nodes hinzufügen.');
   const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('EVENT_NOT_FIELD_ACTIVE');
+  if(evacuationStarted(event.eventId))throw new Error('EVACUATION_IN_PROGRESS');
   if(String(e.parameter.event||'')!==event.eventId)throw new Error('EVENT_MISMATCH');
   const nodeId=String(e.parameter.node||'').trim().toUpperCase();
   if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
@@ -4093,14 +4101,15 @@ function getNodeOperationOrder(e,operation) {
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
+    const evacuation=evacuationOperationContext(actor,nodeId,operation,e.parameter.evacuation,e.parameter.uid||'');
     const withdrawal=readPreEvacuationRecord(context.event.eventId);
     if(e.parameter.withdrawal)assertPreEvacuationTarget(withdrawal,String(e.parameter.withdrawal),nodeId,operation);
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
-    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&operation==='INSTALL'&&nodeOperationType(order)==='INSTALL'&&
+    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&((operation==='INSTALL'&&nodeOperationType(order)==='INSTALL')||(evacuation&&operation==='DEINSTALL'&&order.evacuationTeam===evacuation.team.id&&nodeOperationType(order)==='DEINSTALL'))&&
       order.eventId===context.event.eventId&&order.eventState===context.event.state&&Array.isArray(order.loadout)&&order.loadout.length===3&&
-      Array.isArray(order.cores)&&order.cores.length>0&&order.cores.length<=3&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt)
+      Array.isArray(order.cores)&&(evacuation||order.cores.length>0)&&order.cores.length<=3&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt)
       .sort((a,b)=>(Number(b.expiresAt)||0)-(Number(a.expiresAt)||0))[0];
     if(recoverable){
       if(recoverable.legacy!==context.legacy||new Set(recoverable.loadout.map(core=>core.id)).size!==3||
@@ -4128,9 +4137,9 @@ function getNodeOperationOrder(e,operation) {
       const total=loadout.reduce((sum,core)=>sum+core.energy,0);
       if(total<450||total>=600)throw new Error('RESTORE_TEST_LOADOUT_NOT_DEGRADED');
     }
-    if(operation==='DEINSTALL'&&loadout.some(core=>hasOpenDeploymentForCore(core.id)))throw new Error('CORE_ALREADY_ASSIGNED');
+    if(operation==='DEINSTALL'&&loadout.some(core=>hasOpenDeploymentForCore(core.id,undefined,evacuation?evacuationOtherDeployments(evacuation.team.id,nodeId):undefined)))throw new Error('CORE_ALREADY_ASSIGNED');
     const order={id:Utilities.getUuid(),nodeId,eventId:context.event.eventId,eventState:context.event.state,
-      identity:actor.identity,sessionToken:token,operation,...(operation==='DEINSTALL'&&withdrawal?.targets.includes(nodeId)?{withdrawalId:withdrawal.id}:{}),legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
+      identity:actor.identity,sessionToken:token,operation,...(evacuation?{evacuationTeam:evacuation.team.id}:{}),...(operation==='DEINSTALL'&&withdrawal?.targets.includes(nodeId)?{withdrawalId:withdrawal.id}:{}),legacy:context.legacy,loadout,cores:[],expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000};
     const props=PropertiesService.getScriptProperties(),sheet=getDeploymentRegisterSheet(),now=new Date();
     const requests=[{appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,loadout.map(core=>[
       installationDeploymentId(order.id,core.id),core.id,actor.identity,actor.role,nodeId,nodeOperationPurpose(operation),'ASSIGNED',now,'','',''
@@ -4159,6 +4168,7 @@ function readNodeInstallation(e,actor,operation='INSTALL') {
   if(!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt)throw new Error('INSTALL_SESSION_EXPIRED');
   const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,order.nodeId):validateNodeInstallation(actor,order.nodeId);
   if(order.eventId!==context.event.eventId||order.eventState!==context.event.state||order.legacy!==context.legacy)throw new Error('INSTALL_EVENT_STATE_CHANGED');
+  evacuationOperationContext(actor,order.nodeId,operation,order.evacuationTeam);
   if(order.withdrawalId)assertPreEvacuationTarget(readPreEvacuationRecord(context.event.eventId),order.withdrawalId,order.nodeId,operation);
   if(!Array.isArray(order.loadout)||order.loadout.length!==3||new Set(order.loadout.map(core=>core.id)).size!==3)throw new Error('INSTALL_LOADOUT_INVALID');
   return {key,order,context};
@@ -4167,7 +4177,7 @@ function readNodeInstallation(e,actor,operation='INSTALL') {
 function validateInstallationCore(core,uid,order) {
   const removal=nodeOperationType(order)==='DEINSTALL';
   if(!uid||core.uid!==uid||core.ownerType!==(removal?'NODE':'NODIV_RESERVE')||core.ownerId!==(removal?order.nodeId:'HQ')||(!removal&&core.status!=='RESERVE'))throw new Error((removal?'CORE_NOT_AT_NODE':'CORE_NOT_RESERVE')+' // '+core.coreId);
-  if(hasOpenDeploymentForCore(core.coreId,order.id))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
+  if(hasOpenDeploymentForCore(core.coreId,order.id,order.evacuationTeam?evacuationOtherDeployments(order.evacuationTeam,order.nodeId):undefined))throw new Error('CORE_ALREADY_ASSIGNED // '+core.coreId);
   const assigned=order.loadout.find(item=>item.id===core.coreId&&item.uid===uid&&item.energy===core.visibleEnergy);
   if(!assigned)throw new Error('CORE NOT ASSIGNED TO '+order.nodeId);
   const deployment=findDeploymentById(installationDeploymentId(order.id,core.coreId));
@@ -4181,7 +4191,8 @@ function nodeInstallationResponse(order,context,status) {
     installation:order.id,expiresAt:new Date(order.expiresAt).toISOString(),legacy:order.legacy,
     operation:nodeOperationType(order),node:{id:order.nodeId,code:context.eventNode.codes[nodeOperationType(order)==='DEINSTALL'?({PRIMARY:0,'RESERVE 1':1,'RESERVE 2':2,'RESERVE 3':3,'RESERVE 4':4})[context.eventNode.activeSlot]:0],slot:nodeOperationType(order)==='DEINSTALL'?context.eventNode.activeSlot:'PRIMARY'},loadout,totalEnergy,nodeState:nodeEnergyState(totalEnergy),
     cores:loadout.filter(core=>core.scanned),count:order.cores.length,canConfirm:order.cores.length===3,
-    instruction:nodeOperationType(order)==='DEINSTALL'?'Node öffnen, exakt die drei Removal-Cores scannen und physisch entfernen. Erst danach Recovery bestätigen.':(order.legacy?'LEGACY: mechanisch bestätigt, aber leer. ':'')+'PRIMARY am Schloss einstellen, danach nur die drei zugewiesenen Cores scannen.'};
+    ...(order.evacuationTeam?{evacuationTeam:order.evacuationTeam,cargoCarrier:evacuationNodeAssignment(order.evacuationTeam,order.nodeId).carrier.identity}:{}),
+    instruction:order.evacuationTeam?'EVACUATION // Exakt 3 Node-Cores an den zugewiesenen Pioneer als geschütztes Cargo übergeben, Node physisch zurückbauen und bestätigen.':nodeOperationType(order)==='DEINSTALL'?'Node öffnen, exakt die drei Removal-Cores scannen und physisch entfernen. Erst danach Recovery bestätigen.':(order.legacy?'LEGACY: mechanisch bestätigt, aber leer. ':'')+'PRIMARY am Schloss einstellen, danach nur die drei zugewiesenen Cores scannen.'};
 }
 
 function scanNodeInstallationCore(e) {return scanNodeOperationCore(e,'INSTALL');}
@@ -4195,6 +4206,7 @@ function scanNodeOperationCore(e,operation) {
     const {key,order,context}=readNodeInstallation(e,session.player,operation);
     const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
     if(!hit.found||hit.type!=='N_CORE'||!hit.id)throw new Error('CORE_NOT_FOUND');
+    if(order.evacuationTeam&&order.cores.some(core=>core.id===hit.id&&core.uid===uid)){validateInstallationCore(readCoreState(hit.id),uid,order);return nodeInstallationResponse(order,context,'REMOVAL_CORE_SCANNED');}
     if(order.cores.some(core=>core.id===hit.id||core.uid===uid))throw new Error('DUPLICATE_CORE_SCAN');
     if(!order.loadout.some(core=>core.id===hit.id&&core.uid===uid))throw new Error('CORE NOT ASSIGNED TO '+order.nodeId);
     if(order.cores.length>=3)throw new Error('INSTALL_CORE_LIMIT');
@@ -4300,6 +4312,8 @@ function getFopOperations(e) {
     if(!session.ok)return session.response;
     const actor=session.player;
     if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOP/FOUNDER können Operations abrufen.');
+    const evac=evacuationPlayerState(actor);if(evac)return evacuationFopOperations(actor,evac);
+    const current=readCurrentEvent();if(current&&evacuationStarted(current.eventId))return {ok:true,session:true,eventId:current.eventId,operations:[],status:'NO OPERATIONS AVAILABLE'};
     const event=readCurrentEvent(),operations=[],withdrawal=event?readPreEvacuationRecord(event.eventId):null;
     const withdrawalPending=withdrawal&&!readPreEvacuationCompletion(withdrawal);
     if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state)){
@@ -4329,15 +4343,18 @@ function confirmNodeDeinstallation(e) {
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
-    const actor=session.player,{key,order,context}=readNodeInstallation(e,actor,'DEINSTALL');
+    const actor=session.player,replay=evacuationRecoveryReplay(e,actor);if(replay)return replay;
+    const {key,order,context}=readNodeInstallation(e,actor,'DEINSTALL');
+    const evacuation=order.evacuationTeam?evacuationOperationContext(actor,order.nodeId,'DEINSTALL',order.evacuationTeam):null;
     if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('REMOVAL_REQUIRES_EXACTLY_3_CORES');
     // Validate current Node inventory and every reserved scanned Core before any write.
     order.cores.forEach(item=>validateInstallationCore(readCoreState(item.id),item.uid,order));
     const requests=[],now=new Date(),nodeId=order.nodeId;
     order.cores.forEach(item=>{
       const result=transferCoreOwnership({coreId:item.id,expectedFromType:'NODE',expectedFromId:nodeId,
-        toType:'NODIV_RESERVE',toId:'HQ',eventType:'NODE_RECOVERY_CORE',actorId:actor.identity,actorRole:actor.role,
-        nodeId,newStatus:'RESERVE',details:order.eventId+' // '+order.id+' // Alpha technical recovery',batchRequests:requests,installationId:order.id});
+        toType:'NODIV_RESERVE',toId:'HQ',eventType:evacuation?'EVACUATION_CORE_IN_TRANSIT':'NODE_RECOVERY_CORE',actorId:actor.identity,actorRole:actor.role,
+        nodeId,newStatus:evacuation?'IN_TRANSIT':'RESERVE',details:order.eventId+' // '+order.id+' // '+(evacuation?evacuation.team.id+' // carrier '+evacuation.assignment.carrier.identity:'Alpha technical recovery'),batchRequests:requests,installationId:order.id,evacuationTeam:order.evacuationTeam});
+      if(evacuation){const cargo=findDeploymentById(evacuationDeploymentId(evacuation.team.id,nodeId,item.id));requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),cargo.row,7,[['IN_TRANSIT',cargo.createdAt,now,'',result.transactionId]]));}
       const dep=findDeploymentById(installationDeploymentId(order.id,item.id));
       requests.push(sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['DELIVERED',dep.createdAt,dep.acceptedAt||'',now,result.transactionId]]));
     });
@@ -4350,12 +4367,13 @@ function confirmNodeDeinstallation(e) {
     requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,8,[[Math.max(0,context.event.activeNodes-1)]]));
     requests.push(sheetCellsRequest(getEventRegisterSheet(),context.event.row,10,[[now]]));
     appendTransactionLog({eventType:'NODE_DEINSTALLED',actorId:actor.identity,actorRole:actor.role,nodeId,result:'SUCCESS',
-      details:order.eventId+' // '+order.id+' // 3/3 CORES RETURNED // '+order.cores.map(core=>core.id).join(',')},requests);
-    stagePreEvacuationCompletion(context.event,requests,actor,order.id);
+      details:order.eventId+' // '+order.id+' // '+(evacuation?'3/3 EVACUATION CARGO':'3/3 CORES RETURNED')+' // '+order.cores.map(core=>core.id).join(',')},requests);
+    if(evacuation)stageEvacuationNodeRecovery(evacuation,order,actor,requests);
+    else stagePreEvacuationCompletion(context.event,requests,actor,order.id);
     SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     PropertiesService.getScriptProperties().deleteProperty(NODE_INSTALL_ORDER_PREFIX+order.id);
     CacheService.getScriptCache().remove(key);
-    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_DEINSTALLED',operation:'DEINSTALL',eventId:order.eventId,count:3,
+    return {ok:true,authenticated:true,session:true,action:true,status:'NODE_DEINSTALLED',operation:'DEINSTALL',eventId:order.eventId,count:3,...(evacuation?{evacuation:evacuationPlayerState(actor)}:{}),
       totalEnergy:order.loadout.reduce((sum,core)=>sum+core.energy,0),node:{id:nodeId,status:'AVAILABLE',activeSlot:''},message:'RECOVERY COMPLETE // '+nodeId+' // 3/3 CORES RETURNED'};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
@@ -4381,6 +4399,7 @@ function shutdownFieldEvent(e) {
     cores.forEach(row=>{if(String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='NODE'){const id=String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()||'UNKNOWN NODE';owned[id]=(owned[id]||0)+1;}});
     Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
     readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
+    if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS // Story closure is outside EVAC-1');
     if(blockers.length)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
     const eventSheet=getEventRegisterSheet(),header=String(eventSheet.getRange(1,11).getDisplayValue()||'');
     if(header&&header!=='COMPLETED AT')throw new Error('EVENT_COMPLETION_COLUMN_CONFLICT');
@@ -4429,6 +4448,7 @@ function getNodeAccessAuthorization(player,nodeId,nodeStatus,restoreId,resupplyI
   const event=readCurrentEvent();
   if(!event||event.state!=='FIELD_ACTIVE')return {allowed:false,reason:'EVENT_NOT_FIELD_ACTIVE',message:'Node erkannt. Field Operations sind noch nicht aktiv.'};
 
+  if(evacuationAssignedNode(id))return {allowed:false,reason:'EVACUATION_NODE_RESERVED',message:'Node ist dem Evakuierungsteam zugeordnet.'};
   const eventNode=findEventNodeCode(event.eventId,id);
   if(liveReSupplies().some(order=>order.nodeId===id&&order.id!==resupplyId))return {allowed:false,reason:'RESUPPLY_OPERATION_RESERVED',message:'Node für RE-SUPPLY reserviert.'};
   const restoreLock=restoreNodeLock(player,id);if(restoreLock)return restoreLock;
@@ -5574,6 +5594,7 @@ function transferCoreOwnership(data) {
   assertExchangeUnreserved(toType==='NODE'?toId:'',toType==='PIONEER'?toId:'',coreId,data.exchangeId);
   assertRestoreUnreserved(fromType==='NODE'?fromId:toType==='NODE'?toId:'','',coreId);
   if(toType==='NODE')assertRestoreUnreserved(toId,'',coreId);
+  assertEvacuationTransfer(data,coreId,fromType,fromId,toType,toId,depRows);
   const installOrders=readInstallationOrders().filter(installationOrderIsLive);
   if(installOrders.some(order=>order.id!==data.installationId&&((fromType==='NODE'&&order.nodeId===fromId)||(toType==='NODE'&&order.nodeId===toId))))throw new Error('NODE_OPERATION_RESERVED');
   if(depRows.some(row=>String(row[1]).trim().toUpperCase()===coreId&&installationReservationIsLive(row,installOrders)&&String(row[0])!==installationDeploymentId(data.installationId,coreId)))throw new Error('CORE_RESERVED_FOR_NODE_INSTALLATION');
@@ -7647,5 +7668,124 @@ function preEvacuationWithdrawal(e,start){
   if(assessment.blockers.length)throw new Error('PRE_EVACUATION_BLOCKED // '+assessment.blockers.join(' // '));
   const requests=[];appendTransactionLog({eventType:'PRE_EVACUATION_WITHDRAWAL_STARTED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify(record)},requests);
   stagePreEvacuationCompletion(event,requests,actor,undefined,record);Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {...preEvacuationResponse(event,record),action:true,replayed:false};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* EVAC-1: durable Event/Team receipts, existing Deployment reservations and FOP
+ * deinstallation. Cargo retains HQ ownership, exactly like other mission cargo;
+ * carrier binding is exclusively in the Deployment Register, never FIELD slots. */
+function evacuationRecords(type,eventId){
+ return exchangeLogRows().filter(row=>row[2]===type&&row[14]==='SUCCESS').map(row=>JSON.parse(row[15])).filter(record=>record.eventId===eventId);
+}
+function evacuationStarted(eventId){return evacuationRecords('EVACUATION_STARTED',eventId)[0]||null;}
+function evacuationTeams(eventId){return evacuationRecords('EVACUATION_TEAM_FORMED',eventId);}
+function evacuationTeam(id){const event=readCurrentEvent();return event?evacuationTeams(event.eventId).find(team=>team.id===id)||null:null;}
+function evacuationDeploymentId(teamId,nodeId,coreId){return teamId+'-'+nodeId+'-'+coreId;}
+function evacuationDeploymentRows(){const sheet=getDeploymentRegisterSheet();return sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];}
+function evacuationCoreReserved(coreId){const event=readCurrentEvent();return Boolean(event&&evacuationTeams(event.eventId).some(team=>team.nodes.some(node=>node.cores.some(core=>core.id===coreId))));}
+function evacuationAssignedNode(nodeId){const event=readCurrentEvent();return event?evacuationTeams(event.eventId).some(team=>team.nodes.some(node=>node.nodeId===nodeId)):false;}
+function evacuationOtherDeployments(teamId,nodeId){return evacuationDeploymentRows().filter(row=>!(row[5]==='EVACUATION'&&row[4]===nodeId&&row[0]===evacuationDeploymentId(teamId,nodeId,row[1])));}
+function evacuationNodeAssignment(teamId,nodeId){const team=evacuationTeam(teamId),assignment=team?.nodes.find(node=>node.nodeId===nodeId);if(!assignment)throw Error('EVACUATION_NODE_NOT_ASSIGNED');return assignment;}
+function evacuationRecoveries(team){return evacuationRecords('EVACUATION_NODE_RECOVERED',team.eventId).filter(record=>record.teamId===team.id);}
+function assertEvacuationMembers(team){
+ for(const member of [team.fop,...team.pioneers]){const current=findIdentityById(member.identity);if(!current||current.cardId!==member.cardId||current.role!==member.role||current.status!=='ACTIVE'||current.uid!==member.uid)throw Error('EVACUATION_MEMBER_INVALID');}
+}
+function assertEvacuationCargo(team,receipt){
+ const assignment=evacuationNodeAssignment(team.id,receipt.nodeId);
+ if(receipt.carrier!==assignment.carrier.identity||receipt.coreIds.length!==3||JSON.stringify(receipt.coreIds.slice().sort())!==JSON.stringify(assignment.cores.map(core=>core.id).sort()))throw Error('EVACUATION_RECEIPT_INVALID');
+ for(const item of assignment.cores){const core=readCoreState(item.id),dep=findDeploymentById(evacuationDeploymentId(team.id,assignment.nodeId,item.id));
+  if(core.uid!==item.uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='IN_TRANSIT'||!dep||dep.purpose!=='EVACUATION'||dep.status!=='IN_TRANSIT'||dep.carrierId!==assignment.carrier.identity||dep.carrierRole!=='PIONEER'||dep.coreId!==item.id||dep.targetNode!==assignment.nodeId||dep.transactionId!==core.lastTransaction)throw Error('EVACUATION_CARGO_INVALID');
+ }
+ if(countCoresOwnedBy('NODE',assignment.nodeId)!==0||getNodeGameplayStatus(assignment.nodeId)!=='AVAILABLE')throw Error('EVACUATION_NODE_NOT_RECOVERED');
+ const code=findEventNodeCode(team.eventId,assignment.nodeId);if(!code||code.changeStatus!=='DEINSTALLED'||code.activeSlot||code.pendingSlot)throw Error('EVACUATION_NODE_NOT_RECOVERED');
+}
+function evacuationTeamState(team){
+ const recovered=evacuationRecoveries(team);if(new Set(recovered.map(r=>r.nodeId)).size!==recovered.length||recovered.length>2)throw Error('EVACUATION_RECEIPT_INVALID');
+ recovered.forEach(receipt=>assertEvacuationCargo(team,receipt));
+ if(recovered.some((receipt,i)=>receipt.nodeId!==team.nodes[i].nodeId))throw Error('EVACUATION_SEQUENCE_INVALID');
+ const complete=evacuationRecords('EVACUATION_TEAM_COMPLETE',team.eventId).some(receipt=>receipt.teamId===team.id);
+ if(complete!==(recovered.length===2))throw Error('EVACUATION_TEAM_RECEIPT_INVALID');
+ return {teamId:team.id,eventId:team.eventId,status:complete?'EVACUATION_TEAM_COMPLETE':'EVACUATION_TEAM_ACTIVE',fop:team.fop.identity,pioneers:team.pioneers.map(p=>p.identity),
+  nodes:team.nodes.map((node,i)=>({nodeId:node.nodeId,carrier:node.carrier.identity,status:i<recovered.length?'EVACUATED':i===recovered.length?'NEXT':'WAITING'})),nextNode:team.nodes[recovered.length]?.nodeId||'',
+  cargo:recovered.map(receipt=>({carrier:receipt.carrier,nodeId:receipt.nodeId,status:'IN_TRANSIT',purpose:'EVACUATION',cores:team.nodes.find(node=>node.nodeId===receipt.nodeId).cores.map(core=>({id:core.id,energy:core.energy}))}))};
+}
+function evacuationPlayerState(player){
+ const event=readCurrentEvent();if(!event)return null;
+ const team=evacuationTeams(event.eventId).find(team=>[team.fop,...team.pioneers].some(member=>member.identity===player.identity&&member.cardId===player.cardId));if(!team)return null;
+ const state=evacuationTeamState(team);if(player.role==='PIONEER')state.cargo=state.cargo.filter(cargo=>cargo.carrier===player.identity);return state;
+}
+function evacuationOperationContext(actor,nodeId,operation,teamId,nodeUid){
+ const event=readCurrentEvent(),assigned=event?evacuationTeams(event.eventId).find(team=>team.nodes.some(node=>node.nodeId===nodeId)):null;
+ if(!assigned){if(teamId)throw Error('EVACUATION_NODE_NOT_ASSIGNED');if(event&&evacuationStarted(event.eventId)?.startNodes.includes(nodeId))throw Error('EVACUATION_TEAM_REQUIRED');return null;}
+ if(!teamId||teamId!==assigned.id||operation!=='DEINSTALL'||actor.role!=='FOP'||actor.identity!==assigned.fop.identity||actor.cardId!==assigned.fop.cardId)throw Error('EVACUATION_TEAM_MISMATCH');
+ if(!event||event.state!=='FIELD_ACTIVE'||!evacuationStarted(event.eventId))throw Error('EVACUATION_EVENT_INVALID');
+ assertEvacuationMembers(assigned);const state=evacuationTeamState(assigned);if(state.nextNode!==nodeId)throw Error('EVACUATION_NODE_NOT_NEXT');
+ const assignment=assigned.nodes.find(node=>node.nodeId===nodeId),eventNode=findEventNodeCode(event.eventId,nodeId);
+ if(exchangeNodeFingerprint(nodeId,eventNode)!==assignment.fingerprint)throw Error('EVACUATION_NODE_CHANGED');
+ if(nodeUid!==undefined){const hit=lookupUidGlobally(normalizeUid(nodeUid));if(!hit.found||hit.type!=='NODE'||hit.id!==nodeId)throw Error('EVACUATION_NODE_NFC_REQUIRED');}
+ const cores=getNodeRemovalLoadout(nodeId);if(cores.length!==3||cores.some(core=>!assignment.cores.some(item=>item.id===core.id&&item.uid===core.uid&&item.energy===core.energy&&item.lastTransaction===readCoreState(core.id).lastTransaction)))throw Error('EVACUATION_NODE_SNAPSHOT_CHANGED');
+ for(const item of assignment.cores){const core=readCoreState(item.id),dep=findDeploymentById(evacuationDeploymentId(assigned.id,nodeId,item.id));if(core.status!=='DEPLOYED'||!dep||dep.status!=='ASSIGNED'||dep.purpose!=='EVACUATION'||dep.coreId!==item.id||dep.targetNode!==nodeId||dep.carrierId!==assignment.carrier.identity||dep.carrierRole!=='PIONEER')throw Error('EVACUATION_RESERVATION_INVALID');}
+ return {team:assigned,assignment,state};
+}
+function assertEvacuationTransfer(data,coreId,fromType,fromId,toType,toId,rows){
+ const reservations=rows.filter(row=>row[1]===coreId&&row[5]==='EVACUATION'&&['ASSIGNED','IN_TRANSIT'].includes(row[6]));if(!reservations.length){if(evacuationCoreReserved(coreId))throw Error('EVACUATION_RESERVATION_INVALID');return;}
+ if(reservations.length!==1||reservations[0][6]!=='ASSIGNED'||!data.evacuationTeam||fromType!=='NODE'||toType!=='NODIV_RESERVE'||toId!=='HQ'||data.newStatus!=='IN_TRANSIT'||data.eventType!=='EVACUATION_CORE_IN_TRANSIT')throw Error('EVACUATION_CARGO_PROTECTED');
+ const team=evacuationTeam(data.evacuationTeam),actor=findIdentityById(data.actorId),assignment=team?.nodes.find(node=>node.nodeId===fromId),order=readInstallationOrders().find(order=>order.id===data.installationId),dep=reservations[0];
+ if(!team||!assignment||!actor||actor.status!=='ACTIVE'||actor.role!=='FOP'||team.fop.identity!==actor.identity||team.fop.cardId!==actor.cardId||!order||nodeOperationType(order)!=='DEINSTALL'||order.evacuationTeam!==team.id||order.identity!==actor.identity||order.nodeId!==fromId||!Array.isArray(order.cores)||order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||!assignment.cores.every(core=>order.cores.some(scan=>scan.id===core.id&&scan.uid===core.uid))||!installationOrderIsLive(order)||dep[0]!==evacuationDeploymentId(team.id,fromId,coreId)||dep[2]!==assignment.carrier.identity||dep[3]!=='PIONEER'||dep[4]!==fromId)throw Error('EVACUATION_RESERVATION_INVALID');
+}
+function stageEvacuationNodeRecovery(context,order,actor,requests){
+ const receipt={eventId:order.eventId,teamId:context.team.id,nodeId:order.nodeId,carrier:context.assignment.carrier.identity,installationId:order.id,coreIds:context.assignment.cores.map(core=>core.id),completedAt:Date.now()};
+ appendTransactionLog({eventType:'EVACUATION_NODE_RECOVERED',actorId:actor.identity,actorRole:'FOP',nodeId:order.nodeId,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+ if(context.state.nodes.filter(node=>node.status==='EVACUATED').length===1)appendTransactionLog({eventType:'EVACUATION_TEAM_COMPLETE',actorId:actor.identity,actorRole:'FOP',result:'SUCCESS',details:JSON.stringify({eventId:order.eventId,teamId:context.team.id,completedAt:receipt.completedAt})},requests);
+}
+function evacuationRecoveryReplay(e,actor){
+ const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')return null;
+ const receipt=evacuationRecords('EVACUATION_NODE_RECOVERED',event.eventId).find(receipt=>receipt.installationId===String(e.parameter.installation||''));if(!receipt)return null;
+ const team=evacuationTeam(receipt.teamId);if(!team||actor.role!=='FOP'||team.fop.identity!==actor.identity||team.fop.cardId!==actor.cardId||receipt.nodeId!==String(e.parameter.node||'').trim().toUpperCase())throw Error('EVACUATION_TEAM_MISMATCH');
+ assertEvacuationMembers(team);assertEvacuationCargo(team,receipt);
+ return {ok:true,session:true,authenticated:true,action:true,replayed:true,status:'NODE_DEINSTALLED',operation:'DEINSTALL',eventId:event.eventId,count:3,node:{id:receipt.nodeId,status:'AVAILABLE'},evacuation:evacuationPlayerState(actor)};
+}
+function evacuationFopOperations(actor,state){
+ if(actor.role!=='FOP'||!state.nextNode)return {ok:true,session:true,operations:[],eventId:state.eventId,status:'NO OPERATIONS AVAILABLE',evacuation:state};
+ // Team reservation survives sessions/order TTL; only its FOP and next Node appear.
+ return {ok:true,session:true,eventId:state.eventId,status:'OPERATIONS_AVAILABLE',evacuation:state,operations:[{id:'DEINSTALL:'+state.nextNode,type:'DEINSTALL',nodeId:state.nextNode,evacuation:state.teamId,label:'EVACUATION // DEINSTALL // '+state.nextNode}]};
+}
+function evacuationAction(e,action){
+ const lock=LockService.getScriptLock();try{
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;const actor=session.player,event=readCurrentEvent();
+  if(!event||event.state!=='FIELD_ACTIVE')throw Error('EVACUATION_FIELD_ACTIVE_REQUIRED');
+  if(e.parameter.event&&e.parameter.event!==event.eventId)throw Error('EVENT_MISMATCH');
+  const started=evacuationStarted(event.eventId);
+  if(action==='evacuationstate'){if(!['FOUNDER','FOP','PIONEER'].includes(actor.role))throw Error('ROLE_DENIED');return {ok:true,session:true,status:started?'EVACUATION_IN_PROGRESS':'EVACUATION_NOT_STARTED',eventId:event.eventId,evacuationReady:!started&&actor.role==='FOUNDER'&&Boolean(readPreEvacuationRecord(event.eventId)&&preEvacuationResponse(event,readPreEvacuationRecord(event.eventId)).evacuationReady),evacuation:evacuationPlayerState(actor),...(actor.role==='FOUNDER'?{teams:evacuationTeams(event.eventId).map(evacuationTeamState)}:{})};}
+  if(action==='evacuationstart'){
+   if(actor.role!=='FOUNDER')throw Error('FOUNDER_REQUIRED');if(e.parameter.event!==event.eventId)throw Error('EVENT_MISMATCH');
+   if(started)return {ok:true,session:true,action:true,status:'EVACUATION_IN_PROGRESS',eventId:event.eventId,replayed:true};
+   const record=readPreEvacuationRecord(event.eventId);if(!record||preEvacuationResponse(event,record).evacuationReady!==true)throw Error('EVACUATION_NOT_READY');
+   if(readInstallationOrders().some(order=>order.eventId===event.eventId&&installationOrderIsLive(order))||liveExchanges().length||liveRestores().length||liveReSupplies().length)throw Error('EVACUATION_OPERATION_CONFLICT');
+   const requests=[],receipt={eventId:event.eventId,startedAt:Date.now(),startNodes:record.startNodes};appendTransactionLog({eventType:'EVACUATION_STARTED',actorId:actor.identity,actorRole:'FOUNDER',result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,status:'EVACUATION_IN_PROGRESS',eventId:event.eventId,replayed:false};
+  }
+  if(actor.role!=='FOP')throw Error('FOP_REQUIRED');if(!started)throw Error('EVACUATION_NOT_STARTED');
+  const pioneers=[e.parameter.pioneerAUid,e.parameter.pioneerBUid].map(uid=>{const hit=lookupUidGlobally(normalizeUid(uid||''));if(!hit.found||hit.type!=='ACCESS_CARD')throw Error('EVACUATION_PIONEER_CARD_REQUIRED');const player=findIdentityById(hit.identity);if(!player||player.role!=='PIONEER'||player.status!=='ACTIVE')throw Error('EVACUATION_PIONEER_REQUIRED');return player;});
+  if(new Set([actor.identity,...pioneers.map(p=>p.identity)]).size!==3)throw Error('EVACUATION_TEAM_REQUIRES_TWO_PIONEERS');
+  const teams=evacuationTeams(event.eventId),own=teams.find(team=>team.fop.identity===actor.identity);
+  if(own){if(JSON.stringify(own.pioneers.map(p=>p.identity))!==JSON.stringify(pioneers.map(p=>p.identity)))throw Error('EVACUATION_MEMBER_ALREADY_ASSIGNED');assertEvacuationMembers(own);return {ok:true,session:true,action:true,replayed:true,evacuation:evacuationTeamState(own)};}
+  if(teams.some(team=>team.pioneers.some(member=>pioneers.some(p=>p.identity===member.identity))))throw Error('EVACUATION_MEMBER_ALREADY_ASSIGNED');
+  const deps=evacuationDeploymentRows();for(const player of [actor,...pioneers]){
+   assertExchangeUnreserved('',player.identity,'');assertRestoreUnreserved('',player.identity,'');
+   if(readInstallationOrders().some(order=>order.identity===player.identity&&installationOrderIsLive(order))||deps.some(row=>row[2]===player.identity&&['ASSIGNED','IN_TRANSIT'].includes(row[6])&&(!isFopNodeDeployment(row)||installationReservationIsLive(row))))throw Error('EVACUATION_MEMBER_RESERVED');
+  }
+  const used=new Set(teams.flatMap(team=>team.nodes.map(node=>node.nodeId))),available=[];
+  for(const nodeId of started.startNodes){if(used.has(nodeId))continue;
+   try{validateNodeDeinstallation(actor,nodeId);assertExchangeUnreserved(nodeId,'','');assertRestoreUnreserved(nodeId,'','');if(readInstallationOrders().some(order=>order.nodeId===nodeId&&installationOrderIsLive(order)))continue;
+    const cores=getNodeRemovalLoadout(nodeId);if(deps.some(row=>row[4]===nodeId&&['ASSIGNED','IN_TRANSIT'].includes(row[6])&&(!isFopNodeDeployment(row)||installationReservationIsLive(row)))||cores.some(core=>hasOpenDeploymentForCore(core.id)||readCoreState(core.id).status!=='DEPLOYED'))continue;
+    available.push({nodeId,fingerprint:exchangeNodeFingerprint(nodeId,findEventNodeCode(event.eventId,nodeId)),cores:cores.map(core=>({...core,lastTransaction:readCoreState(core.id).lastTransaction}))});
+   }catch(error){/* unavailable Nodes never get assigned */}
+  }
+  if(available.length<2)throw Error('EVACUATION_TWO_NODES_UNAVAILABLE');
+  const member=player=>({identity:player.identity,cardId:player.cardId,uid:player.uid,role:player.role}),team={id:'EVAC-'+Utilities.getUuid().toUpperCase(),eventId:event.eventId,fop:member(actor),pioneers:pioneers.map(member),createdAt:Date.now(),nodes:available.slice(0,2).map((node,i)=>({...node,carrier:member(pioneers[i])}))},requests=[],now=new Date(),sheet=getDeploymentRegisterSheet();
+  appendTransactionLog({eventType:'EVACUATION_TEAM_FORMED',actorId:actor.identity,actorRole:'FOP',result:'SUCCESS',details:JSON.stringify(team)},requests);
+  requests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,team.nodes.flatMap(node=>node.cores.map(core=>[evacuationDeploymentId(team.id,node.nodeId,core.id),core.id,node.carrier.identity,'PIONEER',node.nodeId,'EVACUATION','ASSIGNED',now,'','','']))).updateCells.rows,fields:'userEnteredValue'}});
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,replayed:false,evacuation:evacuationTeamState(team)};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
