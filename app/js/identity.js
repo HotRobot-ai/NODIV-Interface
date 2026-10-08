@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261008-evac-1';
+import {routeIdentity} from './router.js?v=20261008-evac-2';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -983,12 +983,13 @@ window.addEventListener('nodiv-preevacuation-start',async()=>{
 setInterval(()=>{const button=document.querySelector('#startPreEvacuation');if(button?.dataset.eventId)refreshPreEvacuation();},10000);
 
 // Minimal EVAC-1 test controls. Durable server team/cargo state is the authority.
-let evacuationBusy=false,evacuationEventId='';
+let evacuationBusy=false,evacuationEventId='',evacuationView=null;
 function renderEvacuation(result){
  const status=document.querySelector('#evacuationStatus'),details=document.querySelector('#evacuationDetails');if(!status||!details)return;
  if(result.eventId)evacuationEventId=result.eventId;
- const team=result.evacuation;status.textContent=team?.status||result.status;
- details.textContent=team?team.nodes.map((node,i)=>'NODE '+(i+1)+' // '+node.nodeId+' // '+node.status+' // CARGO → '+node.carrier).concat(team.cargo.map(cargo=>cargo.carrier+' // 3 EVACUATION / IN TRANSIT CORES // '+cargo.cores.map(core=>core.energy+' E').join(' + '))).join(' | '):result.teams?.length?result.teams.map(team=>team.teamId+' // '+team.status).join(' | '):result.status==='EVACUATION_IN_PROGRESS'?'FOP bildet physisch ein Team mit genau zwei Pioneers.':'Founder-Start erst nach EVACUATION_READY.';
+ const team=result.evacuation;evacuationView=team||null;status.textContent=team?(team.status+(team.command?' // '+team.command:'')):result.status;
+ details.textContent=team?team.nodes.map((node,i)=>'NODE '+(i+1)+' // '+node.nodeId+' // '+node.status+' // CARGO → '+node.carrier).concat(team.cargo.map(cargo=>cargo.carrier+' // 3 EVACUATION / '+(cargo.status||'IN_TRANSIT').replaceAll('_',' ')+' CORES // '+cargo.cores.map(core=>core.energy+' E').join(' + '))).concat((team.finalUploads||[]).map(player=>player.identity+' // FINAL UPLOAD '+(player.completed?'COMPLETE':'PENDING'))).join(' | '):result.teams?.length?result.teams.map(team=>team.teamId+' // '+team.status).join(' | '):result.status==='EVACUATION_IN_PROGRESS'?'FOP bildet physisch ein Team mit genau zwei Pioneers.':'Founder-Start erst nach EVACUATION_READY.';
+ renderEvacuationFinal(team);
  const start=document.querySelector('#evacuationStart'),form=document.querySelector('#evacuationTeam');if(start){start.disabled=evacuationBusy||result.evacuationReady!==true;start.hidden=result.status==='EVACUATION_IN_PROGRESS';}if(form){form.disabled=evacuationBusy||result.status!=='EVACUATION_IN_PROGRESS'||Boolean(team);form.hidden=Boolean(team);}
 }
 async function refreshEvacuation(){
@@ -1018,3 +1019,29 @@ window.addEventListener('nodiv-evacuation-team',async()=>{
  finally{evacuationBusy=false;if(!button.hidden)button.disabled=false;}
 });
 setInterval(()=>{if(document.querySelector('#evacuationPanel'))refreshEvacuation();},10000);
+
+// The server's durable scan receipt survives reload/session replacement.
+function renderEvacuationFinal(team){
+ const panel=document.querySelector('#evacuationFinal'),select=document.querySelector('#evacuationFinalCore'),scan=document.querySelector('#evacuationFinalScan'),confirm=document.querySelector('#evacuationFinalConfirm'),hint=document.querySelector('#evacuationFinalHint');if(!panel||!select||!scan||!confirm||!hint)return;
+ const final=team?.finalUpload;panel.hidden=!final||(!final.available&&!final.completed);if(panel.hidden)return;
+ const previous=select.value;select.replaceChildren();
+ for(const core of team.cargo[0]?.cores||[]){const option=document.createElement('option');option.value=core.id;option.textContent=core.energy+' E // '+core.id;select.appendChild(option);}
+ const choices=team.cargo[0]?.cores||[];select.value=final.scan?.coreId|| (choices.some(core=>core.id===previous)?previous:choices[0]?.id||'');
+ select.hidden=scan.hidden=confirm.hidden=Boolean(final.completed);select.disabled=scan.disabled=evacuationBusy||!final.available;confirm.disabled=evacuationBusy||!final.scan;
+ hint.textContent=final.completed?'FINAL UPLOAD COMPLETE // '+final.energy+' E SECURED // '+(team.withdrawn?'RETURN TO HQ':'WAITING FOR SECOND PIONEER'):final.scan?'CORE SCAN ACCEPTED // FINAL UPLOAD BESTÄTIGEN':'Einen eigenen Evakuierungs-Core wählen und physisch scannen.';
+}
+window.addEventListener('nodiv-evacuation-finalscan',async()=>{
+ const team=evacuationView,select=document.querySelector('#evacuationFinalCore'),hint=document.querySelector('#evacuationFinalHint');if(evacuationBusy||!team?.finalUpload?.available||!select)return;let failure='';const core=select.value;if(!team.cargo[0]?.cores.some(item=>item.id===core))return;
+ evacuationBusy=true;renderEvacuationFinal(team);
+ try{hint.textContent='GEWÄHLTEN CARGO-CORE SCANNEN';const uid=await scanEvacuationUid(),r=await apiRequest({action:'evacuationfinalscan',token:sessionToken,event:team.eventId,team:team.teamId,core,uid});if(!r?.ok||r.action!==true)throw Error(r?.error||r?.status||'FINAL SCAN FAILED');renderEvacuation(r);}
+ catch(error){failure=String(error.message||error);}
+ finally{evacuationBusy=false;if(evacuationView)renderEvacuationFinal(evacuationView);if(failure)hint.textContent=failure;}
+});
+window.addEventListener('nodiv-evacuation-finalconfirm',async()=>{
+ const team=evacuationView,hint=document.querySelector('#evacuationFinalHint');if(evacuationBusy||!team?.finalUpload?.scan||document.querySelector('#evacuationFinalConfirm')?.disabled)return;let failure='';evacuationBusy=true;renderEvacuationFinal(team);
+ try{const r=await apiRequest({action:'evacuationfinalconfirm',token:sessionToken,event:team.eventId,team:team.teamId,scan:team.finalUpload.scan.id});if(!r?.ok||r.action!==true)throw Error(r?.error||r?.status||'FINAL UPLOAD FAILED');renderEvacuation(r);window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));}
+ catch(error){failure=String(error.message||error);}
+ finally{evacuationBusy=false;if(evacuationView)renderEvacuationFinal(evacuationView);if(failure)hint.textContent=failure;}
+});
+
+window.addEventListener('nodiv-evacuation-finalchoice',()=>{const select=document.querySelector('#evacuationFinalCore'),confirm=document.querySelector('#evacuationFinalConfirm');if(confirm)confirm.disabled=evacuationBusy||!evacuationView?.finalUpload?.scan||select?.value!==evacuationView.finalUpload.scan.coreId;});

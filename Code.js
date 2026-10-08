@@ -339,7 +339,7 @@ function doGet(e) {
 
       result = getHqLiveOperations(e);
 
-    } else if (['evacuationstart','evacuationteam','evacuationstate'].includes(action)) {
+    } else if (['evacuationstart','evacuationteam','evacuationstate','evacuationfinalscan','evacuationfinalconfirm'].includes(action)) {
       result = evacuationAction(e,action);
     } else if (['preevacuationstart','preevacuationstate'].includes(action)) {
       result = preEvacuationWithdrawal(e,action==='preevacuationstart');
@@ -2681,6 +2681,7 @@ function getSessionPlayerDisplay(player) {
 function getGameplayRoute(e) {
   const session = resolvePlayerSession(e.parameter.token || '');
   if (!session.ok) return session.response;
+  if(evacuationFieldClosed())return gameplayDecision(session.player,{found:false,type:'EVENT',status:'COMPLETED'},'NO_ACTION',false,'FIELD_ACTIVE_REQUIRED','Event abgeschlossen.');
   const uid = normalizeUid(e.parameter.uid || '');
   if (!uid) throw new Error('Scan UID fehlt.');
   const player = session.player, hit = lookupUidGlobally(uid);
@@ -2902,6 +2903,7 @@ function getPlayerEnergyBalance(e) {
  * ownership/ledger receipt batch. Script properties hold short-lived choices. */
 const HQ_UPLOAD_PREFIX='NODIV_HQ_UPLOAD_';
 function hqUploadContext(player,bayUid){
+ if(evacuationFieldClosed())throw Error('FIELD_ACTIVE_REQUIRED');
  if(player.role!=='PIONEER'||player.status!=='ACTIVE')throw new Error('ROLE_DENIED');
  const hit=lookupUidGlobally(normalizeUid(bayUid));
  if(!hit.found||hit.type!=='UPLOAD_TERMINAL'||hit.terminalType!=='UPLOAD_HQ'||hit.status!=='ACTIVE')throw new Error('UPLOAD_BAY_INVALID');
@@ -3107,6 +3109,7 @@ function hasOpenDeploymentForCore(coreId, installationId, deploymentRows, instal
   const sheet=getDeploymentRegisterSheet(),wanted=normalizeCoreId(coreId);
   const rows=deploymentRows|| (sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[]);
   const orders=installationOrders||readInstallationOrders().filter(installationOrderIsLive);
+  if(evacuationFinalCargoReserved(wanted))return true;
   return rows.some(row=>String(row[1]||'').trim().toUpperCase()===wanted&&
     ['ASSIGNED','IN_TRANSIT'].includes(String(row[6]||'').trim().toUpperCase())&&
     (isRestorePurpose(row[5])?restoreDeploymentIsLive(row):!isFopNodeDeployment(row)||
@@ -4074,6 +4077,7 @@ function getAvailableInstallationCores() {
   const deployments=depSheet.getLastRow()>1?depSheet.getRange(2,1,depSheet.getLastRow()-1,11).getValues():[];
   const unavailable=new Set(deployments.filter(row=>['ASSIGNED','IN_TRANSIT'].includes(String(row[6]).toUpperCase())&&
     (!isFopNodeDeployment(row)||installationReservationIsLive(row,orders))).map(row=>String(row[1]).trim().toUpperCase()));
+  evacuationFinalCargoIds().forEach(id=>unavailable.add(id));
   const rows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
   const available=rows.map(row=>({coreId:String(row[0]).trim().toUpperCase(),uid:normalizeUid(row[2]),visibleEnergy:row[1]===''?NaN:Number(row[1]),
     status:String(row[CORE_COL.STATUS-1]).toUpperCase(),ownerType:String(row[CORE_COL.OWNER_TYPE-1]).toUpperCase(),ownerId:String(row[CORE_COL.OWNER_ID-1]).toUpperCase()}))
@@ -7674,15 +7678,15 @@ function preEvacuationWithdrawal(e,start){
 /* EVAC-1: durable Event/Team receipts, existing Deployment reservations and FOP
  * deinstallation. Cargo retains HQ ownership, exactly like other mission cargo;
  * carrier binding is exclusively in the Deployment Register, never FIELD slots. */
-function evacuationRecords(type,eventId){
- return exchangeLogRows().filter(row=>row[2]===type&&row[14]==='SUCCESS').map(row=>JSON.parse(row[15])).filter(record=>record.eventId===eventId);
+function evacuationRecords(type,eventId,logs=exchangeLogRows()){
+ return logs.filter(row=>row[2]===type&&row[14]==='SUCCESS').map(row=>JSON.parse(row[15])).filter(record=>record.eventId===eventId);
 }
 function evacuationStarted(eventId){return evacuationRecords('EVACUATION_STARTED',eventId)[0]||null;}
 function evacuationTeams(eventId){return evacuationRecords('EVACUATION_TEAM_FORMED',eventId);}
 function evacuationTeam(id){const event=readCurrentEvent();return event?evacuationTeams(event.eventId).find(team=>team.id===id)||null:null;}
 function evacuationDeploymentId(teamId,nodeId,coreId){return teamId+'-'+nodeId+'-'+coreId;}
 function evacuationDeploymentRows(){const sheet=getDeploymentRegisterSheet();return sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues():[];}
-function evacuationCoreReserved(coreId){const event=readCurrentEvent();return Boolean(event&&evacuationTeams(event.eventId).some(team=>team.nodes.some(node=>node.cores.some(core=>core.id===coreId))));}
+function evacuationCoreReserved(coreId){const event=readCurrentEvent();return Boolean(event&&evacuationTeams(event.eventId).some(team=>team.nodes.some(node=>node.cores.some(core=>core.id===coreId))))||evacuationFinalCargoReserved(coreId);}
 function evacuationAssignedNode(nodeId){const event=readCurrentEvent();return event?evacuationTeams(event.eventId).some(team=>team.nodes.some(node=>node.nodeId===nodeId)):false;}
 function evacuationOtherDeployments(teamId,nodeId){return evacuationDeploymentRows().filter(row=>!(row[5]==='EVACUATION'&&row[4]===nodeId&&row[0]===evacuationDeploymentId(teamId,nodeId,row[1])));}
 function evacuationNodeAssignment(teamId,nodeId){const team=evacuationTeam(teamId),assignment=team?.nodes.find(node=>node.nodeId===nodeId);if(!assignment)throw Error('EVACUATION_NODE_NOT_ASSIGNED');return assignment;}
@@ -7691,9 +7695,12 @@ function assertEvacuationMembers(team){
  for(const member of [team.fop,...team.pioneers]){const current=findIdentityById(member.identity);if(!current||current.cardId!==member.cardId||current.role!==member.role||current.status!=='ACTIVE'||current.uid!==member.uid)throw Error('EVACUATION_MEMBER_INVALID');}
 }
 function assertEvacuationCargo(team,receipt){
- const assignment=evacuationNodeAssignment(team.id,receipt.nodeId);
+ const assignment=team.nodes.find(node=>node.nodeId===receipt.nodeId);if(!assignment)throw Error('EVACUATION_NODE_NOT_ASSIGNED');
  if(receipt.carrier!==assignment.carrier.identity||receipt.coreIds.length!==3||JSON.stringify(receipt.coreIds.slice().sort())!==JSON.stringify(assignment.cores.map(core=>core.id).sort()))throw Error('EVACUATION_RECEIPT_INVALID');
+ const final=evacuationFinalReceipt(team,assignment.carrier.identity),deployments=evacuationDeploymentRows();
  for(const item of assignment.cores){const core=readCoreState(item.id),dep=findDeploymentById(evacuationDeploymentId(team.id,assignment.nodeId,item.id));
+  const conflicts=deployments.filter(row=>row[1]===item.id&&['ASSIGNED','IN_TRANSIT'].includes(row[6])&&row[0]!==evacuationDeploymentId(team.id,assignment.nodeId,item.id));if(conflicts.length)throw Error('EVACUATION_CARGO_RESERVED');
+  if(final){if(!final.coreIds.includes(item.id)||core.uid!==item.uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='RESERVE'||!dep||dep.status!=='DELIVERED'||dep.purpose!=='EVACUATION'||dep.coreId!==item.id||dep.carrierRole!=='PIONEER'||dep.carrierId!==assignment.carrier.identity||dep.targetNode!==assignment.nodeId||dep.transactionId!==final.coreTransactions[item.id]||core.lastTransaction!==dep.transactionId)throw Error('EVACUATION_FINAL_CARGO_INVALID');continue;}
   if(core.uid!==item.uid||core.ownerType!=='NODIV_RESERVE'||core.ownerId!=='HQ'||core.status!=='IN_TRANSIT'||!dep||dep.purpose!=='EVACUATION'||dep.status!=='IN_TRANSIT'||dep.carrierId!==assignment.carrier.identity||dep.carrierRole!=='PIONEER'||dep.coreId!==item.id||dep.targetNode!==assignment.nodeId||dep.transactionId!==core.lastTransaction)throw Error('EVACUATION_CARGO_INVALID');
  }
  if(countCoresOwnedBy('NODE',assignment.nodeId)!==0||getNodeGameplayStatus(assignment.nodeId)!=='AVAILABLE')throw Error('EVACUATION_NODE_NOT_RECOVERED');
@@ -7705,14 +7712,16 @@ function evacuationTeamState(team){
  if(recovered.some((receipt,i)=>receipt.nodeId!==team.nodes[i].nodeId))throw Error('EVACUATION_SEQUENCE_INVALID');
  const complete=evacuationRecords('EVACUATION_TEAM_COMPLETE',team.eventId).some(receipt=>receipt.teamId===team.id);
  if(complete!==(recovered.length===2))throw Error('EVACUATION_TEAM_RECEIPT_INVALID');
- return {teamId:team.id,eventId:team.eventId,status:complete?'EVACUATION_TEAM_COMPLETE':'EVACUATION_TEAM_ACTIVE',fop:team.fop.identity,pioneers:team.pioneers.map(p=>p.identity),
+ const finals=team.pioneers.map(member=>({identity:member.identity,completed:Boolean(evacuationFinalReceipt(team,member.identity))})),withdrawn=evacuationRecords('EVACUATION_TEAM_WITHDRAWAL',team.eventId).some(r=>r.teamId===team.id);
+ if(withdrawn&&(!complete||finals.some(f=>!f.completed)))throw Error('EVACUATION_WITHDRAWAL_INVALID');
+ return {finalUploads:finals,withdrawn,command:withdrawn?'RETURN TO HQ':complete?'LAST SECURE UPLOAD POINT':'',teamId:team.id,eventId:team.eventId,status:withdrawn?'EVACUATION_TEAM_WITHDRAWAL':complete?'EVACUATION_TEAM_COMPLETE':'EVACUATION_TEAM_ACTIVE',fop:team.fop.identity,pioneers:team.pioneers.map(p=>p.identity),
   nodes:team.nodes.map((node,i)=>({nodeId:node.nodeId,carrier:node.carrier.identity,status:i<recovered.length?'EVACUATED':i===recovered.length?'NEXT':'WAITING'})),nextNode:team.nodes[recovered.length]?.nodeId||'',
-  cargo:recovered.map(receipt=>({carrier:receipt.carrier,nodeId:receipt.nodeId,status:'IN_TRANSIT',purpose:'EVACUATION',cores:team.nodes.find(node=>node.nodeId===receipt.nodeId).cores.map(core=>({id:core.id,energy:core.energy}))}))};
+  cargo:recovered.map(receipt=>({carrier:receipt.carrier,nodeId:receipt.nodeId,status:evacuationFinalReceipt(team,receipt.carrier)?'WITHDRAWN':'IN_TRANSIT',purpose:'EVACUATION',cores:team.nodes.find(node=>node.nodeId===receipt.nodeId).cores.map(core=>({id:core.id,energy:core.energy}))}))};
 }
 function evacuationPlayerState(player){
- const event=readCurrentEvent();if(!event)return null;
+ const event=evacuationReadEvent();if(!event)return null;
  const team=evacuationTeams(event.eventId).find(team=>[team.fop,...team.pioneers].some(member=>member.identity===player.identity&&member.cardId===player.cardId));if(!team)return null;
- const state=evacuationTeamState(team);if(player.role==='PIONEER')state.cargo=state.cargo.filter(cargo=>cargo.carrier===player.identity);return state;
+ const state=evacuationTeamState(team);if(player.role==='PIONEER'){state.cargo=state.cargo.filter(cargo=>cargo.carrier===player.identity);state.finalUpload=evacuationFinalState(team,player);}return state;
 }
 function evacuationOperationContext(actor,nodeId,operation,teamId,nodeUid){
  const event=readCurrentEvent(),assigned=event?evacuationTeams(event.eventId).find(team=>team.nodes.some(node=>node.nodeId===nodeId)):null;
@@ -7752,11 +7761,12 @@ function evacuationFopOperations(actor,state){
 }
 function evacuationAction(e,action){
  const lock=LockService.getScriptLock();try{
-  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;const actor=session.player,event=readCurrentEvent();
-  if(!event||event.state!=='FIELD_ACTIVE')throw Error('EVACUATION_FIELD_ACTIVE_REQUIRED');
+  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;const actor=session.player,event=action==='evacuationstate'||action.startsWith('evacuationfinal')?evacuationReadEvent():readCurrentEvent();
+  if(!event||(!['evacuationstate','evacuationfinalconfirm'].includes(action)&&event.state!=='FIELD_ACTIVE'))throw Error('EVACUATION_FIELD_ACTIVE_REQUIRED');
   if(e.parameter.event&&e.parameter.event!==event.eventId)throw Error('EVENT_MISMATCH');
   const started=evacuationStarted(event.eventId);
-  if(action==='evacuationstate'){if(!['FOUNDER','FOP','PIONEER'].includes(actor.role))throw Error('ROLE_DENIED');return {ok:true,session:true,status:started?'EVACUATION_IN_PROGRESS':'EVACUATION_NOT_STARTED',eventId:event.eventId,evacuationReady:!started&&actor.role==='FOUNDER'&&Boolean(readPreEvacuationRecord(event.eventId)&&preEvacuationResponse(event,readPreEvacuationRecord(event.eventId)).evacuationReady),evacuation:evacuationPlayerState(actor),...(actor.role==='FOUNDER'?{teams:evacuationTeams(event.eventId).map(evacuationTeamState)}:{})};}
+  if(action.startsWith('evacuationfinal'))return evacuationFinalAction(e,action,actor,event);
+  if(action==='evacuationstate'){if(!['FOUNDER','FOP','PIONEER'].includes(actor.role))throw Error('ROLE_DENIED');return {ok:true,session:true,status:event.state==='COMPLETED'?'EVACUATION_COMPLETED':started?'EVACUATION_IN_PROGRESS':'EVACUATION_NOT_STARTED',eventState:event.state,eventId:event.eventId,evacuationReady:!started&&actor.role==='FOUNDER'&&Boolean(readPreEvacuationRecord(event.eventId)&&preEvacuationResponse(event,readPreEvacuationRecord(event.eventId)).evacuationReady),evacuation:evacuationPlayerState(actor),...(actor.role==='FOUNDER'?{teams:evacuationTeams(event.eventId).map(evacuationTeamState)}:{})};}
   if(action==='evacuationstart'){
    if(actor.role!=='FOUNDER')throw Error('FOUNDER_REQUIRED');if(e.parameter.event!==event.eventId)throw Error('EVENT_MISMATCH');
    if(started)return {ok:true,session:true,action:true,status:'EVACUATION_IN_PROGRESS',eventId:event.eventId,replayed:true};
@@ -7788,4 +7798,94 @@ function evacuationAction(e,action){
   requests.push({appendCells:{sheetId:sheet.getSheetId(),rows:sheetCellsRequest(sheet,1,1,team.nodes.flatMap(node=>node.cores.map(core=>[evacuationDeploymentId(team.id,node.nodeId,core.id),core.id,node.carrier.identity,'PIONEER',node.nodeId,'EVACUATION','ASSIGNED',now,'','','']))).updateCells.rows,fields:'userEnteredValue'}});
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,replayed:false,evacuation:evacuationTeamState(team)};
  }finally{try{lock.releaseLock();}catch(error){}}
+}
+
+/* EVAC-2 uses the EVAC-1 deployments and durable Transaction Log receipts.
+ * RESERVE + DELIVERED is the existing HQ closure state. Final receipts keep
+ * withdrawn cargo unavailable until the existing pre-event reset epoch. */
+function evacuationFinalCargoIds(){return new Set(exchangeLogRows().filter(row=>row[2]==='EVACUATION_FINAL_UPLOAD'&&row[14]==='SUCCESS').flatMap(row=>JSON.parse(row[15]).coreIds));}
+function evacuationFinalCargoReserved(coreId){return evacuationFinalCargoIds().has(coreId);}
+function evacuationFieldClosed(){const current=readCurrentEvent();return (!current||current.state!=='FIELD_ACTIVE')&&exchangeLogRows().some(row=>row[2]==='EVACUATION_COMPLETED'&&row[14]==='SUCCESS');}
+function evacuationReadEvent(){
+ const current=readCurrentEvent();if(current)return current;
+ const receipt=exchangeLogRows().filter(row=>row[2]==='EVACUATION_COMPLETED'&&row[14]==='SUCCESS').pop();if(!receipt)return null;
+ const id=JSON.parse(receipt[15]).eventId,sheet=getEventRegisterSheet(),rows=sheet.getRange(2,1,Math.max(0,sheet.getLastRow()-1),11).getValues(),index=rows.findIndex(row=>row[0]===id&&row[1]==='COMPLETED');
+ return index<0?null:{eventId:id,state:'COMPLETED',row:index+2,plannedNodes:Number(rows[index][6]),activeNodes:Number(rows[index][7])};
+}
+function evacuationFinalReceipt(team,identity,logs){
+ const receipts=evacuationRecords('EVACUATION_FINAL_UPLOAD',team.eventId,logs).filter(r=>r.teamId===team.id&&r.identity===identity);
+ if(receipts.length>1)throw Error('EVACUATION_FINAL_RECEIPT_INVALID');return receipts[0]||null;
+}
+function evacuationFinalProof(team,identity){
+ return evacuationRecords('EVACUATION_FINAL_SCAN_ACCEPTED',team.eventId).filter(r=>r.teamId===team.id&&r.identity===identity).pop()||null;
+}
+function evacuationFinalState(team,actor){
+ const final=evacuationFinalReceipt(team,actor.identity),proof=evacuationFinalProof(team,actor.identity),ready=evacuationRecords('EVACUATION_TEAM_COMPLETE',team.eventId).some(r=>r.teamId===team.id);
+ const validProof=!final&&proof&&proof.cardId===actor.cardId&&proof.expiresAt>Date.now()&&hqUploadSnapshot(readCoreState(proof.coreId))===proof.snapshot;
+ return {available:ready&&!final,completed:Boolean(final),...(final?{coreId:final.coreId,energy:final.energy,securedEnergy:readPlayerEnergyBalance(actor.identity),receipt:final.id}:{}),scan:validProof?{id:proof.id,coreId:proof.coreId,expiresAt:proof.expiresAt}:null};
+}
+function evacuationFinalCompletion(event,requests){
+ const view=preEvacuationProjection(requests),logs=view.logs,started=evacuationRecords('EVACUATION_STARTED',event.eventId,logs)[0],teams=evacuationRecords('EVACUATION_TEAM_FORMED',event.eventId,logs),blockers=[];
+ const records=type=>evacuationRecords(type,event.eventId,logs),cores=view[SHEET_NAME].rows.slice(1),deps=view[DEPLOYMENT_SHEET_NAME].rows.slice(1),codes=view[EVENT_NODE_CODE_SHEET_NAME].rows.slice(1).filter(row=>row[0]===event.eventId),nodes=view[NODE_SHEET_NAME].rows.slice(1);
+ const assigned=teams.flatMap(t=>t.nodes.map(n=>n.nodeId));
+ if(!started||started.startNodes.length!==10||new Set(started.startNodes).size!==10||teams.length!==5||new Set(teams.map(t=>t.id)).size!==5||new Set(teams.flatMap(t=>[t.fop.identity,...t.pioneers.map(p=>p.identity)])).size!==15||new Set(assigned).size!==10||started.startNodes.some(id=>!assigned.includes(id)))blockers.push('TEN_START_NODES_NOT_RECOVERED');
+ if(event.activeNodes!==0||event.plannedNodes<10||event.plannedNodes>12||codes.length!==event.plannedNodes||new Set(codes.map(row=>row[1])).size!==codes.length||codes.some(code=>code[9]!=='DEINSTALLED'||code[7]||code[8]||!nodes.some(node=>node[0]===code[1]&&node[2]==='AVAILABLE')))blockers.push('EVENT_NODES_NOT_WITHDRAWN');
+ if(cores.some(core=>String(core[14]).toUpperCase()==='NODE'))blockers.push('NODE_OWNED_CORES_REMAIN');
+ const ledgerSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAYER_ENERGY_SHEET_NAME);
+ if(!ledgerSheet)throw Error('ENERGY_LEDGER_MISSING');
+ const ledger=ledgerSheet.getRange(1,1,Math.max(1,ledgerSheet.getLastRow()),9).getValues().slice(1);
+ for(const request of requests)if(request.appendCells?.sheetId===ledgerSheet.getSheetId())ledger.push(...request.appendCells.rows.map(row=>row.values.map(cell=>Object.values(cell.userEnteredValue)[0])));
+ for(const team of teams){
+  const recovered=records('EVACUATION_NODE_RECOVERED').filter(r=>r.teamId===team.id);
+  if(recovered.length!==2||team.nodes.some(node=>!recovered.some(r=>r.nodeId===node.nodeId&&r.carrier===node.carrier.identity))||records('EVACUATION_TEAM_COMPLETE').filter(r=>r.teamId===team.id).length!==1||records('EVACUATION_TEAM_WITHDRAWAL').filter(r=>r.teamId===team.id).length!==1)blockers.push(team.id+': TEAM_NOT_WITHDRAWN');
+  for(const node of team.nodes){
+   const final=evacuationFinalReceipt(team,node.carrier.identity,logs);
+   if(!final||final.cardId!==node.carrier.cardId||final.coreIds.length!==3||node.cores.some(item=>!final.coreIds.includes(item.id))){blockers.push(node.carrier.identity+': FINAL_UPLOAD_MISSING');continue;}
+   const selected=node.cores.find(item=>item.id===final.coreId),entries=ledger.filter(row=>row[7]===final.id);
+   if(!selected||final.energy!==selected.energy||entries.length!==1||entries[0][0]!==final.energyEntry||entries[0][2]!==final.identity||entries[0][4]!=='EVACUATION_FINAL_UPLOAD'||Number(entries[0][5])!==final.energy)blockers.push(node.carrier.identity+': FINAL_ENERGY_RECEIPT_INVALID');
+   for(const item of node.cores){const core=cores.find(row=>row[0]===item.id),dep=deps.find(row=>row[0]===evacuationDeploymentId(team.id,node.nodeId,item.id));if(!core||normalizeUid(core[2])!==item.uid||core[14]!=='NODIV_RESERVE'||core[15]!=='HQ'||core[4]!=='RESERVE'||core[16]!==final.coreTransactions[item.id]||!dep||dep[1]!==item.id||dep[2]!==node.carrier.identity||dep[4]!==node.nodeId||dep[5]!=='EVACUATION'||dep[6]!=='DELIVERED'||dep[10]!==core[16])blockers.push(item.id+': CARGO_NOT_WITHDRAWN');}
+  }
+ }
+ if(readInstallationOrders().some(order=>order.eventId===event.eventId&&installationOrderIsLive(order))||liveExchanges().length||liveRestores().length||liveReSupplies().length||deps.some(row=>row[5]==='EVACUATION'&&['ASSIGNED','IN_TRANSIT'].includes(row[6])))blockers.push('OPEN_EVACUATION_OPERATION');
+ return [...new Set(blockers)];
+}
+function stageEvacuationCompletion(event,actor,requests){
+ if(event.state==='COMPLETED')return [];
+ const blockers=evacuationFinalCompletion(event,requests);if(blockers.length)return blockers;
+ if(evacuationRecords('EVACUATION_COMPLETED',event.eventId).length)throw Error('EVACUATION_EVENT_RECEIPT_INVALID');
+ const sheet=getEventRegisterSheet(),header=String(sheet.getRange(1,11).getDisplayValue()||'');if(header&&header!=='COMPLETED AT')throw Error('EVENT_COMPLETION_COLUMN_CONFLICT');
+ const now=new Date();requests.push(sheetCellsRequest(sheet,1,11,[['COMPLETED AT']]),sheetCellsRequest(sheet,event.row,2,[['COMPLETED']]),sheetCellsRequest(sheet,event.row,8,[[0]]),sheetCellsRequest(sheet,event.row,10,[[now,now]]));
+ appendTransactionLog({eventType:'EVACUATION_COMPLETED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify({eventId:event.eventId,completedAt:Date.now()})},requests);return [];
+}
+function evacuationFinalAction(e,action,actor,event){
+ if(actor.role!=='PIONEER'||actor.status!=='ACTIVE')throw Error('PIONEER_REQUIRED');
+ if(e.parameter.event!==event.eventId)throw Error('EVENT_MISMATCH');
+ const team=evacuationTeams(event.eventId).find(team=>team.pioneers.some(p=>p.identity===actor.identity&&p.cardId===actor.cardId));if(!team||e.parameter.team!==team.id)throw Error('EVACUATION_TEAM_MISMATCH');
+ assertEvacuationMembers(team);const state=evacuationTeamState(team),final=evacuationFinalReceipt(team,actor.identity),proof=evacuationFinalProof(team,actor.identity);
+ if(final){
+  if(action!=='evacuationfinalconfirm'||e.parameter.scan!==final.scanId)throw Error('FINAL_UPLOAD_ALREADY_COMPLETED');
+  const requests=[],blockers=stageEvacuationCompletion(event,actor,requests);if(requests.length)Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  return {ok:true,session:true,action:true,replayed:true,status:'EVACUATION_FINAL_UPLOAD_COMPLETE',eventId:event.eventId,eventState:evacuationReadEvent().state,completionPending:blockers.length>0,evacuation:evacuationPlayerState(actor)};
+ }
+ if(event.state!=='FIELD_ACTIVE'||state.status!=='EVACUATION_TEAM_COMPLETE')throw Error('EVACUATION_TEAM_NOT_COMPLETE');
+ const assignment=team.nodes.find(node=>node.carrier.identity===actor.identity);if(!assignment)throw Error('EVACUATION_CARGO_NOT_ASSIGNED');
+ if(action==='evacuationfinalscan'){
+  const hit=lookupUidGlobally(normalizeUid(e.parameter.uid||'')),item=assignment.cores.find(core=>core.id===e.parameter.core);
+  if(!item||!hit.found||hit.type!=='N_CORE'||hit.id!==item.id||normalizeUid(e.parameter.uid)!==item.uid)throw Error('EVACUATION_FINAL_CORE_NOT_ASSIGNED');
+  const core=readCoreState(item.id),snapshot=hqUploadSnapshot(core);if(core.visibleEnergy!==item.energy)throw Error('EVACUATION_CARGO_CHANGED');
+  if(proof&&proof.cardId===actor.cardId&&proof.coreId===item.id&&proof.snapshot===snapshot&&proof.expiresAt>Date.now())return {ok:true,session:true,action:true,replayed:true,eventId:event.eventId,evacuation:evacuationPlayerState(actor)};
+  const receipt={id:'EVAC-SCAN-'+Utilities.getUuid().toUpperCase(),eventId:event.eventId,teamId:team.id,identity:actor.identity,cardId:actor.cardId,coreId:item.id,uid:item.uid,snapshot,expiresAt:Date.now()+NODE_INSTALL_TTL_SECONDS*1000},requests=[];
+  appendTransactionLog({eventType:'EVACUATION_FINAL_SCAN_ACCEPTED',actorId:actor.identity,actorRole:actor.role,coreId:item.id,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,eventId:event.eventId,evacuation:evacuationPlayerState(actor)};
+ }
+ if(!proof||e.parameter.scan!==proof.id||proof.cardId!==actor.cardId||proof.expiresAt<=Date.now())throw Error('EVACUATION_FINAL_SCAN_REQUIRED');
+ const selected=readCoreState(proof.coreId);if(!assignment.cores.some(item=>item.id===proof.coreId&&item.uid===proof.uid)||hqUploadSnapshot(selected)!==proof.snapshot||selected.visibleEnergy!==assignment.cores.find(item=>item.id===proof.coreId).energy)throw Error('EVACUATION_CARGO_CHANGED');
+ if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAYER_ENERGY_SHEET_NAME))throw Error('ENERGY_LEDGER_MISSING');
+ const requests=[],now=new Date(),receipt={id:'EVAC-FINAL-'+Utilities.getUuid().toUpperCase(),eventId:event.eventId,teamId:team.id,identity:actor.identity,cardId:actor.cardId,scanId:proof.id,coreId:selected.coreId,energy:selected.visibleEnergy,completedAt:Date.now(),coreIds:assignment.cores.map(core=>core.id),coreTransactions:{}};
+ for(const item of assignment.cores){const core=readCoreState(item.id),dep=findDeploymentById(evacuationDeploymentId(team.id,assignment.nodeId,item.id)),tx=appendTransactionLog({eventType:'EVACUATION_CARGO_WITHDRAWN',actorId:actor.identity,actorRole:actor.role,coreId:item.id,fromType:'NODIV_RESERVE',fromId:'HQ',toType:'NODIV_RESERVE',toId:'HQ',visibleEnergy:core.visibleEnergy,nodeId:assignment.nodeId,result:'SUCCESS',details:receipt.id},requests);receipt.coreTransactions[item.id]=tx;writeCoreOwnership(core.row,'NODIV_RESERVE','HQ',tx,requests);requests.push(sheetCellsRequest(getRegisterSheet(),core.row,CORE_COL.STATUS,[['RESERVE']]),sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,7,[['DELIVERED']]),sheetCellsRequest(getDeploymentRegisterSheet(),dep.row,10,[[now,tx]]));}
+ const energy=bookPlayerEnergy({identity:actor.identity,role:actor.role,type:'EVACUATION_FINAL_UPLOAD',amount:receipt.energy,reference:receipt.id,details:team.id+' // LAST SECURE UPLOAD // '+selected.coreId},requests);receipt.energyEntry=energy.entryId;receipt.securedEnergy=energy.balance;
+ appendTransactionLog({eventType:'EVACUATION_FINAL_UPLOAD',actorId:actor.identity,actorRole:actor.role,coreId:selected.coreId,visibleEnergy:receipt.energy,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
+ if(team.pioneers.filter(p=>p.identity!==actor.identity).every(p=>evacuationFinalReceipt(team,p.identity)))appendTransactionLog({eventType:'EVACUATION_TEAM_WITHDRAWAL',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify({eventId:event.eventId,teamId:team.id,completedAt:Date.now(),command:'RETURN TO HQ'})},requests);
+ const blockers=stageEvacuationCompletion(event,actor,requests);
+ Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,replayed:false,status:'EVACUATION_FINAL_UPLOAD_COMPLETE',eventId:event.eventId,eventState:evacuationReadEvent().state,completionPending:blockers.length>0,evacuation:evacuationPlayerState(actor)};
 }
