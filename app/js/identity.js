@@ -2,32 +2,65 @@ import {routeIdentity} from './router.js?v=20261008-evac-2';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
-function apiRequest(params){return new Promise((resolve,reject)=>{const cb='__nodiv_app_'+Date.now()+'_'+Math.floor(Math.random()*99999),s=document.createElement('script'),timer=setTimeout(()=>done(new Error('NODIV CORE TIMEOUT')),10000);function done(err,data){clearTimeout(timer);try{delete window[cb]}catch(_){}s.remove();err?reject(err):resolve(data)}window[cb]=d=>done(null,d);s.onerror=()=>done(new Error('NODIV CORE UNREACHABLE'));s.src=API_URL+'?'+new URLSearchParams({...params,callback:cb});document.body.appendChild(s)})}
+// Apps Script cold starts/Sheet commits can exceed ten seconds. A transport
+// timeout never proves rollback; no request is automatically retried here.
+const API_TIMEOUT_MS=30000,API_LATE_RESPONSE_GRACE_MS=120000;
+let apiRequestSequence=0;
+function apiRequest(params){
+ return new Promise((resolve,reject)=>{
+  const cb='__nodiv_app_'+Date.now()+'_'+(++apiRequestSequence),script=document.createElement('script');let settled=false;
+  const timer=setTimeout(()=>finish(new Error('NODIV CORE TIMEOUT // Serverstatus unklar. Status neu laden, bevor du erneut bestätigst.')),API_TIMEOUT_MS);
+  function finish(error,data){
+   if(settled)return;settled=true;clearTimeout(timer);script.onerror=null;script.remove();
+   // Removing a JSONP script cannot reliably cancel an already dispatched request.
+   // Keep a bounded no-op callback for an eventual late response; never apply it.
+   if(error){window[cb]=()=>{};setTimeout(()=>{delete window[cb]},API_LATE_RESPONSE_GRACE_MS);}
+   else delete window[cb];
+   error?reject(error):resolve(data);
+  }
+  window[cb]=data=>finish(null,data);
+  script.onerror=()=>finish(new Error('NODIV CORE UNREACHABLE // Serverstatus unklar. Status neu laden, bevor du erneut bestätigst.'));
+  script.src=API_URL+'?'+new URLSearchParams({...params,callback:cb});
+  try{document.body.appendChild(script);}catch(error){finish(error);}
+ });
+}
+function nfcUidFromEvent(event){
+ const uid=typeof event?.serialNumber==='string'?event.serialNumber.trim():'';
+ if(!uid||['undefined','null'].includes(uid.toLowerCase()))throw new Error('KEINE GÜLTIGE NFC UID GELESEN // Erneut scannen.');
+ return uid;
+}
+let identityAttempt=null;
+function stopIdentityReader(attempt){
+ if(attempt.reader){attempt.reader.onreading=null;attempt.reader.onreadingerror=null;}attempt.controller.abort();
+}
+function finishIdentityAttempt(attempt,error){
+ stopIdentityReader(attempt);if(identityAttempt!==attempt)return;identityAttempt=null;
+ if(error){const btn=document.querySelector('#identityBtn'),msg=document.querySelector('#msg');btn.disabled=false;btn.textContent='RETRY ACCESS CARD';msg.textContent=String(error.message||error);emitNodiv('ACCESS_DENIED',{target:'#app'});}
+}
 export async function startIdentity(){
  const btn=document.querySelector('#identityBtn'),msg=document.querySelector('#msg');
+ if(identityAttempt||sessionToken)return;
  if(!('NDEFReader' in window)){msg.textContent='WEB NFC NICHT VERFÜGBAR // Android + Chrome erforderlich.';emitNodiv('ACCESS_DENIED',{target:'#app'});return}
+ const attempt={controller:new AbortController(),reader:null,handling:false};identityAttempt=attempt;
  btn.disabled=true;btn.textContent='NFC ARMED // PRESENT ACCESS CARD';msg.textContent='ACCESS CARD AN DAS GERÄT HALTEN';emitNodiv('NFC_ARMED',{target:'#identityBtn'});
  try{
-  const reader=new NDEFReader();
-  await reader.scan();
-  let handling=false;
-  reader.onreadingerror=()=>{handling=false;btn.disabled=false;btn.textContent='RETRY ACCESS CARD';msg.textContent='NFC-KARTE KONNTE NICHT GELESEN WERDEN // erneut scannen.';emitNodiv('ACCESS_DENIED',{target:'#app'})};
-  reader.onreading=async e=>{
-   if(handling)return;
-   const raw=e&&typeof e.serialNumber==='string'?e.serialNumber.trim():'';
-   const invalid=!raw||raw.toLowerCase()==='undefined'||raw.toLowerCase()==='null';
-   if(invalid){btn.disabled=false;btn.textContent='RETRY ACCESS CARD';msg.textContent='KEINE GÜLTIGE NFC UID GELESEN // Karte erneut scannen.';emitNodiv('ACCESS_DENIED',{target:'#app'});return}
-   handling=true;btn.textContent='VERIFYING IDENTITY';
+  const reader=new NDEFReader();attempt.reader=reader;
+  reader.onreadingerror=()=>{if(identityAttempt===attempt&&!attempt.handling)finishIdentityAttempt(attempt,new Error('NFC-KARTE KONNTE NICHT GELESEN WERDEN // erneut scannen.'));};
+  reader.onreading=async event=>{
+   if(identityAttempt!==attempt||attempt.handling)return;attempt.handling=true;
    try{
-    const d=await apiRequest({action:'identify',uid:raw});
-    if(!d?.ok||!d.authenticated)throw new Error(d?.reason||d?.error||'ACCESS DENIED');
-    const sess=await apiRequest({action:'sessionstart',uid:raw});
-    if(!sess?.session||!sess?.token)throw new Error(sess?.status||'SESSION START FAILED');
-    sessionToken=sess.token;emitNodiv('IDENTITY_VERIFIED',{target:'#app'});document.querySelector('#bootView').hidden=true;routeIdentity(d);
-   }catch(err){handling=false;btn.disabled=false;btn.textContent='RETRY ACCESS CARD';msg.textContent=String(err.message||err);emitNodiv('ACCESS_DENIED',{target:'#app'})}
+    const uid=nfcUidFromEvent(event);stopIdentityReader(attempt);btn.textContent='VERIFYING IDENTITY';
+    const identity=await apiRequest({action:'identify',uid});if(identityAttempt!==attempt)return;
+    if(!identity?.ok||!identity.authenticated)throw new Error(identity?.reason||identity?.error||'ACCESS DENIED');
+    const session=await apiRequest({action:'sessionstart',uid});if(identityAttempt!==attempt)return;
+    if(!session?.session||!session?.token)throw new Error(session?.status||'SESSION START FAILED');
+    sessionToken=session.token;emitNodiv('IDENTITY_VERIFIED',{target:'#app'});document.querySelector('#bootView').hidden=true;routeIdentity(identity);finishIdentityAttempt(attempt);
+   }catch(error){if(identityAttempt===attempt){sessionToken='';document.querySelector('#bootView').hidden=false;}finishIdentityAttempt(attempt,error);}
   };
- }catch(err){btn.disabled=false;btn.textContent='RETRY NFC';msg.textContent=String(err.message||err);emitNodiv('ACCESS_DENIED',{target:'#app'})}
+  await reader.scan({signal:attempt.controller.signal});
+ }catch(error){finishIdentityAttempt(attempt,error);}
 }
+window.addEventListener('pagehide',()=>{if(identityAttempt)finishIdentityAttempt(identityAttempt,new Error('NFC-ANMELDUNG ABGEBROCHEN // Erneut starten.'));});
 
 window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
@@ -55,24 +88,31 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   }
  }catch(err){if(inv)inv.innerHTML='<div class="pioneer-core loading">LIVE DATA OFFLINE</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>';if(total)total.textContent='— E';if(hqTotal)hqTotal.textContent='— E'}
 });
+let pioneerObjectScan=null;
+function stopPioneerObjectReader(attempt){
+ if(attempt.reader){attempt.reader.onreading=null;attempt.reader.onreadingerror=null;}attempt.controller.abort();
+}
+function finishPioneerObjectScan(attempt){
+ stopPioneerObjectReader(attempt);if(pioneerObjectScan!==attempt)return;pioneerObjectScan=null;
+ const button=attempt.button;button.dataset.scanActive='0';
+ button.disabled=Boolean((pioneerReSupply?.atNode&&pioneerReSupply?.authorized&&pioneerReSupply?.status!=='RESUPPLY_COMPLETE')||pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore?.status)));
+}
 window.addEventListener('nodiv-pioneer-scan',async()=>{
  const b=document.querySelector('#pioneerScan');
- if(!b||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy||pioneerReSupplyBusy)return;
+ if(!b||pioneerObjectScan||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy||pioneerReSupplyBusy||evacuationBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
+ const attempt={controller:new AbortController(),reader:null,handling:false,button:b};pioneerObjectScan=attempt;
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
  try{
-  const controller=new AbortController(),reader=new NDEFReader();
-  await reader.scan({signal:controller.signal});
-  let handling=false;
-  reader.onreadingerror=()=>{if(handling)return;b.textContent='NFC LESEFEHLER // ERNEUT';b.disabled=false;b.dataset.scanActive='0';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})};
-  reader.onreading=async ev=>{
-   if(handling)return;handling=true;controller.abort();
-   const uid=String(ev?.serialNumber||'').trim();
-   if(!uid)throw new Error('KEINE NFC UID GELESEN');
-   b.textContent='NODIV OBJECT // VERIFYING';
+  const reader=new NDEFReader();attempt.reader=reader;
+  reader.onreadingerror=()=>{if(pioneerObjectScan!==attempt||attempt.handling)return;b.textContent='NFC LESEFEHLER // ERNEUT';finishPioneerObjectScan(attempt);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});};
+  reader.onreading=async event=>{
+   if(pioneerObjectScan!==attempt||attempt.handling)return;attempt.handling=true;
    try{
+    const uid=nfcUidFromEvent(event);stopPioneerObjectReader(attempt);b.textContent='NODIV OBJECT // VERIFYING';
     const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid:uid});
+    if(pioneerObjectScan!==attempt)return;
     if(!route?.ok||!route?.session)throw new Error(route?.error||route?.message||route?.reason||route?.status||'GAMEPLAY ROUTE FAILED');
     if(route.resupplyMission)renderPioneerReSupply(route.resupplyMission,true);
     else if(route.restoreMission)renderPioneerRestore(route.restoreMission,true);
@@ -81,7 +121,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
     const object=route.object||route.target||{};
     const type=String(object.type||'OBJECT').toUpperCase(),id=String(object.id||'').toUpperCase();
     const decision=route.decision||{};
-    if(type==='UPLOAD_TERMINAL'&&object.terminalType==='UPLOAD_HQ'&&object.status==='ACTIVE'&&route.decision?.allowed!==false){const preview=await apiRequest({action:'uploadpreview',token:sessionToken,uid});if(!preview?.ok||!preview?.action)throw new Error(preview?.error||preview?.status||'UPLOAD PREVIEW FAILED');renderPioneerUpload(preview);}
+    if(type==='UPLOAD_TERMINAL'&&object.terminalType==='UPLOAD_HQ'&&object.status==='ACTIVE'&&route.decision?.allowed!==false){const preview=await apiRequest({action:'uploadpreview',token:sessionToken,uid});if(pioneerObjectScan!==attempt)return;if(!preview?.ok||!preview?.action)throw new Error(preview?.error||preview?.status||'UPLOAD PREVIEW FAILED');renderPioneerUpload(preview);}
     const action=String(decision.action||route.action||'NO_ACTION').toUpperCase();
     const allowed=decision.allowed!==undefined?Boolean(decision.allowed):route.allowed!==false;
     const status=String(object.status||route.status||'').toUpperCase();
@@ -89,14 +129,13 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
     b.textContent=(id||type)+' // '+(action==='NODE_INTERACTION'?'ACCESS READY':action.replaceAll('_',' '));
     b.title=[status,message].filter(Boolean).join(' // ');
     emitNodiv(allowed?'IDENTITY_VERIFIED':'ACCESS_DENIED',{target:'#pioneerScan'});
-   }catch(err){
-    b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});
-   }finally{
-    setTimeout(()=>{b.disabled=Boolean((pioneerReSupply?.atNode&&pioneerReSupply?.authorized&&pioneerReSupply?.status!=='RESUPPLY_COMPLETE')||pioneerExchange||(pioneerRestore?.atNode&&pioneerRestore?.authorized&&!['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(pioneerRestore?.status)));b.dataset.scanActive='0';b.textContent='NFC // JETZT SCANNEN';b.title=''},5000);
-   }
+   }catch(error){if(pioneerObjectScan!==attempt)return;b.textContent=String(error.message||error);b.title=b.textContent;emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}
+   finally{finishPioneerObjectScan(attempt);}
   };
- }catch(err){b.disabled=false;b.dataset.scanActive='0';b.textContent=String(err.message||err).toUpperCase().slice(0,70);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'})}
+  await reader.scan({signal:attempt.controller.signal});
+ }catch(error){if(pioneerObjectScan===attempt){b.textContent=String(error.message||error);finishPioneerObjectScan(attempt);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}}
 });
+window.addEventListener('pagehide',()=>{if(pioneerObjectScan){pioneerObjectScan.button.textContent='NFC // JETZT SCANNEN';finishPioneerObjectScan(pioneerObjectScan);}});
 
 let startCorePioneerUid='';
 window.addEventListener('nodiv-founder-startcore-open',()=>{startCorePioneerUid='';const state=document.querySelector('#startCoreIssueState'),hint=document.querySelector('#startCoreIssueHint'),btn=document.querySelector('#scanStartCore');if(state)state.textContent='PIONEER ACCESS CARD';if(hint)hint.textContent='Zuerst die Access Card des Pioneers scannen. Danach den auszugebenden N-Core.';if(btn){btn.disabled=false;btn.dataset.scanActive='0';btn.textContent='AUSGABE STARTEN'}});
