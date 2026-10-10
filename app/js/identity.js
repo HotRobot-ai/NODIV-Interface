@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261010-fop-queue-state';
+import {routeIdentity} from './router.js?v=20261010-fop-clear';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -442,7 +442,7 @@ function renderFopInstallation(result){
   const item=document.createElement('article');item.className='fop-core'+(core.scanned?' verified':'');
   for(const [tag,text] of [['small',core.id],['strong',core.energy+' E'],['span',core.scanned?'VERIFIED':'AWAITING SCAN']]){const el=document.createElement(tag);el.textContent=text;item.appendChild(el)}list.appendChild(item);
  }}
- setText('#fopDeploymentNode',result?.node?.id||'SELECT OPERATION');
+ setText('#fopDeploymentNode',result?.node?.id||'Operation auswählen');
  setText('#fopLoadoutEnergy',result?result.totalEnergy+' E':'— E');
  setText('#fopLoadoutState',result?.nodeState||'—');
  const state=document.querySelector('#fopLoadoutState');if(state)state.dataset.state=result?.nodeState||'';
@@ -1032,18 +1032,31 @@ setInterval(()=>{const button=document.querySelector('#startPreEvacuation');if(b
 
 // Minimal EVAC-1 test controls. Durable server team/cargo state is the authority.
 let evacuationBusy=false,evacuationEventId='',evacuationView=null;
+function renderFopEventStatus(state){
+ const badge=document.querySelector('#fopEventStatus');if(!badge)return;
+ const known=['FIELD_ACTIVE','INITIALIZED','COMPLETED','STANDBY'].includes(state);
+ badge.dataset.state=state==='FIELD_ACTIVE'?'active':known?'inactive':'unknown';
+ badge.textContent=state==='FIELD_ACTIVE'?'EVENT AKTIV':state==='INITIALIZED'?'EVENT VORBEREITET // NOCH NICHT AKTIV':known?'KEIN AKTIVES EVENT':'EVENTSTATUS UNKLAR';
+}
 function renderEvacuation(result){
  const status=document.querySelector('#evacuationStatus'),details=document.querySelector('#evacuationDetails');if(!status||!details)return;
  if(result.eventId)evacuationEventId=result.eventId;
+ if(result.eventState)renderFopEventStatus(result.eventState);
  const team=result.evacuation;evacuationView=team||null;status.textContent=team?(team.status+(team.command?' // '+team.command:'')):result.status;
  details.textContent=team?team.nodes.map((node,i)=>'NODE '+(i+1)+' // '+node.nodeId+' // '+node.status+' // CARGO → '+node.carrier).concat(team.cargo.map(cargo=>cargo.carrier+' // 3 EVACUATION / '+(cargo.status||'IN_TRANSIT').replaceAll('_',' ')+' CORES // '+cargo.cores.map(core=>core.energy+' E').join(' + '))).concat((team.finalUploads||[]).map(player=>player.identity+' // FINAL UPLOAD '+(player.completed?'COMPLETE':'PENDING'))).join(' | '):result.teams?.length?result.teams.map(team=>team.teamId+' // '+team.status).join(' | '):result.status==='EVACUATION_IN_PROGRESS'?'FOP bildet physisch ein Team mit genau zwei Pioneers.':'Founder-Start erst nach EVACUATION_READY.';
+ if(document.querySelector('#fopEventStatus')){
+  const labels={EVACUATION_NOT_STARTED:'Noch nicht gestartet',EVACUATION_IN_PROGRESS:'Evakuierung läuft',EVACUATION_COMPLETED:'Evakuierung abgeschlossen'};
+  if(!team&&labels[result.status])status.textContent=labels[result.status];
+  if(team){status.textContent=team.status==='EVACUATION_TEAM_COMPLETE'?'Team-Aufgabe abgeschlossen':'Team im Einsatz';details.textContent=team.command==='RETURN TO HQ'?'Kehrt gemeinsam zum HQ zurück.':team.nodes.map(node=>node.nodeId+' – '+(node.status==='EVACUATED'?'Rückbau abgeschlossen':node.status==='NEXT'?'als Nächstes scannen':'noch offen')).join(' / ');}
+  if(!team)details.textContent=result.status==='EVACUATION_IN_PROGRESS'?'Bilde ein Team mit genau zwei Pioneers. Tippe „Team erfassen“ und scanne beide Access Cards.':result.status==='EVACUATION_COMPLETED'?'Die Evakuierung ist beendet. Es ist kein weiterer Schritt erforderlich.':'Warte auf den Start durch den Founder. Danach kannst du dein Team erfassen.';
+ }
  renderEvacuationFinal(team);
  const start=document.querySelector('#evacuationStart'),form=document.querySelector('#evacuationTeam');if(start){start.disabled=evacuationBusy||result.evacuationReady!==true;start.hidden=result.status==='EVACUATION_IN_PROGRESS';}if(form){form.disabled=evacuationBusy||result.status!=='EVACUATION_IN_PROGRESS'||Boolean(team);form.hidden=Boolean(team);}
 }
 async function refreshEvacuation(){
  if(!sessionToken||!document.querySelector('#evacuationPanel')||evacuationBusy)return;
- try{const r=await apiRequest({action:'evacuationstate',token:sessionToken});if(!r?.ok||!r?.session)throw Error(r?.error||r?.status||'EVACUATION STATE FAILED');renderEvacuation(r);}
- catch(error){const status=document.querySelector('#evacuationStatus');if(status)status.textContent=String(error.message||error);}
+ try{const r=await apiRequest({action:'evacuationstate',token:sessionToken});if(r?.error==='EVACUATION_FIELD_ACTIVE_REQUIRED'){renderFopEventStatus('STANDBY');}if(!r?.ok||!r?.session)throw Error(r?.error||r?.status||'EVACUATION STATE FAILED');renderEvacuation(r);}
+ catch(error){if(String(error.message||error)!=='EVACUATION_FIELD_ACTIVE_REQUIRED')renderFopEventStatus('unknown');const status=document.querySelector('#evacuationStatus');if(status)status.textContent=String(error.message||error)==='EVACUATION_FIELD_ACTIVE_REQUIRED'?'Kein aktives Event':'Status konnte nicht geladen werden: '+String(error.message||error);const form=document.querySelector('#evacuationTeam');if(form)form.disabled=true;}
 }
 function scanEvacuationUid(){
  return new Promise(async(resolve,reject)=>{

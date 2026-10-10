@@ -375,3 +375,11 @@ test('FOP queue distinguishes pending, failed and authoritative empty responses 
  f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[{id:'DEINSTALL:NODE-001',type:'DEINSTALL',nodeId:'NODE-001',label:'DEINSTALL // NODE-001'}]});await f.queue();assert.equal(e['#fopOperationSelect'].disabled,false);assert.equal(e['#fopOperationStatus'].textContent,'READY');
  f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[]});await f.queue();assert.equal(e['#fopOperationStatus'].textContent,'NO OPERATIONS');assert.match(e['#fopQueueHint'].textContent,/Server bestätigt/);
 });
+
+test('FOP event indicator reflects server state, clears stale green on error and retains team gate',async()=>{
+ const f=ui(),e=f.elements;e['#fopEventStatus']=new (e['#fopQueueHint'].constructor)();
+ f.ctx.apiRequest=async()=>({ok:true,session:true,eventState:'FIELD_ACTIVE',status:'EVACUATION_NOT_STARTED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'active');assert.equal(e['#evacuationStatus'].textContent,'Noch nicht gestartet');assert.match(e['#evacuationDetails'].textContent,/Warte.*Founder/);assert.equal(e['#evacuationTeam'].disabled,true);
+ f.ctx.apiRequest=async()=>({ok:true,session:true,eventState:'COMPLETED',status:'EVACUATION_COMPLETED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');
+ f.ctx.apiRequest=async()=>{throw Error('TIMEOUT')};await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'unknown');assert.equal(e['#evacuationTeam'].disabled,true);
+ f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');
+});

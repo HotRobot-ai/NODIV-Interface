@@ -296,3 +296,17 @@
  .pioneer-feed{white-space:normal;line-height:1.5}
  .pioneer-feed div{display:block;padding:12px 20px;transform:none;overflow-wrap:anywhere}
 }
+
+/* FOP: compact instructions, clear event state and evacuation actions. */
+.fop-event-status{display:flex;align-items:center;gap:9px;padding:11px 13px;margin-bottom:12px;border:1px solid #72849466;border-radius:8px;color:#b0c0cc;font:800 11px/1.5 ui-monospace,monospace}
+.fop-event-status:before{content:"";width:9px;height:9px;flex:none;border-radius:50%;background:currentColor}
+.fop-event-status[data-state="active"]{color:#72efa9;border-color:#72efa955;background:#0c241a}
+.fop-event-status[data-state="inactive"]{color:#ff9797;border-color:#ff979755;background:#281316}
+[data-role="FOP"] .fop-deployment h3{font-size:22px;line-height:1.25;margin:12px 0}
+[data-role="FOP"] .event-control{margin-top:16px;padding:16px;border:1px solid #327ca766;border-radius:12px;background:linear-gradient(145deg,#0b1b26,#050b10);font-family:ui-monospace,monospace}
+[data-role="FOP"] .event-control>strong{display:block;color:var(--role-accent);font-size:12px;letter-spacing:.08em}
+[data-role="FOP"] #evacuationStatus{margin:12px 0 8px;font-size:18px;font-weight:800;line-height:1.4;overflow-wrap:anywhere}
+[data-role="FOP"] #evacuationDetails{font-size:12px;line-height:1.7;color:var(--nd-muted);overflow-wrap:anywhere}
+[data-role="FOP"] .event-control .role-action{min-height:48px;padding:12px;font-size:11px;line-height:1.5;letter-spacing:.04em}
+[data-role="FOP"] .event-control button:disabled{opacity:.4;cursor:default}
+[data-role="FOP"] #evacuationRefresh{background:transparent;border-color:#327ca755;color:var(--nd-muted)}
