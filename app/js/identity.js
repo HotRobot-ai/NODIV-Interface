@@ -701,8 +701,8 @@ function renderPioneerRestore(result,atNode=false){
  document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'ZUGANGSCODE  '+result.accessCode:'';
  document.querySelector('#restoreProgress').textContent=complete?'RESTORE COMPLETE // CAPACITY '+(result.capacity||phase+1)+'/3 // TARGET LOCK 01:00:00':'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1';
  const step=(id,state)=>{const el=document.querySelector(id);if(el)el.dataset.state=state;};
- const hqDone=Boolean(atNode||result.authorized||result.inCount||result.outCount||complete),nodeDone=Boolean(result.authorized||result.inCount||result.outCount||complete),inDone=Boolean(result.inCount||complete),outDone=Boolean(result.outCount||complete);
- let current='hq';if(hqDone)current='node';if(nodeDone)current='in';if(inDone)current='out';if(outDone)current='confirm';if(complete)current='complete';
+ const hqDone=Boolean(atNode||result.authorized||result.inCount||result.outCount||complete),nodeDone=Boolean(complete||atNode&&result.authorized),inDone=Boolean(result.inCount||complete),outDone=Boolean(result.outCount||complete);
+ let current='hq';if(hqDone)current='node';if(nodeDone){current='in';if(inDone)current='out';if(outDone)current='confirm';}if(complete)current='complete';
  step('#restoreStepHq',hqDone?'done':current==='hq'?'current':'waiting');step('#restoreStepNode',nodeDone?'done':current==='node'?'current':'waiting');step('#restoreStepIn',inDone?'done':current==='in'?'current':'waiting');step('#restoreStepOut',outDone?'done':current==='out'?'current':'waiting');
  document.querySelector('#restoreStepHqDetail').textContent=hqDone?'Erledigt':result.inCore.id+' // '+result.inCore.energy+' E';
  document.querySelector('#restoreStepNodeDetail').textContent=nodeDone?'Erledigt':result.nodeId;
@@ -711,12 +711,12 @@ function renderPioneerRestore(result,atNode=false){
  const now=document.querySelector('#restoreNowTitle'),hint=document.querySelector('#restoreHint');
  if(complete){now.textContent='RESTORE ERFOLGREICH';hint.textContent=phase===2?'NODE stabilisiert. Dritter Slot freigeschaltet.':'NODE stabilisiert. Zweiter Slot freigeschaltet.';}
  else if(current==='hq'){now.textContent=result.inCore.id+' AM HQ ÜBERNEHMEN';hint.textContent='Nimm den angezeigten Transport-Core auf. Danach zum Ziel-Node gehen und dessen NFC-Tag scannen.';}
- else if(current==='node'){now.textContent=result.nodeId+' SCANNEN';hint.textContent='Halte dein Smartphone an den NFC-Tag des Ziel-Nodes.';}
+ else if(current==='node'){now.textContent=atNode?'NODE ÖFFNEN':result.nodeId+' ERNEUT SCANNEN';hint.textContent=atNode?'Autorisiere den Node-Zugang, um den RESTORE fortzusetzen.':'Scanne den NFC-Tag des Ziel-Nodes über NFC // JETZT SCANNEN. Dein bisheriger Scanfortschritt bleibt erhalten.';}
  else if(current==='in'){now.textContent=result.inCore.id+' EINSETZEN';hint.textContent='Setze den Transport-Core ein und scanne ihn mit dem Smartphone.';}
  else if(current==='out'){now.textContent=result.outCore.id+' ENTNEHMEN';hint.textContent='Entnimm genau diesen Node-Core und scanne ihn mit dem Smartphone.';}
  else {now.textContent='RESTORE ABSCHLIESSEN';hint.textContent='Alle erforderlichen Schritte sind bestätigt. Schließe den RESTORE jetzt ab.';}
  const auth=document.querySelector('#restoreAuthorize'),scan=document.querySelector('#restoreScan'),confirm=document.querySelector('#restoreConfirm');
- auth.hidden=!active||current!=='node';auth.disabled=pioneerRestoreBusy;auth.textContent='NODE ÖFFNEN';
+ auth.hidden=!active||!atNode||current!=='node';auth.disabled=pioneerRestoreBusy;auth.textContent='NODE ÖFFNEN';
  scan.hidden=!active||!['in','out'].includes(current);scan.disabled=pioneerRestoreBusy;scan.textContent=current==='out'?result.outCore.id+' SCANNEN':result.inCore.id+' SCANNEN';
  confirm.hidden=!active||current!=='confirm';confirm.disabled=pioneerRestoreBusy||!result.canConfirm;
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=Boolean(active&&atNode&&result.authorized);

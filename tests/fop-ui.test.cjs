@@ -339,3 +339,19 @@ test('FOP reload selects server resume option and restores existing scan progres
   assert.equal(f.requests.at(-1).action,operation==='INSTALL'?'nodeinstallorder':'nodedeinstallorder');
  }
 });
+
+test('RESTORE 1/2 reload requires Node rescan before remaining scans or confirmation',async()=>{
+ for(const phase of [1,2])for(const progress of [1,2]){
+  const f=ui(),e=f.elements,mission={ok:true,session:true,restore:'RST-'+phase,phase,status:'RESTORE_IN_TRANSIT',nodeId:'NODE-002',inCore:{id:'NC-009',energy:280},outCore:{id:'NC-004',energy:100},totalEnergy:420,nodeState:'CRITICAL',projectedEnergy:600,projectedState:'STABLE',inCount:1,outCount:progress===2?1:0,authorized:false,canConfirm:false};
+  f.ctx.apiRequest=async()=>mission;await f.listeners['nodiv-pioneer-restore-status']();
+  assert.equal(e['#restoreNowTitle'].textContent,'NODE-002 ERNEUT SCANNEN');assert.match(e['#restoreHint'].textContent,/NFC.*Scanfortschritt bleibt erhalten/);
+  for(const id of ['restoreAuthorize','restoreScan','restoreConfirm'])assert.equal(e['#'+id].hidden,true);
+  assert.equal(e['#pioneerScan'].disabled,false);assert.equal(e['#restoreCode'].textContent,'');assert.equal(e['#restoreProgress'].textContent,'IN 1/1 // OUT '+mission.outCount+'/1');
+  // A Node scan without authorization must still ask for authorization first.
+  f.ctx.renderPioneerRestore(mission,true);assert.equal(e['#restoreAuthorize'].hidden,false);assert.equal(e['#restoreScan'].hidden,true);assert.equal(e['#restoreConfirm'].hidden,true);
+  // Server recovery after the target scan restores the exact next action.
+  f.ctx.renderPioneerRestore({...mission,authorized:true,accessCode:'5678',canConfirm:progress===2},true);
+  assert.equal(e['#restoreAuthorize'].hidden,true);assert.equal(e['#restoreScan'].hidden,progress===2);assert.equal(e['#restoreConfirm'].hidden,progress!==2);assert.equal(e['#restoreConfirm'].disabled,progress!==2);assert.match(e['#restoreCode'].textContent,/5678/);
+  assert.equal(e['#restoreNowTitle'].textContent,progress===2?'RESTORE ABSCHLIESSEN':'NC-004 ENTNEHMEN');
+ }
+});
