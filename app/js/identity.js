@@ -421,7 +421,7 @@ async function refreshFopOperations(){
   if(r.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:r.evacuation,eventId:r.eventId});
   fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
   select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'OPERATION AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
-  for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value='';
+  for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value=fopOperations.find(operation=>operation.resume===true)?.id||'';
  }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='NO OPERATIONS AVAILABLE';select.appendChild(option);if(hint)hint.textContent=String(err.message||err)}
  finally{fopQueueBusy=false;renderFopInstallation(fopInstallation)}
 }

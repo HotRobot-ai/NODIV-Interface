@@ -67,10 +67,10 @@ test('reserve ownership, status and deployment checked during scan and confirmat
  const f=fixture();f.order();f.sheets['Deployment Register'].rows.push(['DEP-1','NC-001','','','','','ASSIGNED']);assert.throws(()=>f.scan(1),/ALREADY_ASSIGNED/);
  const g=fixture();g.order();[1,2,3].forEach(g.scan);g.sheets['N-Core Register'].rows[3][15]='OTHER';assert.throws(()=>g.ctx.confirmNodeInstallation(g.e),/NOT_RESERVE/);assert.equal(g.batches(),1);assert.equal(g.sheets['N-Core Register'].rows[1][14],'NODIV_RESERVE');
 });
-test('wrong Node, changed event, expired login/order, invalid/replaced order and assigned FOP rejected',()=>{
+test('wrong Node, changed event, expired login/order and assigned FOP rejected; repeat order resumes',()=>{
  const f=fixture();f.order();f.e.parameter.node='NODE-002';assert.throws(()=>f.scan(1),/MISMATCH/);f.e.parameter.node='NODE-001';
  f.sheets['Event Register'].rows[1][1]='FIELD_ACTIVE';assert.throws(()=>f.scan(1),/INSTALL_ORDER_REQUIRED/);
- const g=fixture();g.order();const old=g.e.parameter.installation;g.order();g.e.parameter.installation=old;assert.throws(()=>g.scan(1),/EXPIRED/);
+ const g=fixture();g.order();const old=g.e.parameter.installation;assert.equal(g.order().installation,old);assert.equal(g.scan(1).count,1);
  g.cache.delete('NODIV_SESSION_'+g.e.parameter.token);assert.equal(g.scan(1).authenticated,false);
  const h=fixture();h.order();const key='NODIV_INSTALL_ORDER_'+h.e.parameter.installation,stored=JSON.parse(h.properties.get(key));stored.expiresAt=0;h.properties.set(key,JSON.stringify(stored));assert.throws(()=>h.scan(1),/EXPIRED/);
  const j=fixture();j.sheets['Event Node Codes'].rows[1][10]='F002';assert.throws(j.order,/OTHER_FOP/);
@@ -200,7 +200,7 @@ test('queue lists only actual eligible operations, never post-init NODE-002 or m
  f.e.parameter.node='NODE-002';assert.throws(()=>f.ctx.getNodeInstallOrder(f.e),/NODE_NOT_IN_EVENT/);assert.throws(()=>f.ctx.getNodeDeinstallOrder(f.e),/NODE_NOT_IN_EVENT/);
  const g=fixture();enableNode(g,'NODE-003','F002');g.sheets['Event Node Codes'].rows.push(['EVT-1','NODE-009','','','','','','','PRIMARY','ASSIGNED_FOR_INSTALL']);
  assert.deepEqual(Array.from(g.ctx.getFopOperations(g.e).operations,op=>op.label),['INSTALL // NODE-001']);
- g.order();assert.equal(g.ctx.getFopOperations(g.e).operations.length,0);
+ g.order();assert.equal(g.ctx.getFopOperations(g.e).operations[0].resume,true);
  const h=fixture();setEnergies(h,[200,200]);assert.equal(h.ctx.getFopOperations(h.e).status,'NO OPERATIONS AVAILABLE');
 });
 test('recovery enforces exact current 006/003/004, wrong/duplicate rejection and no 1/3 or 2/3 ownership writes',()=>{
@@ -225,8 +225,8 @@ test('recovery failure is atomic, including ownership/log/Node/code/deployment s
  assert.equal(JSON.stringify([Object.values(f.sheets).map(s=>s.rows),Object.fromEntries(f.properties)]),before);assert.equal(f.ctx.countCoresOwnedBy('NODE','NODE-001'),3);
 });
 test('recovery reserves Node and all three Cores against additions, removals, missions and other FOPs',()=>{
- const f=recoveryFixture();f.removal();assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
- const secondToken='b'.repeat(72);f.cache.set('NODIV_SESSION_'+secondToken,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));
+ const f=recoveryFixture();f.removal();assert.equal(f.ctx.getFopOperations(f.e).operations.length,1);assert.equal(f.ctx.getFopOperations(f.e).operations[0].resume,true);
+ const secondToken='b'.repeat(72);f.sheets['Access Card Register'].rows.push(['CARD-002','F002','FOP','fop2uid','ACTIVE','',0,true]);f.cache.set('NODIV_SESSION_'+secondToken,JSON.stringify({identity:'F002',role:'FOP',cardId:'CARD-002'}));
  assert.throws(()=>f.ctx.getNodeDeinstallOrder({parameter:{token:secondToken,node:'NODE-001'}}),/RESERVED/);
  assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-003',expectedFromType:'NODE',expectedFromId:'NODE-001',toType:'NODIV_RESERVE',toId:'HQ'}),/RESERVED/);
  assert.throws(()=>f.ctx.transferCoreOwnership({coreId:'NC-001',expectedFromType:'NODIV_RESERVE',expectedFromId:'HQ',toType:'NODE',toId:'NODE-001'}),/RESERVED/);
@@ -1411,4 +1411,25 @@ test('Founder readiness preserves Preflight / fingerprint blocks and explicit te
  f.ctx.getEventConfigurationFingerprint=()=> 'fingerprint';const explicit=Array.from({length:10},(_,i)=>'NODE-'+String(i+6).padStart(3,'0'));
  assert.deepEqual(Array.from(f.initialize(explicit.join(',')).event.nodes),explicit);
  assert.equal(f.initialize().status,'EVENT_ALREADY_INITIALIZED');
+});
+
+test('normal FOP resume preserves INSTALL and DEINSTALL orders at 0..3 scans after new login',()=>{
+ for(const removal of [false,true])for(const count of [0,1,2,3]){
+  const f=removal?recoveryFixture():fixture();const order=removal?f.removal():f.order();
+  for(const n of (removal?[6,3,4]:[1,2,3]).slice(0,count))removal?f.removeScan(n):f.scan(n);
+  const before=JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),batches=f.batches();
+  f.cache.delete('NODIV_SESSION_'+f.e.parameter.token);
+  const token='b'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'F001',role:'FOP',cardId:'CARD-001'}));f.e.parameter.token=token;
+  const properties=JSON.stringify([...f.properties]);const queue=f.ctx.getFopOperations(f.e);
+  assert.equal(queue.operations[0].resume,true);assert.equal(JSON.stringify([...f.properties]),properties);
+  const resumed=removal?f.ctx.getNodeDeinstallOrder(f.e):f.ctx.getNodeInstallOrder(f.e);
+  assert.equal(resumed.installation,order.installation);assert.equal(resumed.count,count);assert.equal(resumed.canConfirm,count===3);
+  assert.equal(f.batches(),batches);assert.equal(JSON.stringify(Object.values(f.sheets).map(s=>s.rows)),before);
+  assert.throws(()=>f.ctx.readNodeInstallation({parameter:{token:'a'.repeat(72),node:'NODE-001',installation:order.installation}}, {identity:'F001'},removal?'DEINSTALL':'INSTALL'),/MISMATCH/);
+ }
+});
+test('FOP resume queue excludes other identities and expired orders',()=>{
+ const f=recoveryFixture();const order=f.removal();assert.equal(f.ctx.getFopOperations(f.addFounder()).operations.some(o=>o.resume),false);
+ const key='NODIV_INSTALL_ORDER_'+order.installation,data=JSON.parse(f.properties.get(key));data.expiresAt=0;f.properties.set(key,JSON.stringify(data));
+ assert.equal(f.ctx.getFopOperations(f.e).operations.some(o=>o.resume),false);
 });

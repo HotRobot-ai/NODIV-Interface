@@ -329,3 +329,13 @@ test('Founder uses server start roster in Readiness and initializes without a ha
  await f.listeners['nodiv-founder-event-initialize']();
  const request=requests.find(p=>p.action==='eventinitialize');assert.ok(request);assert.equal(Object.hasOwn(request,'nodes'),false);assert.equal(e['#initializeEvent'].disabled,true);
 });
+
+test('FOP reload selects server resume option and restores existing scan progress',async()=>{
+ for(const operation of ['INSTALL','DEINSTALL']){
+  const f=ui({operation}),base=f.ctx.apiRequest,nodeId=operation==='INSTALL'?'NODE-002':'NODE-001';
+  f.ctx.apiRequest=async p=>p.action==='fopoperations'?{ok:true,session:true,operations:[{id:operation+':'+nodeId,type:operation,nodeId,resume:true,label:'FORTSETZEN // '+nodeId}]}:{...await base(p),installation:'existing-order',count:2,canConfirm:false,loadout:[{id:'NC-017',energy:175,scanned:true},{id:'NC-034',energy:246,scanned:true},{id:'NC-089',energy:281,scanned:false}]};
+  await f.queue();assert.equal(f.elements['#fopOperationSelect'].value,operation+':'+nodeId);
+  await f.listeners['nodiv-fop-install-order']();assert.equal(f.elements['#fopInstallProgress'].textContent,'2/3');assert.equal(f.elements['#fopInstallConfirm'].disabled,true);
+  assert.equal(f.requests.at(-1).action,operation==='INSTALL'?'nodeinstallorder':'nodedeinstallorder');
+ }
+});
