@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261010-session-resume';
+import {routeIdentity} from './router.js?v=20261010-fop-guidance';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -1077,7 +1077,9 @@ function renderEvacuation(result){
  const status=document.querySelector('#evacuationStatus'),details=document.querySelector('#evacuationDetails');if(!status||!details)return;
  if(result.eventId)evacuationEventId=result.eventId;
  if(result.eventState)renderFopEventStatus(result.eventState);
- const team=result.evacuation;evacuationView=team||null;status.textContent=team?(team.status+(team.command?' // '+team.command:'')):result.status;
+ const team=result.evacuation;evacuationView=team||null;
+ const fopEvacPanel=document.querySelector('[data-role="FOP"] #evacuationPanel');
+ if(fopEvacPanel)fopEvacPanel.hidden=!(Boolean(team)||result.status==='EVACUATION_IN_PROGRESS'||result.status==='EVACUATION_COMPLETED');status.textContent=team?(team.status+(team.command?' // '+team.command:'')):result.status;
  details.textContent=team?team.nodes.map((node,i)=>'NODE '+(i+1)+' // '+node.nodeId+' // '+node.status+' // CARGO → '+node.carrier).concat(team.cargo.map(cargo=>cargo.carrier+' // 3 EVACUATION / '+(cargo.status||'IN_TRANSIT').replaceAll('_',' ')+' CORES // '+cargo.cores.map(core=>core.energy+' E').join(' + '))).concat((team.finalUploads||[]).map(player=>player.identity+' // FINAL UPLOAD '+(player.completed?'COMPLETE':'PENDING'))).join(' | '):result.teams?.length?result.teams.map(team=>team.teamId+' // '+team.status).join(' | '):result.status==='EVACUATION_IN_PROGRESS'?'FOP bildet physisch ein Team mit genau zwei Pioneers.':'Founder-Start erst nach EVACUATION_READY.';
  if(document.querySelector('#fopEventStatus')){
   const labels={EVACUATION_NOT_STARTED:'Noch nicht gestartet',EVACUATION_IN_PROGRESS:'Evakuierung läuft',EVACUATION_COMPLETED:'Evakuierung abgeschlossen'};
