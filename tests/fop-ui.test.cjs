@@ -394,3 +394,7 @@ test('FOP detail card stays hidden without an order, appears for a loaded order 
  const f=ui(),e=f.elements;await f.queue();assert.equal(e['#fopDeploymentCard'].hidden,true);assert.equal(e['#fopOperationSelect'].disabled,false);
  await f.order();assert.equal(e['#fopDeploymentCard'].hidden,false);await f.listeners['nodiv-fop-install-cancel']();assert.equal(e['#fopDeploymentCard'].hidden,true);
 });
+
+test('FOP failed order remains visible beside the queue when the unloaded detail card is hidden',async()=>{
+ const f=ui(),e=f.elements,api=f.ctx.apiRequest;f.ctx.apiRequest=async p=>p.action==='nodeinstallorder'?{ok:false,error:'ORDER_BLOCKED'}:api(p);await f.order();assert.equal(e['#fopDeploymentCard'].hidden,true);assert.match(e['#fopQueueHint'].textContent,/ORDER_BLOCKED/);assert.equal(e['#fopInstallOrder'].disabled,false);
+});

@@ -484,14 +484,14 @@ window.addEventListener('nodiv-fop-install-order',async()=>{
  const node=operation.nodeId;
  fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
-  let evacuationParams={};if(operation.evacuation){if(hint)hint.textContent='ZUGEWIESENEN NODE NFC SCANNEN // '+node;evacuationParams={evacuation:operation.evacuation,uid:await scanEvacuationUid()};}
+  let evacuationParams={};if(operation.evacuation){const queueHint=document.querySelector('#fopQueueHint');if(queueHint)queueHint.textContent='Zugewiesenen Node '+node+' jetzt per NFC scannen.';if(hint)hint.textContent='ZUGEWIESENEN NODE NFC SCANNEN // '+node;evacuationParams={evacuation:operation.evacuation,uid:await scanEvacuationUid()};}
   const r=await apiRequest({action:operation.type==='DEINSTALL'?'nodedeinstallorder':'nodeinstallorder',token:sessionToken,node,...evacuationParams,...(operation.withdrawal?{withdrawal:operation.withdrawal}:{})});
   if(!r?.ok||r?.action!==true||!r.installation)throw new Error(r?.message||r?.status||r?.error||'AUFTRAG NICHT VERFÜGBAR');
   fopInstallation=r;
   if(panel)panel.hidden=false;
   if(value)value.textContent=r.node.code;
   if(hint)hint.textContent=node+' // '+(r.cargoCarrier?'CARGO → '+r.cargoCarrier+' // ':'')+r.instruction;
- }catch(err){if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err)}
+ }catch(err){if(value)value.textContent='LOCKED';if(hint)hint.textContent=String(err.message||err);const queueHint=document.querySelector('#fopQueueHint');if(queueHint)queueHint.textContent='Auftrag konnte nicht geladen werden: '+String(err.message||err)}
  finally{fopInstallBusy=false;renderFopInstallation(fopInstallation)}
 });
 window.addEventListener('nodiv-fop-install-scan',async()=>{
