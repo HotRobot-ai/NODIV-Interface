@@ -201,7 +201,7 @@
 [data-role="FOP"] .role-head p{font-size:10px;letter-spacing:.12em}
 [data-role="FOP"] .role-sigil{width:34px;height:34px}
 /* Access-card scenery and an immediately recognizable operator identity. */
-[data-role="FOP"] .role-head{box-sizing:border-box;min-height:238px;align-items:flex-end;padding:24px 18px 20px;border:1px solid #56caff66;border-radius:14px;background:linear-gradient(180deg,#020a1210 0%,#020a1220 32%,#020a12e8 80%,#020a12 100%),url('../../f6072312-e4b9-448b-84ee-3283e200b198.png') center 48%/100% auto no-repeat;box-shadow:inset 0 0 35px #030a1255,0 12px 30px #0005}
+[data-role="FOP"] .role-head{box-sizing:border-box;min-height:238px;align-items:flex-end;padding:24px 18px 20px;border:1px solid #56caff66;border-radius:14px;background:linear-gradient(180deg,#020a1210 0%,#020a1220 32%,#020a12e8 80%,#020a12 100%),url('../../f6072312-e4b9-448b-84ee-3283e200b198.png') center calc(48% + 36px)/100% auto no-repeat;box-shadow:inset 0 0 35px #030a1255,0 12px 30px #0005}
 [data-role="FOP"] .role-head>div{min-width:0;position:relative}
 [data-role="FOP"] .role-head small{font-size:10px;color:#a9d8ee;letter-spacing:.12em}
 [data-role="FOP"] .role-head h2{margin:6px 0;font-size:18px;color:#ccecff;overflow-wrap:anywhere}
