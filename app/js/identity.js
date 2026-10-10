@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261010-catcher-state';
+import {routeIdentity} from './router.js?v=20261010-fop-queue-state';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -409,12 +409,15 @@ window.addEventListener('nodiv-founder-event-shutdown',async()=>{
  }catch(err){showFounderResult('FIELD SHUTDOWN BLOCKED',String(err.message||err),false,btn)}finally{await refreshFounderEventStatus()}
 });
 
-let fopInstallation=null,fopInstallBusy=false,fopOperations=[],fopQueueBusy=false;
+let fopInstallation=null,fopInstallBusy=false,fopOperations=[],fopQueueBusy=false,fopQueueState='idle';
 function selectedFopOperation(){const value=document.querySelector('#fopOperationSelect')?.value;return fopOperations.find(operation=>operation.id===value)||null}
 async function refreshFopOperations(){
  if(!sessionToken||fopInstallBusy||fopQueueBusy)return;
  const select=document.querySelector('#fopOperationSelect'),hint=document.querySelector('#fopInstallHint');if(!select)return;
- fopQueueBusy=true;fopOperations=[];renderFopInstallation(fopInstallation);
+ fopQueueBusy=true;fopQueueState='loading';fopOperations=[];
+ const queueHint=document.querySelector('#fopQueueHint');
+ select.replaceChildren();const loading=document.createElement('option');loading.value='';loading.textContent='QUEUE WIRD GELADEN';select.appendChild(loading);
+ if(queueHint)queueHint.textContent='Aufträge werden vom Server geladen.';renderFopInstallation(fopInstallation);
  try{
   const r=await apiRequest({action:'fopoperations',token:sessionToken});
   if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'OPERATIONS QUEUE UNAVAILABLE');
@@ -422,7 +425,8 @@ async function refreshFopOperations(){
   fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
   select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'OPERATION AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
   for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value=fopOperations.find(operation=>operation.resume===true)?.id||'';
- }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='NO OPERATIONS AVAILABLE';select.appendChild(option);if(hint)hint.textContent=String(err.message||err)}
+  fopQueueState='ready';if(queueHint)queueHint.textContent=fopOperations.length?'Operation auswählen.':'Server bestätigt: aktuell keine verfügbaren Operationen.';
+ }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='QUEUE NICHT GELADEN';select.appendChild(option);fopQueueState='error';const message='Aufträge konnten nicht geladen werden: '+String(err.message||err)+' // QUEUE AKTUALISIEREN.';if(queueHint)queueHint.textContent=message;if(hint)hint.textContent=message}
  finally{fopQueueBusy=false;renderFopInstallation(fopInstallation)}
 }
 window.addEventListener('nodiv-fop-operations',refreshFopOperations);
@@ -442,7 +446,7 @@ function renderFopInstallation(result){
  setText('#fopLoadoutEnergy',result?result.totalEnergy+' E':'— E');
  setText('#fopLoadoutState',result?.nodeState||'—');
  const state=document.querySelector('#fopLoadoutState');if(state)state.dataset.state=result?.nodeState||'';
- setText('#fopOperationStatus',complete?'COMPLETE':result?(removal?'RECOVERING':'DEPLOYING'):'READY');
+ setText('#fopOperationStatus',complete?'COMPLETE':result?(removal?'RECOVERING':'DEPLOYING'):fopQueueBusy?'LOADING':fopQueueState==='error'?'UNAVAILABLE':fopQueueState==='ready'&&!fopOperations.length?'NO OPERATIONS':'READY');
  setText('#fopOperationLabel',removal?'FIELD RECOVERY':'FIELD INSTALLATION');
  setText('#fopDeploymentLabel',removal?'NODE DEINSTALLATION':'NODE DEPLOYMENT');
  setText('#fopLoadoutLabel',removal?'REMOVAL LOADOUT':'ASSIGNED LOADOUT');
