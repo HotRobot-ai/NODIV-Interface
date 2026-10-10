@@ -398,3 +398,14 @@ test('FOP detail card stays hidden without an order, appears for a loaded order 
 test('FOP failed order remains visible beside the queue when the unloaded detail card is hidden',async()=>{
  const f=ui(),e=f.elements,api=f.ctx.apiRequest;f.ctx.apiRequest=async p=>p.action==='nodeinstallorder'?{ok:false,error:'ORDER_BLOCKED'}:api(p);await f.order();assert.equal(e['#fopDeploymentCard'].hidden,true);assert.match(e['#fopQueueHint'].textContent,/ORDER_BLOCKED/);assert.equal(e['#fopInstallOrder'].disabled,false);
 });
+
+test('saved app session resumes only after server validation; invalid session clears token, transport failure retains it and lock revokes',async()=>{
+ const f=ui(),e=f.elements,token='a'.repeat(72),storage=new Map([['nodiv_app_session_v1',token]]),routes=[];
+ vm.runInContext("sessionToken=''",f.ctx);
+ for(const id of ['identityBtn','msg','bootView','roleView'])e['#'+id]=new(e['#fopQueueHint'].constructor)();
+ f.ctx.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};f.ctx.routeIdentity=p=>routes.push(p);let reloads=0;f.ctx.location={reload:()=>reloads++};
+ f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:true,session:true,authenticated:true,player:{role:'FOP',identity:'F001'}}};await f.listeners['nodiv-session-restore']();assert.equal(routes.length,1);assert.equal(f.requests[0].action,'sessioncheck');assert.equal(e['#bootView'].hidden,true);
+ await f.listeners['nodiv-session-lock']();assert.equal(storage.size,0);assert.equal(f.requests.at(-1).action,'sessionend');assert.equal(reloads,1);
+ storage.set('nodiv_app_session_v1',token);f.ctx.apiRequest=async()=>{throw Error('TIMEOUT')};await f.listeners['nodiv-session-restore']();assert.equal(storage.get('nodiv_app_session_v1'),token);assert.equal(routes.length,1);assert.equal(e['#identityBtn'].disabled,false);
+ f.ctx.apiRequest=async()=>({ok:true,session:false,status:'SESSION_EXPIRED'});await f.listeners['nodiv-session-restore']();assert.equal(storage.size,0);assert.equal(routes.length,1);assert.equal(e['#bootView'].hidden,false);
+});

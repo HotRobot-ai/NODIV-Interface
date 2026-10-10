@@ -14,10 +14,10 @@ function harness(){
  return {ctx,elements,readers,scripts,timers,routes,listeners,respond,failScan(){failScan=true;},async event(type,event={}){for(const listener of listeners[type]||[])await listener(event);},async tick(){await Promise.resolve();await Promise.resolve();},fire(ms){for(const [id,timer] of [...timers])if(timer.ms===ms){timers.delete(id);timer.fn();}},token(){return vm.runInContext('sessionToken',ctx);},setToken(value='authenticated'){vm.runInContext('sessionToken='+JSON.stringify(value),ctx);}};
 }
 test('NFC login owns one Reader, aborts before authentication and starts exactly one Session despite duplicate events/clicks',async()=>{
- const h=harness();await h.ctx.startIdentity();await h.ctx.startIdentity();assert.equal(h.readers.length,1);assert.equal(h.readers[0].signal.aborted,false);
+ const h=harness(),storage=new Map();h.ctx.localStorage={setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k)||null,removeItem:k=>storage.delete(k)};await h.ctx.startIdentity();await h.ctx.startIdentity();assert.equal(h.readers.length,1);assert.equal(h.readers[0].signal.aborted,false);
  const handler=h.readers[0].onreading,pending=handler({serialNumber:' carduid '});await handler({serialNumber:'carduid'});await h.ctx.startIdentity();assert.equal(h.readers.length,1);assert.equal(h.scripts.length,1);assert.equal(h.readers[0].signal.aborted,true);assert.equal(h.readers[0].onreading,null);
  h.respond(0,{ok:true,authenticated:true,role:'PIONEER',identity:'P003'});await h.tick();assert.equal(h.scripts.length,2);assert.equal(new URL(h.scripts[1].src).searchParams.get('action'),'sessionstart');
- h.respond(1,{session:true,token:'new-session'});await pending;await handler({serialNumber:'another'});await h.ctx.startIdentity();assert.equal(h.scripts.length,2);assert.equal(h.routes.length,1);assert.equal(h.token(),'new-session');assert.equal(h.elements['#bootView'].hidden,true);
+ h.respond(1,{session:true,token:'new-session'});await pending;await handler({serialNumber:'another'});await h.ctx.startIdentity();assert.equal(h.scripts.length,2);assert.equal(h.routes.length,1);assert.equal(h.token(),'new-session');assert.equal(storage.get('nodiv_app_session_v1'),'new-session');assert.equal(h.elements['#bootView'].hidden,true);
  await h.event('nodiv-pioneer-scan');assert.equal(h.readers.length,2);assert.equal(h.readers.filter(reader=>!reader.signal.aborted).length,1);
 });
 test('NFC login invalid UID/read error/permission failure end the Reader and allow a fresh attempt without reload',async()=>{

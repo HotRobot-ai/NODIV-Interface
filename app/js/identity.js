@@ -1,6 +1,31 @@
-import {routeIdentity} from './router.js?v=20261010-fop-compact';
+import {routeIdentity} from './router.js?v=20261010-session-resume';
 import {emitNodiv} from './motion.js?v=20261003-1415';
-let sessionToken='';
+let sessionToken='',sessionRestoreBusy=false;
+const SESSION_STORAGE_KEY='nodiv_app_session_v1';
+function storedSessionToken(){try{return localStorage.getItem(SESSION_STORAGE_KEY)||''}catch{return ''}}
+function saveSessionToken(token){try{if(token)localStorage.setItem(SESSION_STORAGE_KEY,token);else localStorage.removeItem(SESSION_STORAGE_KEY)}catch{/* Current login remains usable when browser storage is unavailable. */}}
+async function restoreIdentity(){
+ if(sessionToken||sessionRestoreBusy||identityAttempt)return;
+ const token=storedSessionToken();if(!token)return;
+ if(!/^[0-9a-fA-F-]{72}$/.test(token)){saveSessionToken('');return;}
+ const btn=document.querySelector('#identityBtn'),msg=document.querySelector('#msg');sessionRestoreBusy=true;btn.disabled=true;msg.textContent='GESPEICHERTE ANMELDUNG WIRD GEPRÜFT';
+ try{
+  const r=await apiRequest({action:'sessioncheck',token});
+  if(r?.ok!==true||r?.session!==true||r?.authenticated!==true||!r.player){
+   saveSessionToken('');msg.textContent='Anmeldung abgelaufen oder beendet. Access Card erneut scannen.';return;
+  }
+  sessionToken=token;document.querySelector('#bootView').hidden=true;routeIdentity(r.player);
+ }catch(error){sessionToken='';document.querySelector('#bootView').hidden=false;msg.textContent='Anmeldung konnte nicht geprüft werden. Gespeicherter Token bleibt erhalten. '+String(error.message||error);}
+ finally{sessionRestoreBusy=false;btn.disabled=false;}
+}
+window.addEventListener('nodiv-session-restore',restoreIdentity);
+window.addEventListener('nodiv-session-lock',async()=>{
+ const token=sessionToken;sessionToken='';saveSessionToken('');
+ const role=document.querySelector('#roleView');if(role)role.hidden=true;
+ document.querySelector('#bootView').hidden=false;document.querySelector('#identityBtn').disabled=true;
+ try{if(token)await apiRequest({action:'sessionend',token});}catch{/* Local lock remains effective if the server cannot be reached. */}
+ finally{location.reload();}
+});
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
 // Apps Script cold starts/Sheet commits can exceed ten seconds. A transport
 // timeout never proves rollback; no request is automatically retried here.
@@ -39,7 +64,7 @@ function finishIdentityAttempt(attempt,error){
 }
 export async function startIdentity(){
  const btn=document.querySelector('#identityBtn'),msg=document.querySelector('#msg');
- if(identityAttempt||sessionToken)return;
+ if(identityAttempt||sessionToken||sessionRestoreBusy)return;
  if(!('NDEFReader' in window)){msg.textContent='WEB NFC NICHT VERFÜGBAR // Android + Chrome erforderlich.';emitNodiv('ACCESS_DENIED',{target:'#app'});return}
  const attempt={controller:new AbortController(),reader:null,handling:false};identityAttempt=attempt;
  btn.disabled=true;btn.textContent='NFC ARMED // PRESENT ACCESS CARD';msg.textContent='ACCESS CARD AN DAS GERÄT HALTEN';emitNodiv('NFC_ARMED',{target:'#identityBtn'});
@@ -54,7 +79,7 @@ export async function startIdentity(){
     if(!identity?.ok||!identity.authenticated)throw new Error(identity?.reason||identity?.error||'ACCESS DENIED');
     const session=await apiRequest({action:'sessionstart',uid});if(identityAttempt!==attempt)return;
     if(!session?.session||!session?.token)throw new Error(session?.status||'SESSION START FAILED');
-    sessionToken=session.token;emitNodiv('IDENTITY_VERIFIED',{target:'#app'});document.querySelector('#bootView').hidden=true;routeIdentity(identity);finishIdentityAttempt(attempt);
+    sessionToken=session.token;emitNodiv('IDENTITY_VERIFIED',{target:'#app'});document.querySelector('#bootView').hidden=true;routeIdentity(identity);saveSessionToken(sessionToken);finishIdentityAttempt(attempt);
    }catch(error){if(identityAttempt===attempt){sessionToken='';document.querySelector('#bootView').hidden=false;}finishIdentityAttempt(attempt,error);}
   };
   await reader.scan({signal:attempt.controller.signal});
