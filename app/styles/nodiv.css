@@ -283,3 +283,9 @@
 #uploadTerminalState[data-state="GREEN"]{color:#77e6b2}
 #uploadTerminalState[data-state="YELLOW"]{color:#f4cd70}
 #uploadTerminalState[data-state="RED"]{color:#ff8585}
+
+/* Keep existing field messages readable when ticker motion is disabled. */
+@media(prefers-reduced-motion:reduce){
+ .pioneer-feed{white-space:normal;line-height:1.5}
+ .pioneer-feed div{display:block;padding:12px 20px;transform:none;overflow-wrap:anywhere}
+}
