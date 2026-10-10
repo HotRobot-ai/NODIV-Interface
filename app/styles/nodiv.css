@@ -310,3 +310,28 @@
 [data-role="FOP"] .event-control .role-action{min-height:48px;padding:12px;font-size:11px;line-height:1.5;letter-spacing:.04em}
 [data-role="FOP"] .event-control button:disabled{opacity:.4;cursor:default}
 [data-role="FOP"] #evacuationRefresh{background:transparent;border-color:#327ca755;color:var(--nd-muted)}
+
+/* NODIV operator console: energy backdrop, restrained entrance and clear cards. */
+#app[data-role="FOP"]{border-color:#369ddb80;box-shadow:0 0 45px #169fff18,inset 0 0 50px #08253766;background:#030b12}
+[data-role="FOP"] .role-view{position:relative;background:radial-gradient(ellipse at 100% 4%,#0b8bce35,transparent 38%),radial-gradient(ellipse at 0% 60%,#08638820,transparent 40%),linear-gradient(128deg,transparent 27%,#2abaff0b 27.1%,transparent 27.4%,transparent 72%,#2abaff09 72.1%,transparent 72.4%),repeating-linear-gradient(0deg,transparent 0 47px,#56cfff06 48px),repeating-linear-gradient(90deg,transparent 0 47px,#56cfff06 48px);animation:fopEnter .7s ease-out both}
+[data-role="FOP"] .role-head{border-color:#72d6ff99;box-shadow:0 0 22px #39c8ff20,inset 0 0 30px #04131a55;border-radius:12px;animation:fopLink .9s ease-out both}
+[data-role="FOP"] .fop-console{position:relative}
+.fop-next{position:relative;margin:4px 0 14px;padding:16px 16px 16px 20px;border:1px solid #67d7ff55;border-left:3px solid #67d7ff;border-radius:10px;background:linear-gradient(110deg,#0b2c3fee,#071522f5);box-shadow:0 8px 24px #0004}
+.fop-next small{display:block;color:#70d9ff;font:900 10px ui-monospace,monospace;letter-spacing:.16em}
+.fop-next strong{display:block;margin:7px 0;color:#e4f7ff;font-size:20px;line-height:1.25}
+.fop-next p{margin:0;color:#b4cdd9;font-size:12px;line-height:1.65}
+[data-role="FOP"] .fop-queue,[data-role="FOP"] .fop-deployment,[data-role="FOP"] .event-control{border-color:#3b82a766;background:linear-gradient(135deg,#092131f2,#041019f7);box-shadow:inset 0 1px #a7e8ff0d,0 8px 24px #0003}
+[data-role="FOP"] .fop-queue{padding:16px;margin-bottom:14px}
+[data-role="FOP"] .fop-queue label{font-size:11px;color:#b8ddeb}
+[data-role="FOP"] .fop-queue select{font-size:12px;border-color:#459cc480;background:#040f18;min-height:50px}
+[data-role="FOP"] .fop-hint{font-size:12px;line-height:1.65;color:#a6c0cf}
+[data-role="FOP"] .fop-card-head small,[data-role="FOP"] .fop-card-head span,[data-role="FOP"] .fop-loadout-head small,[data-role="FOP"] .fop-loadout-head span{font-size:10px;line-height:1.5;letter-spacing:.03em;overflow-wrap:anywhere}
+[data-role="FOP"] .fop-core span,[data-role="FOP"] .fop-loadout-summary small{font-size:10px;line-height:1.45}
+[data-role="FOP"] .role-action{min-height:48px;padding:12px;border-color:#5abfff99;background:linear-gradient(135deg,#123e58,#0a2638);font-size:12px;line-height:1.5;letter-spacing:.04em;box-shadow:inset 0 1px #b7eaff15}
+[data-role="FOP"] button:disabled{opacity:.4;box-shadow:none;cursor:default}
+[data-role="FOP"] button:focus-visible,[data-role="FOP"] select:focus-visible{outline:2px solid #a1e9ff;outline-offset:3px}
+[data-role="FOP"] .fop-cancel,[data-role="FOP"] .role-exit{font-size:11px;min-height:44px;letter-spacing:.04em;color:#97b6c8}
+[data-role="FOP"] .role-exit{border-top:1px solid #367a9c44;border-radius:0;margin-top:18px;padding-top:12px}
+@keyframes fopEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes fopLink{from{box-shadow:0 0 38px #58d8ff70,inset 0 0 30px #55cfff22}to{box-shadow:0 0 22px #39c8ff20,inset 0 0 30px #04131a55}}
+@media(prefers-reduced-motion:reduce){[data-role="FOP"] .role-view,[data-role="FOP"] .role-head{animation:none;transform:none;opacity:1}}

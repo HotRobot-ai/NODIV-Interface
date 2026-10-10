@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261010-fop-clear';
+import {routeIdentity} from './router.js?v=20261010-fop-polish';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -465,6 +465,16 @@ function renderFopInstallation(result){
  const order=document.querySelector('#fopInstallOrder');if(order)order.disabled=fopInstallBusy||fopQueueBusy||active||!selected;
  const select=document.querySelector('#fopOperationSelect');if(select)select.disabled=fopInstallBusy||fopQueueBusy||active||!fopOperations.length;
  const refresh=document.querySelector('#fopQueueRefresh');if(refresh)refresh.disabled=fopInstallBusy||fopQueueBusy||active;
+ let title='Operation auswählen',detail='Wähle eine Operation aus der Liste und tippe „Auftrag abrufen“.';
+ if(complete){title='Auftrag abgeschlossen';detail='Der Server hat den Abschluss bestätigt. Wähle bei Bedarf die nächste Operation.';}
+ else if(fopInstallBusy){title='Auftrag wird geprüft';detail='Warte auf die Rückmeldung. Bereits laufende Scans oder Bestätigungen nicht wiederholen.';}
+ else if(active){title=result.canConfirm?'Abschluss bestätigen':'Zugewiesene N-Cores scannen';detail=result.canConfirm?(removal?'Entferne die drei zugewiesenen N-Cores physisch. Bestätige erst danach den Rückbau.':'Setze die drei zugewiesenen N-Cores physisch ein. Bestätige erst danach die Installation.'):(removal?'Scanne nur die angezeigten Cores des Nodes. Nach 3/3 folgt die physische Entnahme.':'Stelle den angezeigten Code ein und scanne die zugewiesenen N-Cores.');}
+ else if(fopQueueBusy){title='Aufträge laden';detail='Warte kurz. NODIV prüft deine verfügbaren Operationen.';}
+ else if(fopQueueState==='error'){title='Aufträge erneut laden';detail='Prüfe den Hinweis unter der Auswahl und tippe „Queue aktualisieren“.';}
+ else if(!fopOperations.length){title='Aktuell kein Auftrag';detail='Es liegen keine verfügbaren Operationen vor. Mit „Queue aktualisieren“ kannst du erneut prüfen.';}
+ else if(selected){title='Auftrag abrufen';detail=selected.nodeId+' – '+(selected.type==='DEINSTALL'?'Rückbau':'Installation')+(selected.resume?' fortsetzen.':' vom Server laden.');}
+ setText('#fopNextTitle',title);setText('#fopNextDetail',detail);
+
 }
 function fopRequestParams(action){const resolved=fopInstallation.operation==='DEINSTALL'?action.replace('nodeinstall','nodedeinstall'):action;return {action:resolved,token:sessionToken,node:fopInstallation.node.id,installation:fopInstallation.installation}}
 window.addEventListener('nodiv-fop-install-order',async()=>{
