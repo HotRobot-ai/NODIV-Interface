@@ -4123,9 +4123,9 @@ function getNodeOperationOrder(e,operation) {
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
-    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&((operation==='INSTALL'&&nodeOperationType(order)==='INSTALL')||(evacuation&&operation==='DEINSTALL'&&order.evacuationTeam===evacuation.team.id&&nodeOperationType(order)==='DEINSTALL'))&&
+    const recoverable=orders.filter(order=>order.nodeId===nodeId&&order.identity===actor.identity&&nodeOperationType(order)===operation&&(evacuation?order.evacuationTeam===evacuation.team.id:!order.evacuationTeam)&&
       order.eventId===context.event.eventId&&order.eventState===context.event.state&&Array.isArray(order.loadout)&&order.loadout.length===3&&
-      Array.isArray(order.cores)&&(evacuation||order.cores.length>0)&&order.cores.length<=3&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt)
+      Array.isArray(order.cores)&&order.cores.length<=3&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt)
       .sort((a,b)=>(Number(b.expiresAt)||0)-(Number(a.expiresAt)||0))[0];
     if(recoverable){
       if(recoverable.legacy!==context.legacy||new Set(recoverable.loadout.map(core=>core.id)).size!==3||
@@ -4335,7 +4335,23 @@ function getFopOperations(e) {
     if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state)){
       const sheet=getEventNodeCodeSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
       const stockAvailable=getAvailableInstallationCores().length>=3;
-      const reserved=new Set(readInstallationOrders().filter(installationOrderIsLive).map(order=>order.nodeId).concat(liveReSupplies().map(order=>order.nodeId)));
+      const orders=readInstallationOrders();
+      // Offer only this actor's existing normal encounter; retrieving it performs all
+      // reservation/core checks and session rebinding under the operation lock.
+      orders.filter(order=>order.identity===actor.identity&&!order.evacuationTeam&&
+        order.eventId===event.eventId&&order.eventState===event.state&&
+        Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt).forEach(order=>{
+        const type=nodeOperationType(order);
+        if(!['INSTALL','DEINSTALL'].includes(type))return;
+        try{
+          if(type==='INSTALL')validateNodeInstallation(actor,order.nodeId);else validateNodeDeinstallation(actor,order.nodeId);
+          operations.push({id:type+':'+order.nodeId,type,nodeId:order.nodeId,resume:true,
+            label:'FORTSETZEN // '+type+' // '+order.nodeId,
+            ...(order.withdrawalId?{withdrawal:order.withdrawalId}:{})});
+        }catch(error){/* Invalid encounters are never exposed or repaired here. */}
+      });
+      const reserved=new Set(orders.filter(installationOrderIsLive).map(order=>order.nodeId)
+        .concat(operations.map(operation=>operation.nodeId),liveReSupplies().map(order=>order.nodeId)));
       const ids=[...new Set(rows.filter(row=>String(row[0])===event.eventId).map(row=>String(row[1]).trim().toUpperCase()))].sort();
       ids.forEach(nodeId=>{
         if(withdrawalPending&&!withdrawal.targets.includes(nodeId))return;
