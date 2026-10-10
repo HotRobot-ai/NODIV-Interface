@@ -3489,6 +3489,13 @@ function listProvisionedNodeIds() {
   return ids;
 }
 
+// Shared default roster; provisioned hardware outside this set is not yet in the event.
+function getDefaultEventNodeSelection() {
+  const provisionedNodes=[...new Set(listProvisionedNodeIds())].sort();
+  const startNodes=provisionedNodes.slice(0,10);
+  return {provisionedNodes,startNodes,remainingHardwareNodes:provisionedNodes.slice(10)};
+}
+
 function generateMechanicalCode(used) {
   for(let tries=0;tries<200;tries++){
     const hex=Utilities.getUuid().replace(/-/g,'').slice(0,8);
@@ -3617,7 +3624,8 @@ function getEventReadiness(e) {
   const actor=session.player;
   if(actor.role!=='FOUNDER')return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOUNDER kann Event Readiness prüfen.');
 
-  const nodes=listProvisionedNodeIds();
+  const selection=getDefaultEventNodeSelection();
+  const nodes=selection.provisionedNodes;
 
   const coreSheet=getRegisterSheet();
   const coreRows=coreSheet.getRange(2,1,200,Math.max(CORE_COL.UPDATED_AT,CORE_COL.OWNER_ID)).getValues();
@@ -3677,17 +3685,17 @@ function getEventReadiness(e) {
     });
   }
 
-  const codeCapacityRequired=nodes.length*5;
-  const accessSecurityOk=nodes.length>0&&codeCapacityRequired<=10000;
+  const codeCapacityRequired=selection.startNodes.length*5;
+  const accessSecurityOk=selection.startNodes.length===10&&codeCapacityRequired<=10000;
 
   const checks=[
-    {id:'NODES',ok:nodes.length>0,value:nodes.length,detail:nodes.length+' provisioniert'},
+    {id:'NODES',ok:nodes.length>=10,value:nodes.length,detail:nodes.length+' provisioniert // 10 Start-Nodes erforderlich'},
     {id:'N_CORES',ok:registeredCores>0&&invalidOwnership===0,value:registeredCores,detail:registeredCores+' registriert // '+reserveCores+' HQ Reserve // '+assignedCores+' zugewiesen'},
     {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?(invalidOwnership+' Core(s) ohne Ownership'):'sauber'},
     {id:'PLAYERS',ok:activePlayers>0,value:activePlayers,detail:activePlayers+' aktive Feld-Identität(en) // '+activeRoles.PIONEER+' Pioneer // '+activeRoles.LOCAL+' Local // '+activeRoles.UNBOUND+' Unbound'},
     {id:'FOP',ok:activeRoles.FOP>0,value:activeRoles.FOP,detail:activeRoles.FOP?activeRoles.FOP+' Field Operator aktiv':'keine aktive FOP Access Card'},
     {id:'UPLOAD_SYSTEM',ok:activeHqUploads>0,value:activeHqUploads,detail:activeHqUploads?activeHqUploads+' HQ Upload Bay(s) aktiv':'keine aktive HQ Upload Bay'},
-    {id:'ACCESS_SECURITY',ok:accessSecurityOk,value:codeCapacityRequired,detail:accessSecurityOk?(codeCapacityRequired+' frische mechanische Codes für '+nodes.length+' Node(s) reservierbar'):'Code-Set kann nicht sicher vorbereitet werden'}
+    {id:'ACCESS_SECURITY',ok:accessSecurityOk,value:codeCapacityRequired,detail:accessSecurityOk?(codeCapacityRequired+' frische mechanische Codes für '+selection.startNodes.length+' Node(s) reservierbar'):'Code-Set kann nicht sicher vorbereitet werden'}
   ];
   const blocking=checks.filter(x=>!x.ok);
   const systemReady=blocking.length===0;
@@ -3713,6 +3721,9 @@ function getEventReadiness(e) {
     preflight:preflight,
     checks:checks,
     provisionedNodes:nodes,
+    startNodes:selection.startNodes,
+    remainingHardwareNodes:selection.remainingHardwareNodes,
+    startCodeCapacityRequired:codeCapacityRequired,
     coreSummary:{registered:registeredCores,hqReserve:reserveCores,assigned:assignedCores,invalidOwnership:invalidOwnership},
     identitySummary:activeRoles,
     uploadSummary:{hq:activeHqUploads,fop:activeFopUploads},
@@ -3791,11 +3802,12 @@ function initializeEvent(e) {
     const existing=readCurrentEvent();
     if(existing&&['INITIALIZED','FIELD_ACTIVE'].includes(existing.state))return gameplayActionDenied(actor,'EVENT_ALREADY_INITIALIZED','Es existiert bereits ein initialisiertes oder aktives Event.');
 
-    const nodes=[...new Set(listProvisionedNodeIds())].sort();
+    const selection=getDefaultEventNodeSelection();
+    const nodes=selection.provisionedNodes;
     if(nodes.length<10)throw new Error('EVENT_REQUIRES_10_PROVISIONED_NODES');
 
     const requested=String(e.parameter.nodes||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
-    const selected=requested.length?requested:nodes.slice(0,10);
+    const selected=requested.length?requested:selection.startNodes;
     if(selected.length!==10)throw new Error('EVENT_REQUIRES_EXACTLY_10_START_NODES');
     if(new Set(selected).size!==10)throw new Error('EVENT_DUPLICATE_NODE');
     const invalid=selected.filter(id=>!nodes.includes(id));
