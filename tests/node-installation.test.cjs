@@ -1379,3 +1379,36 @@ test('EVAC-2 stages ledger/receipt/cargo under ScriptLock; precommit failure is 
  f.ctx.LockService.getScriptLock=()=>({waitLock(){assert.equal(held,false);held=true;locks++;},releaseLock(){held=false;}});f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{assert.equal(held,true);batches++;return batch(...args);};f.ctx.bookPlayerEnergy=()=>{throw Error('PRECOMMIT_FAILURE')};assert.throws(()=>f.ctx.evacuationAction(scan.e,'evacuationfinalconfirm'),/PRECOMMIT_FAILURE/);assert.equal(resetSnapshot(f),before);assert.equal(batches,0);
  f.ctx.bookPlayerEnergy=book;f.ctx.evacuationAction(scan.e,'evacuationfinalconfirm');f.ctx.evacuationAction(scan.e,'evacuationfinalconfirm');assert.equal(locks,3);assert.equal(batches,1);assert.equal(f.ctx.evacuationRecords('EVACUATION_FINAL_UPLOAD',f.event).length,1);assert.equal(f.ctx.readPlayerEnergyBalance(f.a.identity),scan.core.energy);
 });
+
+function founderReadinessFixture(count){
+ const f=eventLifecycleFixture(count);
+ vm.runInContext(source.slice(source.indexOf('function getEventReadiness('),source.indexOf('function repairMissingCoreOwnership(')),f.ctx);
+ f.sheets['Access Card Register'].rows.push(['P003','P003','PIONEER','puid','ACTIVE','',1]);
+ f.sheets['Upload Terminal Register'].rows.push(['HQ','UPLOAD_HQ','hquid','ACTIVE']);
+ const Sheet=f.sheets['Node Register'].constructor;
+ f.sheets['Event Preflight']=new Sheet(10,[['CHECK','CONFIRMED','BY','AT','UPDATED','FINGERPRINT'],...['PHYSICAL_EQUIPMENT','EVENT_CONFIGURATION','FINAL_FOUNDER_CONFIRMATION'].map(id=>[id,true,'ROOT','now','','fingerprint'])]);
+ // Fingerprint generation needs the Apps Script digest service; drift comparison remains real.
+ f.ctx.getEventConfigurationFingerprint=()=> 'fingerprint';
+ return f;
+}
+test('Founder real readiness requires 10 unique hardware Nodes and projects only 10 starts / 50 codes',()=>{
+ for(const count of [9,10,15]){
+  const f=founderReadinessFixture(count),r=f.ctx.getEventReadiness(f.founder);
+  assert.equal(r.ready,count>=10);assert.equal(r.systemReady,count>=10);
+  assert.equal(r.provisionedNodes.length,count);assert.equal(r.startNodes.length,Math.min(count,10));
+  assert.equal(r.remainingHardwareNodes.length,Math.max(0,count-10));
+  if(count>=10){assert.equal(r.startCodeCapacityRequired,50);assert.equal(r.checks.find(x=>x.id==='ACCESS_SECURITY').value,50);assert.deepEqual(Array.from(f.initialize().event.nodes),Array.from(r.startNodes));}
+  else assert.equal(f.initialize().status,'EVENT_NOT_READY');
+ }
+ const f=founderReadinessFixture(10);f.sheets['Node Register'].rows[10][0]='NODE-001';assert.equal(f.ctx.getEventReadiness(f.founder).ready,false);
+});
+test('Founder readiness preserves Preflight / fingerprint blocks and explicit ten-node initialization',()=>{
+ const f=founderReadinessFixture(15);
+ f.sheets['Node Register'].rows.slice(1).reverse().forEach((row,i)=>{f.sheets['Node Register'].rows[i+1]=row;});
+ assert.equal(f.ctx.getEventReadiness(f.founder).startNodes[0],'NODE-001');
+ f.sheets['Event Preflight'].rows[1][1]=false;assert.equal(f.initialize().status,'EVENT_NOT_READY');
+ f.sheets['Event Preflight'].rows[1][1]=true;f.ctx.getEventConfigurationFingerprint=()=> 'changed';assert.equal(f.ctx.getEventReadiness(f.founder).ready,false);
+ f.ctx.getEventConfigurationFingerprint=()=> 'fingerprint';const explicit=Array.from({length:10},(_,i)=>'NODE-'+String(i+6).padStart(3,'0'));
+ assert.deepEqual(Array.from(f.initialize(explicit.join(',')).event.nodes),explicit);
+ assert.equal(f.initialize().status,'EVENT_ALREADY_INITIALIZED');
+});

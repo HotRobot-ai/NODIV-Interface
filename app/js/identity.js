@@ -307,13 +307,14 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
     snapshot.className='event-config-snapshot';
     preflightBox.insertBefore(snapshot,document.querySelector('#confirmEventConfiguration'));
    }
-   const ids=r.identitySummary||{}, uploads=r.uploadSummary||{}, nodeNames=Array.isArray(r.provisionedNodes)?r.provisionedNodes:[];
+   const ids=r.identitySummary||{}, uploads=r.uploadSummary||{}, nodeNames=Array.isArray(r.startNodes)?r.startNodes:[], remainingNodes=Array.isArray(r.remainingHardwareNodes)?r.remainingHardwareNodes:[];
    snapshot.innerHTML='<small>EVENT CONFIGURATION // ZU BESTÄTIGEN</small>'+
-    '<div><b>NODES</b> '+nodeNames.length+(nodeNames.length?' // '+nodeNames.join(', '):'')+'</div>'+
+    '<div><b>START-NODES</b> '+nodeNames.length+(nodeNames.length?' // '+nodeNames.join(', '):'')+'</div>'+
+    '<div><b>ÜBRIGE HARDWARE // NICHT IM EVENT</b> '+remainingNodes.length+(remainingNodes.length?' // '+remainingNodes.join(', '):'')+'</div>'+
     '<div><b>N-CORES</b> '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen</div>'+
     '<div><b>FIELD IDENTITIES</b> '+(ids.PIONEER||0)+' Pioneer // '+(ids.LOCAL||0)+' Local // '+(ids.UNBOUND||0)+' Unbound // '+(ids.FOP||0)+' FOP</div>'+
     '<div><b>UPLOAD</b> '+(uploads.hq||0)+' HQ Bay(s) // '+(uploads.fop||0)+' FOP Upload(s)</div>'+
-    '<div><b>ACCESS SECURITY</b> '+(nodeNames.length*5)+' mechanische Codes werden bei Initialisierung erzeugt</div>';
+    '<div><b>ACCESS SECURITY</b> '+(r.startCodeCapacityRequired||0)+' mechanische Codes werden bei Initialisierung erzeugt</div>';
   }
   const physical=document.querySelector('#confirmPhysicalEquipment'),config=document.querySelector('#confirmEventConfiguration'),finalConfirm=document.querySelector('#confirmFounderFinal');
   if(physical){physical.disabled=!r.systemReady||!!preflightMap.PHYSICAL_EQUIPMENT?.confirmed;physical.textContent=preflightMap.PHYSICAL_EQUIPMENT?.confirmed?'PHYSICAL EQUIPMENT ✓':'PHYSICAL EQUIPMENT BESTÄTIGEN'}
@@ -378,12 +379,9 @@ window.addEventListener('nodiv-founder-event-initialize',async()=>{
  founderEventReady=false;
  if(btn){btn.disabled=true;btn.textContent='EVENT WIRD INITIALISIERT'}
  try{
-  const s=await apiRequest({action:'eventstatus',token:sessionToken});
-  const nodes=Array.isArray(s?.provisionedNodes)?s.provisionedNodes:[];
-  if(!nodes.length)throw new Error('Kein provisionierter Node vorhanden.');
-  const r=await apiRequest({action:'eventinitialize',token:sessionToken,nodes:nodes.join(',')});
+  const r=await apiRequest({action:'eventinitialize',token:sessionToken});
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'INITIALISIERUNG FEHLGESCHLAGEN');
-  showFounderResult('EVENT INITIALISIERT',(r.event?.eventId||'EVENT')+' // '+(r.event?.plannedNodes||nodes.length)+' NODE(S)',true,btn);
+  showFounderResult('EVENT INITIALISIERT',(r.event?.eventId||'EVENT')+' // '+(r.event?.plannedNodes||0)+' NODE(S)',true,btn);
   emitNodiv('IDENTITY_VERIFIED',{target:'#eventState'});
  }catch(err){showFounderResult('INITIALISIERUNG ABGEWIESEN',String(err.message||err),false,btn)}
  finally{if(btn)btn.textContent='EVENT INITIALISIEREN';await refreshFounderEventStatus()}

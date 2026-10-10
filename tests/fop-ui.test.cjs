@@ -316,3 +316,16 @@ test('EVAC-2 Pioneer selects one own cargo, scans, recovers proof and confirms; 
 test('EVAC-2 final confirm failure retains durable proof for retry and never displays success',async()=>{
  const f=ui(),e=f.elements,team={teamId:'EV-1',eventId:'EVT-1',status:'EVACUATION_TEAM_COMPLETE',nodes:[],cargo:[{carrier:'P001',cores:[{id:'NC-1',energy:100}]}],finalUpload:{available:true,completed:false,scan:{id:'SCAN-1',coreId:'NC-1'}}};f.ctx.renderEvacuation({evacuation:team});f.ctx.apiRequest=async()=>{throw Error('NODIV CORE TIMEOUT')};await f.listeners['nodiv-evacuation-finalconfirm']();assert.match(e['#evacuationFinalHint'].textContent,/TIMEOUT/);assert.equal(e['#evacuationFinalConfirm'].disabled,false);assert.equal(e['#evacuationFinalConfirm'].hidden,false);
 });
+
+test('Founder uses server start roster in Readiness and initializes without a hardware selection',async()=>{
+ const f=ui(),e=f.elements,requests=[];
+ const starts=Array.from({length:10},(_,i)=>'NODE-'+String(i+1).padStart(3,'0')),remaining=['NODE-011','NODE-012','NODE-013','NODE-014','NODE-015'];
+ e['#eventState'].textContent='STANDBY';
+ e['#eventPreflight']={hidden:false,querySelector:()=>e['#eventConfigSnapshot']};e['#eventConfigSnapshot']={innerHTML:''};
+ f.ctx.showFounderResult=()=>{};
+ f.ctx.apiRequest=async p=>{requests.push(p);if(p.action==='eventreadiness')return {ok:true,ready:true,systemReady:true,checks:[],preflight:[],provisionedNodes:[...starts,...remaining],startNodes:starts,remainingHardwareNodes:remaining,startCodeCapacityRequired:50};if(p.action==='eventinitialize')return {ok:true,action:true,event:{eventId:'EVT-UI',plannedNodes:10}};return {ok:true,event:{state:'INITIALIZED'},provisionedNodes:[...starts,...remaining]};};
+ await f.listeners['nodiv-founder-event-readiness']();
+ const html=e['#eventConfigSnapshot'].innerHTML;assert.match(html,/START-NODES<\/b> 10/);assert.match(html,/ÜBRIGE HARDWARE \/\/ NICHT IM EVENT<\/b> 5/);assert.match(html,/50 mechanische Codes/);assert.doesNotMatch(html,/75 mechanische Codes/);
+ await f.listeners['nodiv-founder-event-initialize']();
+ const request=requests.find(p=>p.action==='eventinitialize');assert.ok(request);assert.equal(Object.hasOwn(request,'nodes'),false);assert.equal(e['#initializeEvent'].disabled,true);
+});
