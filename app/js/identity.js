@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261008-evac-2';
+import {routeIdentity} from './router.js?v=20261010-catcher-state';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -801,7 +801,14 @@ let catchOrder=null,catchBusy=false,catchScanController=null;
 function catchStep(id,state,text){const element=document.querySelector('#'+id);if(element){element.className='catch-step '+state;element.textContent=text;}}
 window.addEventListener('nodiv-catch-live',async()=>{
  if(!sessionToken)return;const inventory=document.querySelector('#catchInventory');if(!inventory)return;
- try{const r=await apiRequest({action:'playerstate',token:sessionToken});if(!r?.ok||!r.session)throw Error(r?.error||r?.status||'PLAYER STATE UNAVAILABLE');inventory.textContent=(r.cores||[]).map(c=>c.coreId+' // '+c.energy+' E').join(' // ')||'NO PERSONAL CORES';const slots=document.querySelector('#catcherPersonalSlots');if(slots)slots.textContent=inventory.textContent+' // '+(r.cores||[]).length+'/'+r.player.coreCapacity;}catch(error){inventory.textContent=String(error.message||error);}
+ const slots=document.querySelector('#catcherPersonalSlots'),secured=document.querySelector('#catcherSecuredEnergy');
+ try{
+  const r=await apiRequest({action:'playerstate',token:sessionToken});
+  if(!r?.ok||!r.session||!r.player||!Array.isArray(r.cores)||!Number.isFinite(r.securedEnergy))throw Error(r?.error||r?.status||'PLAYER STATE UNAVAILABLE');
+  inventory.textContent=r.cores.map(c=>c.coreId+' // '+c.energy+' E').join(' // ')||'NO PERSONAL CORES';
+  if(slots)slots.textContent=inventory.textContent+' // '+r.cores.length+'/'+r.player.coreCapacity;
+  if(secured)secured.textContent=r.securedEnergy+' E';
+ }catch(error){inventory.textContent=String(error.message||error);if(slots)slots.textContent='LIVE INVENTORY UNAVAILABLE';if(secured)secured.textContent='— E';}
 });
 window.addEventListener('nodiv-catch',async e=>{
  if(!sessionToken||catchBusy||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
