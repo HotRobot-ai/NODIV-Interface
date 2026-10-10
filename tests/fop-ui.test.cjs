@@ -389,3 +389,8 @@ test('FOP next step follows selection and physical confirmation gate without req
  e['#fopOperationSelect'].value='DEINSTALL:NODE-001';const count=f.requests.length;await f.listeners['nodiv-fop-operation-select']();assert.equal(e['#fopNextTitle'].textContent,'Auftrag abrufen');assert.equal(f.requests.length,count);
  await f.order();assert.equal(e['#fopNextTitle'].textContent,'Zugewiesene N-Cores scannen');for(const id of ['NC-089','NC-017','NC-034'])await f.scan(id);assert.equal(e['#fopNextTitle'].textContent,'Abschluss bestätigen');assert.match(e['#fopNextDetail'].textContent,/physisch.*erst danach/);assert.equal(f.requests.some(r=>r.action==='nodedeinstallconfirm'),false);
 });
+
+test('FOP detail card stays hidden without an order, appears for a loaded order and hides after acknowledged cancellation',async()=>{
+ const f=ui(),e=f.elements;await f.queue();assert.equal(e['#fopDeploymentCard'].hidden,true);assert.equal(e['#fopOperationSelect'].disabled,false);
+ await f.order();assert.equal(e['#fopDeploymentCard'].hidden,false);await f.listeners['nodiv-fop-install-cancel']();assert.equal(e['#fopDeploymentCard'].hidden,true);
+});

@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261010-fop-polish';
+import {routeIdentity} from './router.js?v=20261010-fop-compact';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='';
 const API_URL='https://script.google.com/macros/s/AKfycby1cZye2Z46M2ydV6-TcurgOwmS8H4Bh6eXZJ3Z76TUs2oPO5eq6l-RGL0AyVQmfpeM3w/exec';
@@ -434,7 +434,7 @@ window.addEventListener('nodiv-fop-operation-select',()=>renderFopInstallation(f
 function renderFopInstallation(result){
  const progress=document.querySelector('#fopInstallProgress'),list=document.querySelector('#fopInstallCores'),scan=document.querySelector('#fopInstallScan'),confirm=document.querySelector('#fopInstallConfirm');
  const complete=['NODE_INSTALLED','NODE_DEINSTALLED'].includes(result?.status),removal=result?.operation==='DEINSTALL';
- const card=document.querySelector('#fopDeploymentCard');if(card)card.dataset.operation=removal?'DEINSTALL':'INSTALL';
+ const card=document.querySelector('#fopDeploymentCard');if(card){card.dataset.operation=removal?'DEINSTALL':'INSTALL';card.hidden=!result;}
  const setText=(id,text)=>{const el=document.querySelector(id);if(el)el.textContent=text};
  if(progress)progress.textContent=String(result?.count||0)+'/3';
  const bar=document.querySelector('#fopProgressBar');if(bar)bar.value=result?.count||0;
