@@ -298,7 +298,8 @@ async function refreshFounderEventStatus(){
   const ev=r.event||{},nodes=Array.isArray(r.provisionedNodes)?r.provisionedNodes:[];
   state.textContent=ev.state||'STANDBY';
   if(list)list.innerHTML=nodes.length?nodes.map(n=>'<span>'+n+'</span>').join(''):'<span>KEINE NODES</span>';
-  if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S)'):(nodes.length+' provisionierte Node(s) bereit.');
+  if(hint)hint.textContent=ev.eventId?(ev.eventId+' // '+(ev.plannedNodes||0)+' NODE(S) // '+(ev.uploadPoints||1)+' HQ UPLOADPUNKT(E)'):(nodes.length+' provisionierte Node(s) bereit.');
+  const uploadSelect=document.querySelector('#eventUploadPoints');if(uploadSelect&&ev.uploadPoints&&!['FIELD_ACTIVE','INITIALIZED'].includes(ev.state||''))uploadSelect.value=String(ev.uploadPoints);
   if(!['STANDBY','COMPLETED'].includes(ev.state||'STANDBY'))founderEventReady=false;
   if(init)init.disabled=!founderCanInitialize();
   if(activate)activate.disabled=ev.state!=='INITIALIZED';
@@ -339,7 +340,7 @@ window.addEventListener('nodiv-founder-event-readiness',async()=>{
     '<div><b>ÜBRIGE HARDWARE // NICHT IM EVENT</b> '+remainingNodes.length+(remainingNodes.length?' // '+remainingNodes.join(', '):'')+'</div>'+
     '<div><b>N-CORES</b> '+(summary.registered||0)+' registriert // '+(summary.hqReserve||0)+' HQ Reserve // '+(summary.assigned||0)+' zugewiesen</div>'+
     '<div><b>FIELD IDENTITIES</b> '+(ids.PIONEER||0)+' Pioneer // '+(ids.LOCAL||0)+' Local // '+(ids.UNBOUND||0)+' Unbound // '+(ids.FOP||0)+' FOP</div>'+
-    '<div><b>UPLOAD</b> '+(uploads.hq||0)+' HQ Bay(s) // '+(uploads.fop||0)+' FOP Upload(s)</div>'+
+    '<div><b>HQ UPLOADPUNKTE</b> '+(uploads.configured||1)+' konfiguriert // '+(uploads.hq||0)+' physisch aktiv</div>'+
     '<div><b>ACCESS SECURITY</b> '+(r.startCodeCapacityRequired||0)+' mechanische Codes werden bei Initialisierung erzeugt</div>';
   }
   const physical=document.querySelector('#confirmPhysicalEquipment'),config=document.querySelector('#confirmEventConfiguration'),finalConfirm=document.querySelector('#confirmFounderFinal');
@@ -393,7 +394,9 @@ window.addEventListener('nodiv-founder-preflight',async e=>{
  if(!btn)return;
  btn.disabled=true;
  try{
-  const r=await apiRequest({action:'eventpreflightconfirm',token:sessionToken,check});
+  const params={action:'eventpreflightconfirm',token:sessionToken,check};
+  if(check==='EVENT_CONFIGURATION')params.uploadPoints=document.querySelector('#eventUploadPoints')?.value||'1';
+  const r=await apiRequest(params);
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'PRE-FLIGHT BESTÄTIGUNG FEHLGESCHLAGEN');
   showFounderResult('PRE-FLIGHT BESTÄTIGT',check.replaceAll('_',' '),true,btn);
   document.querySelector('#checkEventReadiness')?.click();
@@ -407,7 +410,7 @@ window.addEventListener('nodiv-founder-event-initialize',async()=>{
  try{
   const r=await apiRequest({action:'eventinitialize',token:sessionToken});
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'INITIALISIERUNG FEHLGESCHLAGEN');
-  showFounderResult('EVENT INITIALISIERT',(r.event?.eventId||'EVENT')+' // '+(r.event?.plannedNodes||0)+' NODE(S)',true,btn);
+  showFounderResult('EVENT INITIALISIERT',(r.event?.eventId||'EVENT')+' // '+(r.event?.plannedNodes||0)+' NODE(S) // '+(r.event?.uploadPoints||1)+' HQ UPLOADPUNKT(E)',true,btn);
   emitNodiv('IDENTITY_VERIFIED',{target:'#eventState'});
  }catch(err){showFounderResult('INITIALISIERUNG ABGEWIESEN',String(err.message||err),false,btn)}
  finally{if(btn)btn.textContent='EVENT INITIALISIEREN';await refreshFounderEventStatus()}
