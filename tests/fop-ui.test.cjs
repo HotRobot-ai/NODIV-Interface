@@ -400,6 +400,18 @@ test('Event upload points are founder-configured and multi-point aware',()=>{
  assert.match(identity,/available\+'\/\'+total\+' FREI'/);
 });
 
+test('Pioneer HQ upload choices are large and non-duplicated',()=>{
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ const css=fs.readFileSync('app/styles/nodiv.css','utf8');
+ assert.match(router,/class="hq-choice hq-choice-free"/);
+ assert.match(router,/class="hq-choice hq-choice-secure"/);
+ assert.match(router,/>KOSTENLOS<\/strong>/);
+ assert.match(router,/>150 E<\/strong>/);
+ assert.equal(router.includes('<small>SECURE APPROACH<\/small><strong>150 E<\/strong><span>05:00 SCHUTZ<\/span>'),false);
+ assert.match(css,/min-height:128px/);
+ assert.match(css,/font-size:clamp\(28px,8\.5vw,38px\)/);
+});
+
 test('Pioneer HQ upload panel prioritizes balance price and assigned bay',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  const identity=fs.readFileSync('app/js/identity.js','utf8');
