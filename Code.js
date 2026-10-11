@@ -3470,9 +3470,9 @@ function getEventRegisterSheet() {
   let sheet=ss.getSheetByName(EVENT_SHEET_NAME);
   if(!sheet){
     sheet=ss.insertSheet(EVENT_SHEET_NAME);
-    sheet.getRange(1,1,1,10).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT']]);
+    sheet.getRange(1,1,1,11).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','HQ UPLOAD POINTS']]);
     sheet.setFrozenRows(1);
-  }
+  }else if(!sheet.getRange(1,11).getDisplayValue())sheet.getRange(1,11).setValue('HQ UPLOAD POINTS');
   return sheet;
 }
 
@@ -3490,11 +3490,11 @@ function getEventNodeCodeSheet() {
 function readCurrentEvent() {
   const sheet=getEventRegisterSheet();
   if(sheet.getLastRow()<2)return null;
-  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,10).getValues();
+  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues();
   for(let i=rows.length-1;i>=0;i--){
     const state=String(rows[i][1]||'').trim().toUpperCase();
     if(['STANDBY','INITIALIZED','FIELD_ACTIVE'].includes(state)){
-      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||'')};
+      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||''),uploadPoints:Math.max(1,Math.min(4,Number(rows[i][10]||1)))};
     }
   }
   return null;
@@ -3540,7 +3540,7 @@ function getEventStatus(e) {
   if(!session.ok)return session.response;
   if(session.player.role!=='FOUNDER')return gameplayActionDenied(session.player,'ROLE_DENIED','Nur FOUNDER kann den Eventstatus abrufen.');
   const event=readCurrentEvent();
-  return {ok:true,authenticated:true,event:event||{state:'STANDBY',eventId:'',plannedNodes:0,activeNodes:0},provisionedNodes:listProvisionedNodeIds()};
+  return {ok:true,authenticated:true,event:event||{state:'STANDBY',eventId:'',plannedNodes:0,activeNodes:0,uploadPoints:configuredEventUploadPoints()},provisionedNodes:listProvisionedNodeIds()};
 }
 
 
@@ -3553,6 +3553,20 @@ function getEventPreflightSheet() {
   }
   if(!sheet.getRange(1,6).getDisplayValue())sheet.getRange(1,6).setValue('CONFIG FINGERPRINT');
   return sheet;
+}
+
+const EVENT_UPLOAD_POINTS_DRAFT_KEY='NODIV_EVENT_UPLOAD_POINTS_DRAFT';
+function configuredEventUploadPoints(){
+  const event=readCurrentEvent();
+  if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state))return Math.max(1,Math.min(4,Number(event.uploadPoints||1)));
+  const stored=Number(PropertiesService.getScriptProperties().getProperty(EVENT_UPLOAD_POINTS_DRAFT_KEY)||1);
+  return Math.max(1,Math.min(4,Number.isFinite(stored)?stored:1));
+}
+function activeHqUploadPointList(){
+  const sheet=findUploadTerminalSheet(),rows=sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues():[];
+  return rows.filter(row=>String(row[1]).toUpperCase()==='UPLOAD_HQ'&&String(row[3]).toUpperCase()==='ACTIVE'&&normalizeUid(row[2]))
+    .map(row=>({id:String(row[0]||'').trim().toUpperCase(),uid:normalizeUid(row[2])}))
+    .sort((a,b)=>a.id.localeCompare(b.id));
 }
 
 function getEventConfigurationFingerprint() {
@@ -3589,7 +3603,7 @@ function getEventConfigurationFingerprint() {
   }
   uploads.sort((a,b)=>a.type.localeCompare(b.type)||a.uid.localeCompare(b.uid));
 
-  const payload=JSON.stringify({nodes:nodes,cores:cores,identities:identities,uploads:uploads});
+  const payload=JSON.stringify({nodes:nodes,cores:cores,identities:identities,uploads:uploads,uploadPoints:configuredEventUploadPoints()});
   const digest=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,payload,Utilities.Charset.UTF_8);
   return digest.map(b=>(b<0?b+256:b).toString(16).padStart(2,'0')).join('');
 }
@@ -3633,6 +3647,13 @@ function confirmEventPreflight(e) {
   const sheet=getEventPreflightSheet(),now=new Date();
   const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,1).getDisplayValues().flat():[];
   const idx=rows.findIndex(v=>String(v).trim().toUpperCase()===checkId);
+  if(checkId==='EVENT_CONFIGURATION'){
+    const requested=Number(e.parameter.uploadPoints||0);
+    if(!Number.isInteger(requested)||requested<1||requested>4)return gameplayActionDenied(actor,'UPLOAD_POINT_COUNT_INVALID','HQ Uploadpunkte müssen vor Eventstart zwischen 1 und 4 liegen.');
+    const available=activeHqUploadPointList().length;
+    if(available<requested)return gameplayActionDenied(actor,'UPLOAD_POINTS_NOT_READY',requested+' Uploadpunkte gewählt, aber nur '+available+' aktive Upload-Koffer registriert.');
+    PropertiesService.getScriptProperties().setProperty(EVENT_UPLOAD_POINTS_DRAFT_KEY,String(requested));
+  }
   const fingerprint=checkId==='EVENT_CONFIGURATION'?getEventConfigurationFingerprint():'';
   if(idx>=0)sheet.getRange(idx+2,1,1,6).setValues([[checkId,true,actor.identity,now,now,fingerprint]]);
   else sheet.appendRow([checkId,true,actor.identity,now,now,fingerprint]);
@@ -3723,7 +3744,7 @@ function getEventReadiness(e) {
     {id:'OWNERSHIP',ok:invalidOwnership===0,value:invalidOwnership,detail:invalidOwnership?(invalidOwnership+' Core(s) ohne Ownership'):'sauber'},
     {id:'PLAYERS',ok:activePlayers>0,value:activePlayers,detail:activePlayers+' aktive Feld-Identität(en) // '+activeRoles.PIONEER+' Pioneer // '+activeRoles.LOCAL+' Local // '+activeRoles.UNBOUND+' Unbound'},
     {id:'FOP',ok:activeRoles.FOP>0,value:activeRoles.FOP,detail:activeRoles.FOP?activeRoles.FOP+' Field Operator aktiv':'keine aktive FOP Access Card'},
-    {id:'UPLOAD_SYSTEM',ok:activeHqUploads>0,value:activeHqUploads,detail:activeHqUploads?activeHqUploads+' HQ Upload Bay(s) aktiv':'keine aktive HQ Upload Bay'},
+    {id:'UPLOAD_SYSTEM',ok:activeHqUploads>=configuredEventUploadPoints(),value:activeHqUploads,detail:activeHqUploads+' aktive HQ Uploadpunkte // '+configuredEventUploadPoints()+' für Event konfiguriert'},
     {id:'ACCESS_SECURITY',ok:accessSecurityOk,value:codeCapacityRequired,detail:accessSecurityOk?(codeCapacityRequired+' frische mechanische Codes für '+selection.startNodes.length+' Node(s) reservierbar'):'Code-Set kann nicht sicher vorbereitet werden'}
   ];
   const blocking=checks.filter(x=>!x.ok);
@@ -3755,7 +3776,7 @@ function getEventReadiness(e) {
     startCodeCapacityRequired:codeCapacityRequired,
     coreSummary:{registered:registeredCores,hqReserve:reserveCores,assigned:assignedCores,invalidOwnership:invalidOwnership},
     identitySummary:activeRoles,
-    uploadSummary:{hq:activeHqUploads,fop:activeFopUploads},
+    uploadSummary:{hq:activeHqUploads,fop:activeFopUploads,configured:configuredEventUploadPoints()},
     coreDiagnostics:coreDiagnostics,
     manualChecksPending:preflight.filter(x=>!x.confirmed).map(x=>x.id)
   };
@@ -3850,10 +3871,12 @@ function initializeEvent(e) {
     });
 
     const eventSheet=getEventRegisterSheet();
-    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now]]).updateCells.rows,fields:'userEnteredValue'}});
+    const uploadPoints=configuredEventUploadPoints();
+    if(activeHqUploadPointList().length<uploadPoints)throw new Error('EVENT_UPLOAD_POINTS_NOT_READY');
+    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now,uploadPoints]]).updateCells.rows,fields:'userEnteredValue'}});
     appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'},requests);
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-    return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected}};
+    return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected,uploadPoints:uploadPoints}};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
