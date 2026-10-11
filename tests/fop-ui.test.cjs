@@ -14,7 +14,7 @@ function ui({operation='INSTALL',empty=false,identitySource=fs.readFileSync('app
   replaceChildren(){this.children=[]}
   appendChild(child){this.children.push(child)}
  }
- const elements={};for(const id of ['fopNextTitle','fopNextDetail','fopQueueHint','catcherPersonalSlots','catcherSecuredEnergy','evacuationFinal','evacuationFinalHint','evacuationFinalCore','evacuationFinalScan','evacuationFinalConfirm','evacuationPanel','fopFounderDirective','evacuationStatus','evacuationDetails','evacuationStart','evacuationTeam','evacuationRefresh','startPreEvacuation','preEvacuationState','preEvacuationHint','uploadTerminalState','hqApproachHint','secureApproach','secureApproachConfirm','pioneerFeed','pioneerReSupply','resupplyNode','resupplyGuide','resupplyEnergy','resupplyCode','resupplyProgress','resupplyAccept','resupplyAuthorize','resupplyScan','resupplyConfirm','resupplyResult','pioneerUpload','uploadChoices','uploadBay','uploadHint','uploadAuthorize','uploadConfirm','uploadResult','pioneerInventory','pioneerCarriedEnergy','hqCarriedEnergy','pioneerSecuredEnergy','fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness','pioneerExchange','exchangeNode','exchangeSize','exchangeAuthorize','exchangeCode','exchangeScan','exchangeCancel','exchangeConfirm','exchangeProgress','exchangeHint','pioneerScan','pioneerRestoreBoard','pioneerMissionCount','pioneerRestore','restoreNode','restoreLoadout','restoreInCard','restoreOutCard','restoreInCore','restoreInEnergy','restoreOutCore','restoreOutEnergy','restoreCurrentEnergy','restoreProjectedEnergy','restoreStateBadge','restoreStepHqDetail','restoreStepNodeDetail','restoreStepInTitle','restoreStepInDetail','restoreStepOutTitle','restoreStepOutDetail','restoreNowTitle','restoreProjection','restoreCode','restoreProgress','restoreHint','restoreAuthorize','restoreScan','restoreConfirm','restorePioneerSelect','founderRestoreHint','assignRestore','catchPanel','catchCatcherStep','catchTargetStep','catchCommitStep','catchHint','catchStart','catchConfirm','catchResult','catchInventory'])elements['#'+id]=new Element();
+ const elements={};for(const id of ['fopNextTitle','fopNextDetail','fopQueueHint','catcherPersonalSlots','catcherSecuredEnergy','evacuationFinal','evacuationFinalHint','evacuationFinalCore','evacuationFinalScan','evacuationFinalConfirm','evacuationPanel','fopFounderDirective','evacuationStatus','evacuationDetails','evacuationStart','evacuationTeam','evacuationRefresh','startPreEvacuation','preEvacuationState','preEvacuationHint','uploadTerminalState','hqApproachHint','secureApproach','secureApproachConfirm','pioneerFeed','pioneerReSupply','resupplyNode','resupplyGuide','resupplyEnergy','resupplyCode','resupplyProgress','resupplyAccept','resupplyAuthorize','resupplyScan','resupplyConfirm','resupplyResult','pioneerUpload','uploadChoices','uploadBay','uploadHint','uploadAuthorize','uploadConfirm','uploadResult','pioneerInventory','pioneerCarriedEnergy','hqCarriedEnergy','pioneerSecuredEnergy','fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness','exchangeSlots','pioneerExchange','exchangeNode','exchangeSize','exchangeAuthorize','exchangeCode','exchangeScan','exchangeCancel','exchangeConfirm','exchangeProgress','exchangeHint','pioneerScan','pioneerRestoreBoard','pioneerMissionCount','pioneerRestore','restoreNode','restoreLoadout','restoreInCard','restoreOutCard','restoreInCore','restoreInEnergy','restoreOutCore','restoreOutEnergy','restoreCurrentEnergy','restoreProjectedEnergy','restoreStateBadge','restoreStepHqDetail','restoreStepNodeDetail','restoreStepInTitle','restoreStepInDetail','restoreStepOutTitle','restoreStepOutDetail','restoreNowTitle','restoreProjection','restoreCode','restoreProgress','restoreHint','restoreAuthorize','restoreScan','restoreConfirm','restorePioneerSelect','founderRestoreHint','assignRestore','catchPanel','catchCatcherStep','catchTargetStep','catchCommitStep','catchHint','catchStart','catchConfirm','catchResult','catchInventory'])elements['#'+id]=new Element();
  for(const selector of ['.pioneer-priority','.pioneer-timer','.pioneer-priority h3','.pioneer-priority p','.pioneer-state b'])elements[selector]=new Element();
  const listeners={},document={querySelector:id=>elements[id]||null,createElement:()=>new Element(),addEventListener(){}},requests=[];
  const ctx={document,console,AbortController,setTimeout,clearTimeout,setInterval:()=>0,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail}},URLSearchParams,emitNodiv(){},window:{addEventListener:(name,fn)=>listeners[name]=fn,dispatchEvent(){}}};
@@ -96,12 +96,12 @@ test('Pioneer UI shows server size without code, authorizes before scanning, gat
   return {ok:true,action:true,status:p.action==='exchangeconfirm'?'EXCHANGE_COMPLETE':'EXCHANGE_AUTHORIZED',exchange:'ex-1',size:1,inCount:incoming,outCount:outgoing,canConfirm:incoming===1&&outgoing===1,...(p.action==='exchangeauthorize'?{accessCode:'0123'}:{}),core:{id:p.uid==='own'?'NC-002':'NC-006',energy:341}};
  };
  f.ctx.showPioneerExchangePreview({preview:'preview-1',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
- assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 CORE EXCHANGE');assert.equal(e['#exchangeScan'].hidden,true);
+ assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core tauschen');assert.equal(e['#exchangeScan'].hidden,true);
  e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
  await action('authorize');assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#pioneerScan'].disabled,true);
  for(const uid of ['own','node']){await action('scan');await f.ctx.reader.onreading({serialNumber:uid});}
- assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
- await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'EXCHANGE COMPLETE // NODE COOLDOWN 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeScan','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
+ assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
+ await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'TAUSCH GEBUCHT · NODE-SPERRE 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeScan','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
 });
 
 test('Pioneer adopts accepted retry server counts after lost response and ignores repeated NFC callbacks',async()=>{
@@ -112,9 +112,9 @@ test('Pioneer adopts accepted retry server counts after lost response and ignore
  };
  f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';
  const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});await action('authorize');
- await action('scan');const firstReader=f.ctx.reader;await firstReader.onreading({serialNumber:'NC-002'});await firstReader.onreading({serialNumber:'NC-002'});assert.equal(scans,1);assert.equal(e['#exchangeProgress'].textContent,'IN 0/1 // OUT 0/1');
- await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests.at(-1).phase,'IN');assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 0/1');assert.equal(e['#exchangeConfirm'].disabled,true);
- await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-006'});assert.equal(requests.at(-1).phase,'OUT');assert.equal(e['#exchangeProgress'].textContent,'IN 1/1 // OUT 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);
+ await action('scan');const firstReader=f.ctx.reader;await firstReader.onreading({serialNumber:'NC-002'});await firstReader.onreading({serialNumber:'NC-002'});assert.equal(scans,1);assert.equal(e['#exchangeProgress'].textContent,'HINEIN 0/1 · HERAUS 0/1');
+ await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests.at(-1).phase,'IN');assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 0/1');assert.equal(e['#exchangeConfirm'].disabled,true);
+ await action('scan');await f.ctx.reader.onreading({serialNumber:'NC-006'});assert.equal(requests.at(-1).phase,'OUT');assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);
 });
 test('NFC read error closes that reader before a delayed reading can send a request',async()=>{
  const f=ui(),e=f.elements;f.ctx.apiRequest=async()=>({ok:true,action:true,exchange:'ex-1',size:1,inCount:0,outCount:0,accessCode:'0123'});
@@ -125,7 +125,7 @@ test('NFC read error closes that reader before a delayed reading can send a requ
 test('reload recovery restores code, server counts, phase/confirm gating and usable cancel',async()=>{
  for(const [incoming,outgoing] of [[0,0],[1,0],[1,1]]){
   const f=ui(),e=f.elements;f.ctx.resumePioneerExchange({exchange:'existing',status:'EXCHANGE_RESUMED',nodeId:'NODE-001',size:1,inCount:incoming,outCount:outgoing,canConfirm:outgoing===1,accessCode:'0123',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
-  assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeProgress'].textContent,'IN '+incoming+'/1 // OUT '+outgoing+'/1');assert.equal(e['#exchangeConfirm'].disabled,outgoing!==1);assert.equal(e['#exchangeAuthorize'].hidden,true);assert.equal(e['#exchangeCancel'].hidden,false);assert.match(e['#exchangeScan'].textContent,incoming?/NODE-CORE/:/EIGENEN CORE/);
+  assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeProgress'].textContent,'HINEIN '+incoming+'/1 · HERAUS '+outgoing+'/1');assert.equal(e['#exchangeConfirm'].disabled,outgoing!==1);assert.equal(e['#exchangeAuthorize'].hidden,true);assert.equal(e['#exchangeCancel'].hidden,false);assert.match(e['#exchangeScan'].textContent,incoming?/NODE-CORE/:/EIGENEN CORE/);
   f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:true,action:true,status:'EXCHANGE_CANCELLED'}};await f.listeners['nodiv-pioneer-exchange']({detail:{action:'cancel'}});assert.equal(f.requests[0].action,'exchangecancel');assert.equal(f.requests[0].exchange,'existing');assert.equal(f.requests[0].node,'NODE-001');assert.equal(e['#pioneerExchange'].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
  }
 });
@@ -512,4 +512,36 @@ test('saved app session resumes only after server validation; invalid session cl
  await f.listeners['nodiv-session-lock']();assert.equal(storage.size,0);assert.equal(f.requests.at(-1).action,'sessionend');assert.equal(reloads,1);
  storage.set('nodiv_app_session_v1',token);f.ctx.apiRequest=async()=>{throw Error('TIMEOUT')};await f.listeners['nodiv-session-restore']();assert.equal(storage.get('nodiv_app_session_v1'),token);assert.equal(routes.length,1);assert.equal(e['#identityBtn'].disabled,false);
  f.ctx.apiRequest=async()=>({ok:true,session:false,status:'SESSION_EXPIRED'});await f.listeners['nodiv-session-restore']();assert.equal(storage.size,0);assert.equal(routes.length,1);assert.equal(e['#bootView'].hidden,false);
+});
+
+
+test('Exchange colors distinguish available scans, rejection, transport uncertainty and final booking',async()=>{
+ const f=ui(),e=f.elements;let reject=false,timeout=false,confirmTimeout=false,inCount=0,outCount=0;
+ f.ctx.apiRequest=async p=>{
+  if(p.action==='exchangescan'){
+   if(timeout)throw Error('TIMEOUT');
+   if(reject)return {ok:true,action:false,error:'CORE_NOT_OWNED_BY_PIONEER'};
+   if(p.phase==='IN')inCount=1;else outCount=1;
+  }
+  if(p.action==='exchangeconfirm'&&confirmTimeout)throw Error('TIMEOUT');
+  return {ok:true,action:true,status:p.action==='exchangeconfirm'?'EXCHANGE_COMPLETE':'EXCHANGE_AUTHORIZED',exchange:'same-id',size:1,inCount,outCount,canConfirm:inCount===1&&outCount===1,accessCode:'0123',core:{id:'NC-002',energy:341}};
+ };
+ f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';
+ const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
+ const scan=async()=>{await action('scan');await f.ctx.reader.onreading({serialNumber:'uid'});};
+ const states=()=>e['#exchangeSlots'].children.map(c=>c.dataset.state);
+ await action('authorize');assert.deepEqual(states(),['available','waiting']);
+ reject=true;await scan();assert.deepEqual(states(),['error','waiting']);assert.match(e['#exchangeHint'].textContent,/zulässigen Bestand/);assert.equal(e['#exchangeConfirm'].disabled,true);
+ reject=false;timeout=true;await scan();assert.deepEqual(states(),['available','waiting']);assert.match(e['#exchangeHint'].textContent,/Prüfung offen/);assert.equal(e['#exchangeHint'].dataset.state,'');
+ timeout=false;await scan();assert.deepEqual(states(),['scanned','available']);await scan();assert.deepEqual(states(),['scanned','scanned']);assert.equal(e['#exchangeConfirm'].disabled,false);
+ confirmTimeout=true;await action('confirm');assert.deepEqual(states(),['scanned','scanned']);assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeHint'].textContent,/Prüfung offen/);
+ confirmTimeout=false;await action('confirm');assert.deepEqual(states(),['booked','booked']);assert.equal(e['#exchangeHint'].dataset.state,'booked');assert.ok(e['#exchangeSlots'].children.every(c=>/Gebucht/.test(c.textContent)));
+});
+test('Exchange preserves 2-Core selection while authorizing and restores server counts without green booking',async()=>{
+ const f=ui(),e=f.elements;let release;f.ctx.apiRequest=p=>{assert.equal(p.size,'2');return new Promise(resolve=>release=resolve)};
+ f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[1,2,3]});e['#exchangeSize'].value='2';
+ const pending=f.listeners['nodiv-pioneer-exchange']({detail:{action:'authorize'}});assert.equal(e['#exchangeAuthorize'].disabled,true);assert.equal(e['#exchangeSize'].value,'2');
+ release({ok:true,action:true,exchange:'ex2',size:2,inCount:0,outCount:0,accessCode:'0123'});await pending;
+ f.ctx.resumePioneerExchange({exchange:'ex2',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[2],size:2,inCount:2,outCount:1,canConfirm:false,accessCode:'0123'});
+ assert.deepEqual(e['#exchangeSlots'].children.map(c=>c.dataset.state),['scanned','scanned','scanned','available']);assert.equal(e['#exchangeConfirm'].disabled,true);
 });

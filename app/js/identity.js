@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-hqchoice3';
+import {routeIdentity} from './router.js?v=20261011-exchange24';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -646,44 +646,64 @@ function pioneerMissionCoreFeedback(card,state){
  if(state==='error')setTimeout(()=>{if(card.dataset.feedback==='error')card.dataset.feedback='required';},1400);
 }
 
-let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false;
+let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false,pioneerExchangeFeedback=null;
 function renderPioneerExchange(result){
  const panel=document.querySelector('#pioneerExchange');if(!panel)return;
  panel.hidden=false;
  const complete=result?.status==='EXCHANGE_COMPLETE',active=Boolean(pioneerExchange)&&!complete;
- document.querySelector('#exchangeNode').textContent=pioneerExchangePreview.nodeId+' // '+pioneerExchangePreview.totalEnergy+' E // '+pioneerExchangePreview.nodeState;
- const sizes=document.querySelector('#exchangeSize');sizes.replaceChildren();
- for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' CORE EXCHANGE';sizes.appendChild(option)}
- sizes.disabled=active||complete;
+ document.querySelector('#exchangeNode').textContent=pioneerExchangePreview.nodeId+' · '+pioneerExchangePreview.totalEnergy+' E · '+pioneerExchangePreview.nodeState;
+ const sizes=document.querySelector('#exchangeSize'),selected=sizes.value;sizes.replaceChildren();
+ for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' N-Core'+(size===1?'':'s')+' tauschen';sizes.appendChild(option)}
+ if(pioneerExchangePreview.sizes.includes(Number(selected)))sizes.value=selected;
+ sizes.disabled=active||complete||pioneerExchangeBusy;
  document.querySelector('#exchangeAuthorize').hidden=active||complete;
  document.querySelector('#exchangeAuthorize').disabled=!pioneerExchangePreview.sizes.length||pioneerExchangeBusy;
  document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
  document.querySelector('#exchangeScan').hidden=!active;
  document.querySelector('#exchangeCancel').hidden=!active;
+ document.querySelector('#exchangeCancel').disabled=pioneerExchangeBusy;
  const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
  document.querySelector('#exchangeScan').disabled=pioneerExchangeBusy||Boolean(result?.canConfirm);
- document.querySelector('#exchangeProgress').textContent=complete?'EXCHANGE COMPLETE // NODE COOLDOWN 05:00':active?'IN '+result.inCount+'/'+result.size+' // OUT '+result.outCount+'/'+result.size:'Exchange-Größe wählen. Code erst nach Autorisierung.';
+ document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
  if(active)document.querySelector('#exchangeScan').textContent=result.inCount<result.size?'EIGENEN CORE SCANNEN':'ENTNOMMENEN NODE-CORE SCANNEN';
+ const slots=document.querySelector('#exchangeSlots');
+ if(slots){
+  slots.hidden=!active&&!complete;slots.replaceChildren();
+  if(active||complete)for(const phase of ['IN','OUT'])for(let index=0;index<result.size;index++){
+   const count=phase==='IN'?result.inCount:result.outCount;
+   const available=active&&!result.canConfirm&&index===count&&(phase==='IN'||result.inCount===result.size);
+   const state=complete?'booked':index<count?'scanned':available&&pioneerExchangeFeedback?.phase===phase?'error':available?'available':'waiting';
+   const slot=document.createElement('div');slot.className='exchange-slot';slot.dataset.state=state;
+   slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Jetzt scannen',waiting:'Danach scannen'}[state]);
+   slots.appendChild(slot);
+  }
+ }
+ const hint=document.querySelector('#exchangeHint');hint.dataset.state=pioneerExchangeFeedback?'error':complete?'booked':'';
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active;
 }
+function exchangeRejected(message,phase){
+ pioneerExchangeFeedback={phase};
+ const explanations={CORE_NOT_FOUND:'Kein registrierter N-Core. Scanne einen gültigen N-Core.',CORE_NOT_OWNED_BY_PIONEER:'Dieser N-Core gehört nicht zu deinem zulässigen Bestand.',CORE_NOT_IN_NODE:'Dieser N-Core gehört nicht zu diesem Node.',DUPLICATE_CORE_SCAN:'Dieser N-Core wurde bereits für die andere Tauschrichtung gescannt.',EXCHANGE_SCAN_PHASE_MISMATCH:'Zuerst alle eigenen N-Cores scannen, danach die entnommenen Node-Cores.'};
+ return 'Nicht möglich: '+(explanations[message]||message);
+}
 function resumePioneerExchange(resume){
- pioneerExchangePreview=resume;pioneerExchange=resume;
+ pioneerExchangeFeedback=null;pioneerExchangePreview=resume;pioneerExchange=resume;
  renderPioneerExchange(resume);
- document.querySelector('#exchangeHint').textContent='EXCHANGE RESUMED // bestätigte Scans wiederhergestellt. Weiterarbeiten oder Exchange abbrechen.';
+ document.querySelector('#exchangeHint').textContent='Tausch fortgesetzt. Bestätigte Scans sind wiederhergestellt; die Buchung erfolgt erst mit TAUSCH BESTÄTIGEN.';
 }
 function showPioneerExchangePreview(preview){
  if(pioneerExchange)return;
- pioneerExchangePreview=preview;renderPioneerExchange(null);
- document.querySelector('#exchangeHint').textContent='Anzahl rein = Anzahl raus. Erst alle eigenen, dann die entnommenen Cores scannen.';
+ pioneerExchangeFeedback=null;pioneerExchangePreview=preview;renderPioneerExchange(null);
+ document.querySelector('#exchangeHint').textContent='Nach dem Öffnen physisch tauschen. Erst eigene N-Cores, danach entnommene Node-Cores scannen.';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
  if(pioneerExchangeBusy||pioneerRestoreBusy||catchBusy||!pioneerExchangePreview||!sessionToken)return;
  const action=e.detail?.action;
  const hint=document.querySelector('#exchangeHint');
  if(action==='scan'){
-  if(!pioneerExchange)return;
+  if(!pioneerExchange||pioneerExchange.canConfirm)return;
   if(!('NDEFReader' in window)){hint.textContent='Web NFC benötigt Android + Chrome.';return;}
-  pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
+  pioneerExchangeFeedback=null;pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
   try{
    const controller=new AbortController(),reader=new NDEFReader();let handled=false;
    await reader.scan({signal:controller.signal});
@@ -691,10 +711,11 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
    reader.onreading=async ev=>{
     if(handled)return;handled=true;controller.abort();
     try{
-     const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,phase:pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT',uid:String(ev.serialNumber||'')});
-     if(!r?.ok||r.action!==true)throw new Error(r?.error||r?.message||r?.status||'SCAN REJECTED');
-     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E // SCANNED';
-    }catch(err){hint.textContent=String(err.message||err);}
+     const phase=pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT';
+     const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,phase,uid:String(ev.serialNumber||'')});
+     if(!r?.ok||r.action!==true)throw new Error(exchangeRejected(r?.error||r?.message||r?.status||'Scan abgelehnt',phase));
+     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E · Scan bestätigt, noch nicht gebucht';
+    }catch(err){hint.textContent=pioneerExchangeFeedback?String(err.message||err):'Prüfung offen: '+String(err.message||err);}
     finally{pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);}
    };
   }catch(err){pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);hint.textContent=String(err.message||err);}
@@ -702,17 +723,17 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
  }
  if(!['authorize','confirm','cancel'].includes(action))return;
  if(action!=='authorize'&&!pioneerExchange)return;
- pioneerExchangeBusy=true;
+ pioneerExchangeFeedback=null;pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
  try{
   const r=await apiRequest({action:'exchange'+action,token:sessionToken,node:pioneerExchangePreview.nodeId,preview:pioneerExchangePreview.preview,size:document.querySelector('#exchangeSize').value,exchange:pioneerExchange?.exchange||''});
-  if(!r?.ok||r.action!==true)throw new Error(r?.error||r?.message||r?.status||'EXCHANGE REJECTED');
+  if(!r?.ok||r.action!==true)throw new Error(exchangeRejected(r?.error||r?.message||r?.status||'Tausch abgelehnt'));
   if(action==='authorize')pioneerExchange=r;
   if(action==='cancel'){pioneerExchange=null;pioneerExchangePreview=null;document.querySelector('#pioneerExchange').hidden=true;document.querySelector('#pioneerScan').disabled=false;return;}
   pioneerExchangeBusy=false;renderPioneerExchange(r);
   if(action==='confirm'){pioneerExchange=null;pioneerExchangePreview=null;window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));}
-  hint.textContent=action==='confirm'?'Tausch atomar verbucht. Node bleibt 3/3.':'Code autorisiert. Cores physisch tauschen und scannen.';
- }catch(err){hint.textContent=String(err.message||err);}
- finally{pioneerExchangeBusy=false;}
+  hint.textContent=action==='confirm'?'Tausch gebucht. Der Node enthält weiterhin genau drei N-Cores.':'Code autorisiert. Cores physisch tauschen und scannen.';
+ }catch(err){hint.textContent=pioneerExchangeFeedback?String(err.message||err):'Prüfung offen: '+String(err.message||err);}
+ finally{pioneerExchangeBusy=false;if(pioneerExchangePreview)renderPioneerExchange(pioneerExchange);}
 });
 
 let pioneerRestore=null,pioneerRestoreBusy=false,founderRestoreOptions=[];
