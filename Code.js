@@ -7665,19 +7665,26 @@ function activateSecureApproach(e){
   lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player;if(player.role!=='PIONEER'||player.status!=='ACTIVE')throw new Error('PIONEER_REQUIRED');
   const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('FIELD_ACTIVE_REQUIRED');
-  const bay=activeHqUploadBay(),request=String(e.parameter.request||'');
+  const request=String(e.parameter.request||'');
   if(!/^[A-Za-z0-9_-]{8,100}$/.test(request))throw new Error('SECURE_APPROACH_REQUEST_REQUIRED');
   const previous=exchangeLogRows().find(row=>row[2]==='SECURE_APPROACH_ACTIVATED'&&row[14]==='SUCCESS'&&row[3]===player.identity&&(()=>{const r=JSON.parse(row[15]);return r.request===request&&r.cardId===player.cardId;})());
-  if(previous){const receipt=JSON.parse(previous[15]);if(receipt.eventId!==event.eventId||receipt.bayUid!==bay.uid)throw new Error('SECURE_APPROACH_CONTEXT_CHANGED');const state=uploadTerminalResponse(readUploadTerminalRecord(),player);return {...state,action:true,reservation:receipt.id,reservationExpiresAt:receipt.expiresAt,expiresAt:state.expiresAt||receipt.expiresAt,ghostUntil:receipt.ghostUntil,securedEnergy:readPlayerEnergyBalance(player.identity),bay:{id:bay.id},replayed:true};}
-  if(readUploadTerminalRecord().state!=='GREEN')throw new Error('UPLOAD_TERMINAL_BUSY');
+  if(previous){
+   const receipt=JSON.parse(previous[15]),bay=activeHqUploadBays().find(item=>item.uid===receipt.bayUid);
+   if(receipt.eventId!==event.eventId||!bay)throw new Error('SECURE_APPROACH_CONTEXT_CHANGED');
+   const state=uploadTerminalResponse(readUploadTerminalRecordForBay(bay),player);
+   return {...state,action:true,reservation:receipt.id,reservationExpiresAt:receipt.expiresAt,expiresAt:state.expiresAt||receipt.expiresAt,ghostUntil:receipt.ghostUntil,securedEnergy:readPlayerEnergyBalance(player.identity),bay:{id:bay.id,uid:bay.uid},replayed:true};
+  }
+  const free=readUploadTerminalRecords().find(record=>record.state==='GREEN');
+  if(!free)throw new Error('UPLOAD_POINTS_BUSY');
+  const bay=free.bay;
   if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAYER_ENERGY_SHEET_NAME)||readPlayerEnergyBalance(player.identity)<SECURE_APPROACH_COST)throw new Error('INSUFFICIENT_SECURED_ENERGY');
   const now=Date.now(),id='SAP-'+Utilities.getUuid().toUpperCase(),expiresAt=now+SECURE_APPROACH_TTL_MS,ghostUntil=new Date(Math.max(new Date(player.ghostUntil||0).getTime()||0,expiresAt)),requests=[];
-  const debit=bookPlayerEnergy({identity:player.identity,role:player.role,type:'SECURE_APPROACH',amount:-SECURE_APPROACH_COST,reference:id,details:'HQ terminal // 5-minute optional approach'},requests);
+  const debit=bookPlayerEnergy({identity:player.identity,role:player.role,type:'SECURE_APPROACH',amount:-SECURE_APPROACH_COST,reference:id,details:'HQ upload point // 5-minute optional approach'},requests);
   setAccessCardGhostUntilByUid(player.uid,ghostUntil,requests);
   const receipt={id,request,identity:player.identity,cardId:player.cardId,eventId:event.eventId,bayUid:bay.uid,expiresAt,ghostUntil:ghostUntil.toISOString(),energyEntry:debit.entryId,securedEnergy:debit.balance};
   appendTransactionLog({eventType:'SECURE_APPROACH_ACTIVATED',actorId:player.identity,actorRole:player.role,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-  return {...uploadTerminalResponse({state:'YELLOW',...receipt},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,bay:{id:bay.id},replayed:false};
+  return {...uploadTerminalResponse({state:'YELLOW',...receipt,bay},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,bay:{id:bay.id,uid:bay.uid},replayed:false};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 
