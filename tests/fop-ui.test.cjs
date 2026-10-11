@@ -389,9 +389,13 @@ test('FOP shell has no visible operations-channel/status bar and starts with fou
  const router=fs.readFileSync('app/js/router.js','utf8');
  assert.equal(router.includes("accent:'OPERATIONS CHANNEL'"),false);
  assert.equal(router.includes('class="fop-statusbar"'),false);
+ assert.equal(router.includes('>JETZT TUN<'),false);
+ assert.equal(router.includes('Folge JETZT TUN'),false);
  assert.equal(router.includes('>QUEUE AKTUALISIEREN<'),false);
  assert.match(router,/>AKTUALISIEREN<\/button>/);
+ assert.match(router,/id="fopNextTitle">Auftrag auswählen<\/strong>/);
  assert.match(router,/id="fopFounderDirective"/);
+ assert.match(router,/FOUNDER \/\/ ANWEISUNG<\/small><strong>KEINE AKTUELLE ANWEISUNG<\/strong><\/section>/);
  assert.match(router,/id="evacuationPanel" class="event-control"\$\{role==='FOP'\?' hidden':'\'\'\}/);
 });
 
