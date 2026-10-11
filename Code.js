@@ -7621,7 +7621,7 @@ function assertUploadTerminalOwner(record,player){
 function getUploadTerminalState(e){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  activeHqUploadBay();return uploadTerminalResponse(readUploadTerminalRecord(),session.player);
+  const bay=activeHqUploadBay();return {...uploadTerminalResponse(readUploadTerminalRecord(),session.player),bay:{id:bay.id}};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function activateSecureApproach(e){
@@ -7632,7 +7632,7 @@ function activateSecureApproach(e){
   const bay=activeHqUploadBay(),request=String(e.parameter.request||'');
   if(!/^[A-Za-z0-9_-]{8,100}$/.test(request))throw new Error('SECURE_APPROACH_REQUEST_REQUIRED');
   const previous=exchangeLogRows().find(row=>row[2]==='SECURE_APPROACH_ACTIVATED'&&row[14]==='SUCCESS'&&row[3]===player.identity&&(()=>{const r=JSON.parse(row[15]);return r.request===request&&r.cardId===player.cardId;})());
-  if(previous){const receipt=JSON.parse(previous[15]);if(receipt.eventId!==event.eventId||receipt.bayUid!==bay.uid)throw new Error('SECURE_APPROACH_CONTEXT_CHANGED');const state=uploadTerminalResponse(readUploadTerminalRecord(),player);return {...state,action:true,reservation:receipt.id,reservationExpiresAt:receipt.expiresAt,expiresAt:state.expiresAt||receipt.expiresAt,ghostUntil:receipt.ghostUntil,securedEnergy:readPlayerEnergyBalance(player.identity),replayed:true};}
+  if(previous){const receipt=JSON.parse(previous[15]);if(receipt.eventId!==event.eventId||receipt.bayUid!==bay.uid)throw new Error('SECURE_APPROACH_CONTEXT_CHANGED');const state=uploadTerminalResponse(readUploadTerminalRecord(),player);return {...state,action:true,reservation:receipt.id,reservationExpiresAt:receipt.expiresAt,expiresAt:state.expiresAt||receipt.expiresAt,ghostUntil:receipt.ghostUntil,securedEnergy:readPlayerEnergyBalance(player.identity),bay:{id:bay.id},replayed:true};}
   if(readUploadTerminalRecord().state!=='GREEN')throw new Error('UPLOAD_TERMINAL_BUSY');
   if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAYER_ENERGY_SHEET_NAME)||readPlayerEnergyBalance(player.identity)<SECURE_APPROACH_COST)throw new Error('INSUFFICIENT_SECURED_ENERGY');
   const now=Date.now(),id='SAP-'+Utilities.getUuid().toUpperCase(),expiresAt=now+SECURE_APPROACH_TTL_MS,ghostUntil=new Date(Math.max(new Date(player.ghostUntil||0).getTime()||0,expiresAt)),requests=[];
@@ -7641,7 +7641,7 @@ function activateSecureApproach(e){
   const receipt={id,request,identity:player.identity,cardId:player.cardId,eventId:event.eventId,bayUid:bay.uid,expiresAt,ghostUntil:ghostUntil.toISOString(),energyEntry:debit.entryId,securedEnergy:debit.balance};
   appendTransactionLog({eventType:'SECURE_APPROACH_ACTIVATED',actorId:player.identity,actorRole:player.role,result:'SUCCESS',details:JSON.stringify(receipt)},requests);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-  return {...uploadTerminalResponse({state:'YELLOW',...receipt},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,replayed:false};
+  return {...uploadTerminalResponse({state:'YELLOW',...receipt},player),action:true,reservation:id,ghostUntil:receipt.ghostUntil,securedEnergy:debit.balance,bay:{id:bay.id},replayed:false};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 
