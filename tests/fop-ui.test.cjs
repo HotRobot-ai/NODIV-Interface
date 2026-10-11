@@ -385,6 +385,17 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
+test('Pioneer lower interface keeps test EVAC separate and HQ wording player-facing',()=>{
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ assert.match(router,/id="pioneerEvacTestToggle"/);
+ assert.match(router,/class="role-action secondary nodiv-test-button"/);
+ assert.match(router,/HQ \/\/ UPLOAD/);
+ assert.match(router,/GESICHERTE ENERGIE/);
+ assert.match(router,/GETRAGENE ENERGIE/);
+ assert.equal(router.includes('>HQ ACCESS<'),false);
+ assert.equal(router.includes('>LOCK INTERFACE<')&&router.includes("role==='PIONEER'"),false);
+});
+
 test('Pioneer protection screen precedes the in-interface protection timer',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  const identity=fs.readFileSync('app/js/identity.js','utf8');
