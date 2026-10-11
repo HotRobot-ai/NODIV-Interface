@@ -150,12 +150,12 @@ test('CATCH UI authenticates target once, hides Core until confirm, uses server 
  const f=ui(),e=f.elements;f.ctx.window.dispatchEvent=()=>{};let fail=true;
  f.ctx.apiRequest=async p=>{f.requests.push(p);if(p.mode==='preview')return {ok:true,session:true,status:'CATCH_READY',canConfirm:true,target:'P003',catchId:'CAT-1'};if(fail){fail=false;throw Error('NODIV CORE TIMEOUT');}return {ok:true,session:true,status:'CATCH_COMPLETE',core:{id:'NC-008',energy:310},replayed:true};};
  const action=action=>f.listeners['nodiv-catch']({detail:{action}});await action('scan');assert.match(e['#catchTargetStep'].className,/running/);assert.equal(e['#catchConfirm'].hidden,true);
- await f.ctx.reader.onreading({serialNumber:'targetuid'});await f.ctx.reader.onreading({serialNumber:'targetuid'});assert.equal(f.requests.length,1);assert.equal(f.requests[0].targetUid,'targetuid');assert.equal(f.requests[0].uid,undefined);assert.equal(f.requests[0].core,undefined);assert.match(e['#catchTargetStep'].className,/accepted/);assert.equal(e['#catchConfirm'].disabled,false);assert.equal(e['#catchResult'].hidden,true);assert.equal(e['#catchHint'].textContent,'P003 // CATCH READY');
- await action('confirm');assert.match(e['#catchHint'].textContent,/TIMEOUT/);assert.match(e['#catchCommitStep'].className,/required/);assert.equal(e['#catchConfirm'].disabled,false);
- await action('confirm');assert.equal(f.requests.at(-1).catchId,'CAT-1');assert.equal(e['#catchResult'].textContent,'CATCH COMPLETE // NC-008 // 310 E');assert.match(e['#catchCommitStep'].className,/accepted/);assert.equal(e['#catchConfirm'].hidden,true);
+ await f.ctx.reader.onreading({serialNumber:'targetuid'});await f.ctx.reader.onreading({serialNumber:'targetuid'});assert.equal(f.requests.length,1);assert.equal(f.requests[0].targetUid,'targetuid');assert.equal(f.requests[0].uid,undefined);assert.equal(f.requests[0].core,undefined);assert.match(e['#catchTargetStep'].className,/accepted/);assert.equal(e['#catchConfirm'].disabled,false);assert.equal(e['#catchResult'].hidden,true);assert.equal(e['#catchHint'].textContent,'P003 erkannt. Bestätige jetzt den Fang.');
+ await action('confirm');assert.match(e['#catchHint'].textContent,/Antwort noch offen/);assert.match(e['#catchCommitStep'].className,/required/);assert.equal(e['#catchConfirm'].disabled,false);
+ await action('confirm');assert.equal(f.requests.at(-1).catchId,'CAT-1');assert.equal(e['#catchResult'].textContent,'✓ 310 E · Fang erfolgreich');assert.match(e['#catchCommitStep'].className,/accepted/);assert.equal(e['#catchConfirm'].hidden,true);
 });
 test('CATCH rejected target and NFC error do not enable confirm; roles show CATCH only with server catchAccess',async()=>{
- const f=ui(),e=f.elements;f.ctx.apiRequest=async()=>({ok:false,error:'NO_CATCHABLE_CORE'});await f.listeners['nodiv-catch']({detail:{action:'scan'}});await f.ctx.reader.onreading({serialNumber:'targetuid'});assert.match(e['#catchHint'].textContent,/NO_CATCHABLE_CORE/);assert.equal(e['#catchConfirm'].hidden,true);
+ const f=ui(),e=f.elements;f.ctx.apiRequest=async()=>({ok:false,error:'NO_CATCHABLE_CORE'});await f.listeners['nodiv-catch']({detail:{action:'scan'}});await f.ctx.reader.onreading({serialNumber:'targetuid'});assert.match(e['#catchHint'].textContent,/keinen fangbaren N-Core/);assert.equal(e['#catchConfirm'].hidden,true);
  await f.listeners['nodiv-catch']({detail:{action:'scan'}});await f.ctx.reader.onreadingerror();await f.ctx.reader.onreading({serialNumber:'targetuid'});assert.match(e['#catchTargetStep'].className,/required/);assert.equal(e['#catchStart'].disabled,false);
  const router=fs.readFileSync('app/js/router.js','utf8');assert.match(router,/if\(id\.catchAccess===true\)body\+=/);assert.doesNotMatch(router,/OPEN CATCH/);
 });
@@ -363,8 +363,8 @@ test('Local/Unbound live state refreshes personal slots and secured energy, clea
   f.ctx.apiRequest=async()=>{if(fail)throw Error('NETWORK OFFLINE');return {ok:true,session:true,player:{coreCapacity:capacity},securedEnergy:energy,cores:[{coreId:'NC-008',energy:310}]};};
   await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'175 E');assert.match(e['#catcherPersonalSlots'].textContent,new RegExp('310 E.*1/'+capacity));
   energy=250;await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'250 E');
-  fail=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'— E');assert.equal(e['#catcherPersonalSlots'].textContent,'LIVE INVENTORY UNAVAILABLE');assert.match(e['#catchInventory'].textContent,/NETWORK OFFLINE/);
-  fail=false;await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'250 E');assert.match(e['#catcherPersonalSlots'].textContent,/NC-008/);
+  fail=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'— E');assert.equal(e['#catcherPersonalSlots'].textContent,'INVENTAR NICHT VERFÜGBAR');assert.match(e['#catchInventory'].textContent,/NETWORK OFFLINE/);
+  fail=false;await f.listeners['nodiv-catch-live']();assert.equal(e['#catcherSecuredEnergy'].textContent,'250 E');assert.match(e['#catcherPersonalSlots'].textContent,/310 E/);assert.doesNotMatch(e['#catcherPersonalSlots'].textContent,/NC-/);
  }
 });
 
