@@ -495,3 +495,11 @@
 
 /* FOP COPY CLEANUP — UI-13 */
 [data-role="FOP"] #fopQueueHint:empty{display:none}
+
+
+/* FOP FINAL HIERARCHY — UI-14 */
+[data-role="FOP"] .fop-next strong{
+  margin:0 0 7px;
+  color:#9bf5ff;
+  text-shadow:0 0 12px #42eaff88,0 0 26px #42eaff33;
+}
