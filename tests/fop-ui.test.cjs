@@ -46,7 +46,7 @@ test('FOP installation completion still hides PRIMARY/scan/confirm actions and s
  assert.equal(e['#fopInstallConfirm'].disabled,true);assert.equal(e['#fopCodeValue'].textContent,'0427');assert.equal(e['#fopOperationStatus'].textContent,'COMPLETE');assert.equal(e['#fopInstallOrder'].disabled,true);
 });
 test('queue contains only server options and empty queue disables action; invented selection makes no request',async()=>{
- const f=ui({empty:true}),e=f.elements;await f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'NO OPERATIONS AVAILABLE');assert.equal(e['#fopOperationSelect'].disabled,true);assert.equal(e['#fopInstallOrder'].disabled,true);
+ const f=ui({empty:true}),e=f.elements;await f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'KEINE AUFTRÄGE VERFÜGBAR');assert.equal(e['#fopOperationSelect'].disabled,true);assert.equal(e['#fopInstallOrder'].disabled,true);
  e['#fopOperationSelect'].value='INSTALL:NODE-999';const before=f.requests.length;await f.listeners['nodiv-fop-install-order']();assert.equal(f.requests.length,before);
  const g=ui({operation:'DEINSTALL'});await g.queue();assert.deepEqual(g.elements['#fopOperationSelect'].children.map(o=>o.textContent),['AUFTRAG AUSWÄHLEN','DEINSTALL // NODE-001']);
 });
@@ -369,8 +369,8 @@ test('Local/Unbound live state refreshes personal slots and secured energy, clea
 
 test('FOP queue distinguishes pending, failed and authoritative empty responses and recovers on manual refresh',async()=>{
  const f=ui(),e=f.elements;let resolve;f.ctx.apiRequest=()=>new Promise(r=>resolve=r);
- const pending=f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'QUEUE WIRD GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'LOADING');assert.equal(e['#fopQueueRefresh'].disabled,true);
- resolve({ok:false,status:'SESSION_EXPIRED'});await pending;assert.equal(e['#fopOperationSelect'].children[0].textContent,'QUEUE NICHT GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'UNAVAILABLE');assert.match(e['#fopQueueHint'].textContent,/SESSION_EXPIRED/);assert.equal(e['#fopQueueRefresh'].disabled,false);assert.equal(e['#fopInstallOrder'].disabled,true);
+ const pending=f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'AUFTRÄGE WERDEN GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'LOADING');assert.equal(e['#fopQueueRefresh'].disabled,true);
+ resolve({ok:false,status:'SESSION_EXPIRED'});await pending;assert.equal(e['#fopOperationSelect'].children[0].textContent,'AUFTRÄGE NICHT GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'UNAVAILABLE');assert.match(e['#fopQueueHint'].textContent,/SESSION_EXPIRED/);assert.equal(e['#fopQueueRefresh'].disabled,false);assert.equal(e['#fopInstallOrder'].disabled,true);
  f.ctx.apiRequest=async()=>{throw Error('TIMEOUT')};await f.queue();assert.match(e['#fopQueueHint'].textContent,/TIMEOUT/);assert.equal(e['#fopQueueRefresh'].disabled,false);
  f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[{id:'DEINSTALL:NODE-001',type:'DEINSTALL',nodeId:'NODE-001',label:'DEINSTALL // NODE-001'}]});await f.queue();assert.equal(e['#fopOperationSelect'].disabled,false);assert.equal(e['#fopOperationStatus'].textContent,'READY');assert.equal(e['#fopQueueHint'].textContent,'');
  f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[]});await f.queue();assert.equal(e['#fopOperationStatus'].textContent,'NO OPERATIONS');assert.match(e['#fopQueueHint'].textContent,/Server bestätigt/);
@@ -396,7 +396,7 @@ test('FOP shell has no visible operations-channel/status bar and starts with fou
 });
 
 test('FOP next step follows selection and physical confirmation gate without requesting gameplay',async()=>{
- const f=ui({operation:'DEINSTALL'}),e=f.elements;await f.queue();assert.equal(e['#fopNextTitle'].textContent,'Operation auswählen');
+ const f=ui({operation:'DEINSTALL'}),e=f.elements;await f.queue();assert.equal(e['#fopNextTitle'].textContent,'Auftrag auswählen');
  e['#fopOperationSelect'].value='DEINSTALL:NODE-001';const count=f.requests.length;await f.listeners['nodiv-fop-operation-select']();assert.equal(e['#fopNextTitle'].textContent,'Auftrag abrufen');assert.equal(f.requests.length,count);
  await f.order();assert.equal(e['#fopNextTitle'].textContent,'Zugewiesene N-Cores scannen');for(const id of ['NC-089','NC-017','NC-034'])await f.scan(id);assert.equal(e['#fopNextTitle'].textContent,'Abschluss bestätigen');assert.match(e['#fopNextDetail'].textContent,/physisch.*erst danach/);assert.equal(f.requests.some(r=>r.action==='nodedeinstallconfirm'),false);
 });
