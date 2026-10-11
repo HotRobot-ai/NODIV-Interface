@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-pioneer-state1';
+import {routeIdentity} from './router.js?v=20261011-pioneer-protection1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -897,19 +897,59 @@ window.addEventListener('focus',()=>{window.dispatchEvent(new CustomEvent('nodiv
 setInterval(()=>{if(sessionToken&&document.visibilityState==='visible'){window.dispatchEvent(new CustomEvent(document.querySelector('#pioneerInventory')?'nodiv-pioneer-live':'nodiv-catch-live'));}},5000);
 
 // Display server-authoritative GhostUntil; this clock never authorizes gameplay.
-let pioneerGhostUntil=0,pioneerGhostClockOffset=0;
+let pioneerGhostUntil=0,pioneerGhostClockOffset=0,pioneerSecureProtection=null,pioneerProtectionAcknowledged='';
+function pioneerProtectionKey(kind,until){return kind+'@'+String(Number(until||0));}
+function pioneerProtectionAcked(key){
+ if(pioneerProtectionAcknowledged===key)return true;
+ try{return window.sessionStorage?.getItem('nodiv-pioneer-protection-ack')===key}catch(error){return false}
+}
+function setPioneerProtectionAck(key){
+ pioneerProtectionAcknowledged=key;
+ try{window.sessionStorage?.setItem('nodiv-pioneer-protection-ack',key)}catch(error){}
+}
 function renderPioneerGhost(player,serverNow){
  pioneerGhostUntil=new Date(player?.ghostUntil||0).getTime();
  pioneerGhostClockOffset=Number.isFinite(serverNow)?serverNow-Date.now():0;
- updatePioneerGhostClock();
+ updatePioneerProtection();
 }
-function updatePioneerGhostClock(){
- const strip=document.querySelector('#pioneerStatusStrip'),ghost=document.querySelector('#pioneerGhostStatus'),timer=document.querySelector('.pioneer-timer');if(!strip||!ghost||!timer)return;
- const remaining=Math.max(0,Math.ceil((pioneerGhostUntil-Date.now()-pioneerGhostClockOffset)/1000)),active=remaining>0;
- ghost.hidden=!active;
- timer.textContent=active?String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0'):'';
- strip.hidden=!active&&document.querySelector('#pioneerEventStatus')?.hidden!==false;
+function updatePioneerProtection(){
+ const strip=document.querySelector('#pioneerStatusStrip'),status=document.querySelector('#pioneerProtectionStatus'),statusLabel=document.querySelector('#pioneerProtectionStatusLabel'),timer=document.querySelector('#pioneerProtectionStatus .pioneer-timer');
+ const overlay=document.querySelector('#pioneerProtectionOverlay'),kindEl=document.querySelector('#pioneerProtectionKind'),title=document.querySelector('#pioneerProtectionTitle'),overlayTimer=document.querySelector('#pioneerProtectionTimer'),hint=document.querySelector('#pioneerProtectionHint');
+ if(!strip||!status||!timer||!overlay||!overlayTimer)return;
+ const clientNow=Date.now()+pioneerGhostClockOffset;
+ const secureUntil=Number(pioneerSecureProtection?.expiresAt||0);
+ const secureActive=Boolean(pioneerSecureProtection?.ownReservation&&secureUntil>clientNow&&['YELLOW','RED'].includes(pioneerSecureProtection?.state));
+ const ghostRemaining=Math.max(0,Math.ceil((pioneerGhostUntil-clientNow)/1000));
+ const ghostActive=ghostRemaining>0;
+ const kind=secureActive?'SECURE':ghostActive?'GHOST':'';
+ const until=secureActive?secureUntil:pioneerGhostUntil;
+ const remaining=Math.max(0,Math.ceil((until-clientNow)/1000));
+ const clock=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
+ const key=kind?pioneerProtectionKey(kind,until):'';
+ const acknowledged=kind&&pioneerProtectionAcked(key);
+ if(kind){
+  status.hidden=!acknowledged;
+  if(statusLabel)statusLabel.textContent=kind==='SECURE'?'SECURE APPROACH':'GHOST';
+  timer.textContent=clock;
+  overlay.hidden=Boolean(acknowledged);
+  if(kindEl)kindEl.textContent=kind==='SECURE'?'NODIV // SECURE APPROACH':'NODIV // GHOST STATUS';
+  if(title)title.textContent='CATCH-SCHUTZ AKTIV';
+  overlayTimer.textContent=clock;
+  if(hint)hint.textContent=kind==='SECURE'?'SECURE APPROACH aktiv. Dieser Pioneer ist bis zum Ablauf gegen Catch geschützt.':'CATCH bestätigt. Dieser Pioneer steht bis zum Ablauf unter Ghost-Schutz.';
+ }else{
+  status.hidden=true;timer.textContent='';overlay.hidden=true;
+ }
+ strip.hidden=(document.querySelector('#pioneerEventStatus')?.hidden!==false)&&status.hidden;
 }
+function updatePioneerGhostClock(){updatePioneerProtection()}
+window.addEventListener('nodiv-pioneer-protection-ack',()=>{
+ const clientNow=Date.now()+pioneerGhostClockOffset,secureUntil=Number(pioneerSecureProtection?.expiresAt||0);
+ const secureActive=Boolean(pioneerSecureProtection?.ownReservation&&secureUntil>clientNow&&['YELLOW','RED'].includes(pioneerSecureProtection?.state));
+ const kind=secureActive?'SECURE':pioneerGhostUntil>clientNow?'GHOST':'';
+ const until=secureActive?secureUntil:pioneerGhostUntil;
+ if(kind)setPioneerProtectionAck(pioneerProtectionKey(kind,until));
+ updatePioneerProtection();
+});
 setInterval(updatePioneerGhostClock,1000);
 
 // Normal HQ Upload: only server-issued choices; retries retain the same upload ID.
@@ -1008,14 +1048,16 @@ window.addEventListener('nodiv-pioneer-resupply',async e=>{
 let secureApproachBusy=false,secureApproachRequest='',pioneerTerminal=null;
 function renderUploadTerminal(result){
  pioneerTerminal=result;
+ pioneerSecureProtection=result?.ownReservation&&['YELLOW','RED'].includes(result?.state)?{state:result.state,ownReservation:true,expiresAt:Number(result.expiresAt||0)}:null;
  const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach');
- if(!status)return;
+ if(!status){updatePioneerProtection();return;}
  status.dataset.state=result.state;
  const remaining=Math.max(0,Math.ceil((Number(result.expiresAt||0)-Number(result.serverNow||Date.now()))/1000));
  const timer=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
  status.textContent='TERMINAL // '+({GREEN:'GRÜN // FREI',YELLOW:'GELB // SECURE APPROACH',RED:'ROT // UPLOAD IN PROGRESS'}[result.state]||'UNAVAILABLE')+(result.state!=='GREEN'?' // '+timer+(result.ownReservation?' // DEIN ZUGANG':''):'');
  if(button)button.disabled=secureApproachBusy||result.state!=='GREEN';
  if(result.state!=='GREEN'){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
+ updatePioneerProtection();
 }
 async function refreshUploadTerminal(){
  if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
