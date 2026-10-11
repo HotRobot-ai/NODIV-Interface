@@ -1012,3 +1012,48 @@
     animation:none!important;
   }
 }
+
+
+/* PIONEER TOP STATUS STRIP — UI-17 */
+.pioneer-status-strip{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin:-4px 0 12px;
+  min-height:34px;
+  font:900 10px ui-monospace,monospace;
+  letter-spacing:.08em;
+}
+.pioneer-status-strip[hidden]{display:none!important}
+#pioneerGhostStatus{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:32px;
+  padding:0 10px;
+  border:1px solid #42eaff77;
+  border-radius:7px;
+  color:#9bf5ff;
+  background:#071b26e8;
+  box-shadow:0 0 16px #42eaff18;
+}
+#pioneerGhostStatus .pioneer-timer{
+  position:static;
+  transform:none;
+  font-size:16px;
+  color:#eaffff;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 10px #42eaff66;
+}
+#pioneerEventStatus{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:32px;
+  padding:0 10px;
+  border:1px solid #72efa966;
+  border-radius:7px;
+  color:#72efa9;
+  background:#0c241ae8;
+}
