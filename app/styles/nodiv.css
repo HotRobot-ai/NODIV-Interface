@@ -1681,3 +1681,18 @@
 [data-role="LOCAL"] #catchStart[data-action="confirm"]{border-color:#72efa9;background:#103424;color:#fff}
 
 .catch-panel #catchStart[data-state="error"]{border-color:#ef828a;background:#411b21;color:#fff;box-shadow:0 0 18px #ef828a20}
+
+/* Server-authorized Local hunt release: blocked, unknown, active. */
+.local-catch-release{margin:20px 0 0;padding:20px;border:2px solid #617783;border-radius:16px;background:#11202b;color:#fff}
+.local-catch-release small{display:block;font-size:11px;letter-spacing:.15em;margin-bottom:10px}
+.local-catch-release strong{display:block;font-size:clamp(23px,6vw,30px);line-height:1.2;letter-spacing:.04em}
+.local-catch-release p{font:16px/1.6 system-ui,sans-serif;margin:12px 0 0;color:#dceaf1}
+.local-catch-release[data-state="inactive"]{border-color:#ef828a;background:#31151c}
+.local-catch-release[data-state="active"]{border-color:#72efa9;background:linear-gradient(135deg,#154c32,#0b251d);box-shadow:0 0 30px #72efa928}
+.local-release-overlay{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;padding:24px;background:#030c10ee;backdrop-filter:blur(12px);overflow:auto}
+.local-release-overlay[hidden]{display:none!important}
+.local-release-overlay>div{max-width:440px;width:100%;padding:30px 24px;border:2px solid #72efa9;border-radius:24px;background:radial-gradient(ellipse at top,#206642,#081e16 75%);box-shadow:0 0 70px #72efa935;color:#fff;text-align:center}
+.local-release-overlay small{font-size:13px;letter-spacing:.3em;color:#b7ffd5}
+.local-release-overlay strong{display:block;margin:24px 0;font-size:clamp(32px,9vw,48px);line-height:1.1;letter-spacing:.06em}
+.local-release-overlay p{font:18px/1.6 system-ui,sans-serif;color:#e3f7e9}
+.local-release-overlay button{width:100%;min-height:64px;margin-top:18px;border-color:#72efa9;background:#103424;color:#fff}

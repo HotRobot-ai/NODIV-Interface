@@ -648,3 +648,30 @@ test('Catch rejected scan flashes red then resets without requests; stale feedba
  timers[0].fn();assert.equal(e['#catchStart'].dataset.state,'ready');assert.equal(e['#catchStart'].dataset.action,'scan');assert.match(e['#catchHint'].textContent,/Scan bereit/);assert.equal(f.requests.length,1);
  await action();await f.ctx.reader.onreading({serialNumber:'protected'});const stale=timers[1];await action();stale.fn();assert.equal(e['#catchStart'].textContent,'KARTE ANS HANDY HALTEN');assert.equal(e['#catchStart'].disabled,true);assert.equal(f.requests.length,2);
 });
+
+test('Local hunt release is gated by authoritative state and announces once per event and identity',async()=>{
+ const f=ui(),e=f.elements,Element=e['#catchStart'].constructor;
+ for(const id of ['localCatchRelease','localCatchReleaseTitle','localCatchReleaseHint','localReleaseOverlay','localReleaseAcknowledge'])e['#'+id]=new Element();
+ e['#localReleaseOverlay'].hidden=true;e['#catchStart'].dataset.action='scan';
+ let event={active:false,state:'INITIALIZED',eventId:'EVT-1'},fail=false;
+ const player={identity:'L001',role:'LOCAL',status:'ACTIVE',catchAccess:true,coreCapacity:1};
+ const stored=new Map();f.ctx.window.sessionStorage={getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)};
+ f.ctx.apiRequest=async p=>{f.requests.push(p);if(fail)throw Error('OFFLINE');return {ok:true,session:true,player,securedEnergy:0,cores:[],event,catchCount:0};};
+ await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchRelease'].dataset.state,'inactive');assert.equal(e['#catchStart'].disabled,true);assert.match(e['#localCatchReleaseTitle'].textContent,/NOCH GESPERRT/);
+ const before=f.requests.length;await f.listeners['nodiv-catch']({detail:{action:'scan'}});assert.equal(f.requests.length,before);assert.equal(f.ctx.reader,undefined);
+ event={active:true,state:'FIELD_ACTIVE',eventId:'EVT-1'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchReleaseTitle'].textContent,'JAGD FREIGEGEBEN');assert.equal(e['#catchStart'].disabled,false);assert.equal(e['#localReleaseOverlay'].hidden,false);
+ f.listeners['nodiv-local-release-ack']();assert.equal(e['#localReleaseOverlay'].hidden,true);await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);assert.equal(stored.get('nodiv-local-release:L001:EVT-1'),'1');
+ fail=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchRelease'].dataset.state,'unknown');assert.equal(e['#catchStart'].disabled,true);assert.equal(e['#localReleaseOverlay'].hidden,true);
+ fail=false;await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);
+ event={active:true,state:'FIELD_ACTIVE',eventId:'EVT-2'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,false);
+ event={active:false,state:'COMPLETED',eventId:'EVT-2'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);assert.equal(e['#localCatchReleaseTitle'].textContent,'JAGD BEENDET');assert.equal(e['#catchStart'].disabled,true);
+});
+
+test('Local polling cannot unlock busy NFC and unresolved confirmations remain available for receipt checking',async()=>{
+ const f=ui(),e=f.elements,Element=e['#catchStart'].constructor;e['#localCatchRelease']=new Element();e['#localCatchRelease'].dataset.state='active';
+ f.ctx.apiRequest=async p=>{f.requests.push(p);if(p.action==='playerstate')return {ok:true,session:true,player:{identity:'L001',status:'ACTIVE',catchAccess:true,coreCapacity:1},cores:[],securedEnergy:0,event:{active:true,eventId:'EVT'}};if(p.mode==='preview')return {ok:true,session:true,status:'CATCH_READY',canConfirm:true,target:'P003',catchId:'CAT-1'};throw Error('NODIV CORE TIMEOUT')};
+ await f.listeners['nodiv-catch']({detail:{action:'scan'}});await f.listeners['nodiv-catch-live']();assert.equal(e['#catchStart'].disabled,true);
+ await f.ctx.reader.onreading({serialNumber:'target'});await f.listeners['nodiv-catch']({detail:{action:'confirm'}});assert.equal(e['#catchStart'].dataset.action,'confirm');
+ f.ctx.renderLocalCatchRelease({active:false,state:'COMPLETED'},{status:'ACTIVE',catchAccess:true});assert.equal(e['#catchStart'].disabled,false);
+ await f.listeners['nodiv-catch']({detail:{action:'confirm'}});assert.equal(f.requests.at(-1).catchId,'CAT-1');
+});
