@@ -575,3 +575,14 @@ test('Exchange rejected scan returns to ready without mutation and stale feedbac
  const count=requests.length;timers.shift()();assert.equal(requests.length,count);assert.deepEqual(e['#exchangeSlots'].children.map(c=>c.dataset.state),['scanned','available']);assert.match(e['#exchangeSlots'].children[1].textContent,/Scan bereit/);assert.equal(e['#exchangeHint'].textContent,'');assert.equal(e['#exchangeConfirm'].hidden,true);
  await scan();const old=timers.shift();await scan();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'error');old();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'error');timers.shift()();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'available');
 });
+
+
+test('Exchange completed cooldown uses returned duration, counts wall time and never sends requests or unlocks a transaction',()=>{
+ const f=ui(),e=f.elements;let now=100000;f.ctx.Date={now:()=>now};
+ f.ctx.resumePioneerExchange({exchange:'clock-ex',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[1],size:1,inCount:1,outCount:1,canConfirm:true,accessCode:'0123'});
+ f.ctx.renderPioneerExchange({status:'EXCHANGE_COMPLETE',exchange:'clock-ex',size:1,inCount:1,outCount:1,canConfirm:false,cooldownSeconds:300});
+ assert.equal(e['#exchangeProgress'].textContent,'TAUSCH GEBUCHT · NODE-SPERRE 05:00');now+=1000;f.ctx.updatePioneerExchangeCooldown();assert.match(e['#exchangeProgress'].textContent,/04:59$/);
+ now+=59000;f.ctx.updatePioneerExchangeCooldown();assert.match(e['#exchangeProgress'].textContent,/04:00$/);f.ctx.renderPioneerExchange({status:'EXCHANGE_COMPLETE',exchange:'clock-ex',size:1,inCount:1,outCount:1,canConfirm:false,cooldownSeconds:300});assert.match(e['#exchangeProgress'].textContent,/04:00$/);
+ now+=240000;f.ctx.updatePioneerExchangeCooldown();assert.match(e['#exchangeProgress'].textContent,/NODE ERNEUT SCANNEN/);assert.equal(e['#exchangeConfirm'].hidden,true);assert.equal(f.requests.length,0);
+ f.ctx.resumePioneerExchange({exchange:'other',nodeId:'NODE-002',totalEnergy:600,nodeState:'STABLE',sizes:[1],size:1,inCount:0,outCount:0,canConfirm:false,accessCode:'0123'});const previous=e['#exchangeProgress'].textContent;f.ctx.updatePioneerExchangeCooldown();assert.equal(e['#exchangeProgress'].textContent,previous);
+});

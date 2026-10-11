@@ -647,6 +647,16 @@ function pioneerMissionCoreFeedback(card,state){
 }
 
 let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false,pioneerExchangeFeedback=null;
+let pioneerExchangeCooldown=null;
+function updatePioneerExchangeCooldown(){
+ if(!pioneerExchangeCooldown)return;
+ const panel=document.querySelector('#pioneerExchange'),progress=document.querySelector('#exchangeProgress');
+ if(!panel){pioneerExchangeCooldown=null;return;}if(panel.hidden||!progress)return;
+ const remaining=Math.max(0,Math.ceil((pioneerExchangeCooldown.until-Date.now())/1000));
+ progress.textContent=remaining?'TAUSCH GEBUCHT · NODE-SPERRE '+String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0'):'TAUSCH GEBUCHT · NODE ERNEUT SCANNEN';
+}
+setInterval(updatePioneerExchangeCooldown,1000);
+
 function renderPioneerExchange(result){
  const panel=document.querySelector('#pioneerExchange');if(!panel)return;
  panel.hidden=false;
@@ -666,6 +676,10 @@ function renderPioneerExchange(result){
  const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active||result?.canConfirm!==true;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
  document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
  document.querySelector('#exchangeProgress').hidden=active||!complete&&Boolean(pioneerExchangePreview.sizes.length);
+ if(complete){
+  if(pioneerExchangeCooldown?.exchange!==result.exchange)pioneerExchangeCooldown={exchange:result.exchange,until:Date.now()+Math.max(0,Number(result.cooldownSeconds??300))*1000};
+  updatePioneerExchangeCooldown();
+ }
  const slots=document.querySelector('#exchangeSlots');
  if(slots){
   slots.hidden=!active&&!complete;slots.replaceChildren();
@@ -695,13 +709,13 @@ function exchangeRejected(message,phase){
  return 'Nicht möglich: '+(explanations[message]||message);
 }
 function resumePioneerExchange(resume){
- pioneerExchangeFeedback=null;pioneerExchangePreview=resume;pioneerExchange=resume;
+ pioneerExchangeCooldown=null;pioneerExchangeFeedback=null;pioneerExchangePreview=resume;pioneerExchange=resume;
  renderPioneerExchange(resume);
  document.querySelector('#exchangeHint').textContent='Tausch fortgesetzt. Dein bestätigter Scanfortschritt bleibt erhalten.';
 }
 function showPioneerExchangePreview(preview){
  if(pioneerExchange)return;
- pioneerExchangeFeedback=null;pioneerExchangePreview=preview;renderPioneerExchange(null);
+ pioneerExchangeCooldown=null;pioneerExchangeFeedback=null;pioneerExchangePreview=preview;renderPioneerExchange(null);
  document.querySelector('#exchangeHint').textContent='';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
