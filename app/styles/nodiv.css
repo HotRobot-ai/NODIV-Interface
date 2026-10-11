@@ -1448,3 +1448,39 @@
 @media(max-width:360px){
   .hq-upload-summary{grid-template-columns:1fr}
 }
+
+
+/* FOUNDER EVENT UPLOAD POINT CONFIG — UI-22 */
+.event-upload-points{
+  display:block;
+  margin:12px 0 10px;
+  padding:12px;
+  border:1px solid #315f7366;
+  border-radius:9px;
+  background:#06131b;
+  font-family:ui-monospace,monospace;
+}
+.event-upload-points>span{
+  display:block;
+  margin-bottom:7px;
+  color:#9defff;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.12em;
+}
+.event-upload-points select{
+  width:100%;
+  min-height:46px;
+  border:1px solid #459cc480;
+  border-radius:8px;
+  background:#040f18;
+  color:#eafcff;
+  padding:0 10px;
+  font:900 12px ui-monospace,monospace;
+}
+.event-upload-points small{
+  display:block;
+  margin-top:7px;
+  color:#809ba8;
+  font:700 9px/1.45 ui-monospace,monospace;
+}
