@@ -1067,7 +1067,7 @@ function renderUploadTerminal(result){
 async function refreshUploadTerminal(){
  if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
  try{const r=await apiRequest({action:'uploadterminalstate',token:sessionToken});if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
- catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.textContent='TERMINAL // STATUS UNAVAILABLE';status.dataset.state='';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
+ catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.dataset.state='';const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');if(label)label.textContent='UPLOAD BAY';if(value)value.textContent='STATUS NICHT VERFÜGBAR';if(detail)detail.textContent='Erneut versuchen';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
 }
 window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
 window.addEventListener('nodiv-hq-approach',async e=>{
