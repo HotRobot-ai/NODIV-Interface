@@ -7642,17 +7642,22 @@ function readUploadTerminalRecord(){
  const records=readUploadTerminalRecords();
  return records.find(record=>record.state!=='GREEN')||records[0]||{state:'GREEN'};
 }
-function uploadTerminalResponse(record,player){
+function uploadTerminalPointResponse(record,player){
  const now=Date.now(),own=record.identity===player.identity&&record.cardId===player.cardId;
- return {ok:true,authenticated:true,session:true,status:'UPLOAD_TERMINAL_STATE',state:record.state,serverNow:now,...(record.state!=='GREEN'?{expiresAt:record.expiresAt,remainingMs:Math.max(0,record.expiresAt-now),ownReservation:own}:{})};
+ return {state:record.state,bay:{id:record.bay?.id||'',uid:record.bay?.uid||''},...(record.state!=='GREEN'?{expiresAt:record.expiresAt,remainingMs:Math.max(0,record.expiresAt-now),ownReservation:own}:{ownReservation:false})};
+}
+function uploadTerminalResponse(record,player){
+ return {ok:true,authenticated:true,session:true,status:'UPLOAD_TERMINAL_STATE',serverNow:Date.now(),...uploadTerminalPointResponse(record,player)};
 }
 function assertUploadTerminalOwner(record,player){
- if(record.state!=='GREEN'&&(record.identity!==player.identity||record.cardId!==player.cardId))throw new Error('UPLOAD_TERMINAL_BUSY');
+ if(record.state!=='GREEN'&&(record.identity!==player.identity||record.cardId!==player.cardId))throw new Error('UPLOAD_POINT_BUSY');
 }
 function getUploadTerminalState(e){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  const bay=activeHqUploadBay();return {...uploadTerminalResponse(readUploadTerminalRecord(),session.player),bay:{id:bay.id}};
+  const player=session.player,points=readUploadTerminalRecords().map(record=>uploadTerminalPointResponse(record,player));
+  const selected=points.find(point=>point.ownReservation)||points.find(point=>point.state==='GREEN')||points[0];
+  return {ok:true,authenticated:true,session:true,status:'UPLOAD_TERMINAL_STATE',serverNow:Date.now(),state:selected?.state||'GREEN',bay:selected?.bay||null,ownReservation:Boolean(selected?.ownReservation),expiresAt:selected?.expiresAt||null,remainingMs:selected?.remainingMs||0,points:points.map(({bay,state,ownReservation,expiresAt,remainingMs})=>({bay,state,ownReservation,expiresAt:expiresAt||null,remainingMs:remainingMs||0})),available:points.filter(point=>point.state==='GREEN').length,total:points.length};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function activateSecureApproach(e){
