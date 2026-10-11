@@ -491,3 +491,7 @@
   color:#a2f5ff;
   text-shadow:0 0 10px #42eaff66;
 }
+
+
+/* FOP COPY CLEANUP — UI-13 */
+[data-role="FOP"] #fopQueueHint:empty{display:none}
