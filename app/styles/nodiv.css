@@ -1661,3 +1661,21 @@
 @media(max-width:430px){[data-role="LOCAL"] .role-head{min-height:255px;padding:18px}[data-role="LOCAL"] .catch-panel{padding:18px}}
 
 [data-role="LOCAL"] .local-slot-label{display:block;margin-bottom:10px;font-size:12px;letter-spacing:.13em;color:#bdd3de}
+
+/* Local compact header, authoritative event badge and inventory. */
+[data-role="LOCAL"] .role-head small:empty{display:none}
+[data-role="LOCAL"] .role-head p{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+[data-role="LOCAL"] .role-head>div{width:100%}
+.local-event-status{font:700 11px/1.3 system-ui,sans-serif;letter-spacing:.03em;padding:8px 10px;border:1px solid #617783;border-radius:8px;color:#c0d4de;background:#11202b}
+.local-event-status[data-state="active"]{color:#fff;background:#103424;border-color:#72efa9}
+.local-event-status[data-state="inactive"]{color:#fff;background:#411b21;border-color:#ef828a}
+[data-role="LOCAL"] .local-inventory{margin:22px 0}
+.local-inventory-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;color:#bdd3de;font-size:13px;letter-spacing:.06em}
+[data-role="LOCAL"] #catcherPersonalSlots{text-align:center;font-size:38px;padding:24px}
+[data-role="LOCAL"] .local-metrics{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+[data-role="LOCAL"] .local-metrics .role-metric{margin-top:0;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:15px;min-width:0}
+[data-role="LOCAL"] .local-metrics .role-metric span{font-size:11px}
+[data-role="LOCAL"] .local-metrics .role-metric b{font-size:25px}
+[data-role="LOCAL"] .local-metrics .role-metric small{font-size:11px;color:#a8bdc8}
+[data-role="LOCAL"] .catch-panel{margin-top:20px}
+[data-role="LOCAL"] #catchStart[data-action="confirm"]{border-color:#72efa9;background:#103424;color:#fff}

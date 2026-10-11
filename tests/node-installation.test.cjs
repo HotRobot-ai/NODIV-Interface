@@ -1433,3 +1433,13 @@ test('FOP resume queue excludes other identities and expired orders',()=>{
  const key='NODIV_INSTALL_ORDER_'+order.installation,data=JSON.parse(f.properties.get(key));data.expiresAt=0;f.properties.set(key,JSON.stringify(data));
  assert.equal(f.ctx.getFopOperations(f.e).operations.some(o=>o.resume),false);
 });
+
+
+test('Catch statistic counts committed receipts once since reset, excludes previews failures and other actors',()=>{
+ const f=catchFixture();const preview=f.catchPreview();assert.equal(f.ctx.getPlayerState(f.catchE).catchCount,0);
+ const complete=f.catchConfirm(preview.catchId);assert.equal(complete.status,'CATCH_COMPLETE');assert.equal(f.ctx.getPlayerState(f.catchE).catchCount,1);f.catchConfirm(preview.catchId);assert.equal(f.ctx.getPlayerState(f.catchE).catchCount,1);
+ const logs=f.sheets['Transaction Log'].rows,receipt=logs.at(-1).slice();logs.push(receipt.slice());assert.equal(f.ctx.readCompletedCatchCount('P009'),1);
+ const failed=receipt.slice();failed[15]='CAT-FAILED // TARGET P003';failed[14]='FAILED';logs.push(failed);
+ const other=receipt.slice();other[3]='L002';other[15]='CAT-OTHER // TARGET P003';logs.push(other);assert.equal(f.ctx.readCompletedCatchCount('P009'),1);
+ const reset=Array(16).fill('');reset[2]='PRE_EVENT_RESET_COMPLETE';reset[14]='SUCCESS';logs.push(reset);assert.equal(f.ctx.readCompletedCatchCount('P009'),0);
+});

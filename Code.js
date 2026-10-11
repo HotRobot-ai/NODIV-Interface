@@ -2915,6 +2915,7 @@ function getPlayerState(e) {
     player:getSessionPlayerDisplay(player),
     evacuation:evacuationPlayerState(player),
     event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length},
+    ...(player.catchAccess===true?{catchCount:readCompletedCatchCount(player.identity)}:{}),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
     cores:cores.slice(0, Math.max(0, Number(player.coreCapacity || 0)))
@@ -5485,6 +5486,13 @@ function startCoreTransfer(e) {
 /* CATCH V1: authenticated encounter, hidden server selection, optimistic snapshots.
  * The existing endpoint no longer accepts a manually chosen Core or anonymous cards. */
 const CATCH_PREFIX='NODIV_CATCH_V1_';
+// Count committed encounters since the existing successful pre-event reset boundary.
+// Receipt replays and failed/preview requests do not add to the count.
+function readCompletedCatchCount(identity){
+ const receipts=new Set();
+ exchangeLogRows().forEach(row=>{if(row[2]!=='CATCH_COMPLETE'||row[3]!==identity||row[14]!=='SUCCESS')return;const id=String(row[15]||'').split(' // ')[0];if(id.startsWith('CAT-'))receipts.add(id);});
+ return receipts.size;
+}
 function catchPersonalCores(player,rows){
  return exchangeOwnedCores('PIONEER',player.identity,rows).concat(player.role==='PIONEER'?[]:exchangeOwnedCores(player.role,player.identity,rows)).filter(core=>core.status!=='IN_TRANSIT');
 }

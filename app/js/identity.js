@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-local36';
+import {routeIdentity} from './router.js?v=20261011-local37';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -922,46 +922,52 @@ window.addEventListener('nodiv-founder-restore',async e=>{
 
 /* Direct encounter: NFC target authentication never lets the browser select a Core. */
 let catchOrder=null,catchBusy=false,catchScanController=null;
-function catchMessage(error){const code=String(error.message||error);return ({TARGET_PROTECTED:'Dieser Pioneer ist geschützt. Ein Fang ist gerade nicht möglich.',CATCHER_CAPACITY_FULL:'Dein Inventar ist voll. Du kannst keinen weiteren N-Core aufnehmen.',NO_CATCHABLE_CORE:'Dieser Pioneer hat gerade keinen fangbaren N-Core.',CATCH_TARGET_INVALID:'Bitte die Access Card eines aktiven Pioneers scannen.',FIELD_ACTIVE_REQUIRED:'Aktuell läuft kein aktives Spiel.',SELF_CATCH:'Du kannst dich nicht selbst fangen.',CATCH_ACCESS_DENIED:'Deine Karte ist nicht zum Fangen berechtigt.'})[code]||(code.includes('TIMEOUT')?'Antwort noch offen. Erneut bestätigen prüft denselben Fang.':code);}
+function catchMessage(error){const code=String(error.message||error);return ({TARGET_PROTECTED:'Dieser Pioneer ist geschützt. Ein Fang ist gerade nicht möglich.',CATCHER_CAPACITY_FULL:'Dein Inventar ist voll. Du kannst keinen weiteren N-Core aufnehmen.',NO_CATCHABLE_CORE:'Dieser Pioneer hat gerade keinen fangbaren N-Core.',CATCH_TARGET_INVALID:'Bitte die Access Card eines aktiven Pioneers scannen.',FIELD_ACTIVE_REQUIRED:'Aktuell läuft kein aktives Spiel.',CATCH_EXPIRED:'Die Bestätigung ist abgelaufen. Bitte die Pioneer-Karte erneut scannen.',SELF_CATCH:'Du kannst dich nicht selbst fangen.',CATCH_ACCESS_DENIED:'Deine Karte ist nicht zum Fangen berechtigt.'})[code]||(code.includes('TIMEOUT')?'Antwort noch offen. Erneut bestätigen prüft denselben Fang.':code);}
 function catchStep(id,state,text){const element=document.querySelector('#'+id);if(element){element.className='catch-step '+state;element.textContent=text;}}
 window.addEventListener('nodiv-catch-live',async()=>{
  if(!sessionToken)return;const inventory=document.querySelector('#catchInventory');if(!inventory)return;
- const slots=document.querySelector('#catcherPersonalSlots'),secured=document.querySelector('#catcherSecuredEnergy');
+ const slots=document.querySelector('#catcherPersonalSlots'),secured=document.querySelector('#catcherSecuredEnergy'),slotCount=document.querySelector('#catcherSlotCount'),eventStatus=document.querySelector('#localEventStatus'),count=document.querySelector('#catcherCatchCount');
  try{
   const r=await apiRequest({action:'playerstate',token:sessionToken});
   if(!r?.ok||!r.session||!r.player||!Array.isArray(r.cores)||!Number.isFinite(r.securedEnergy))throw Error(r?.error||r?.status||'PLAYER STATE UNAVAILABLE');
   inventory.textContent=r.cores.map(c=>c.energy+' E').join(' // ')||'SLOT FREI';
-  if(slots)slots.textContent=inventory.textContent+' // '+r.cores.length+'/'+r.player.coreCapacity;
+  if(slots)slots.textContent=slotCount?(r.cores[0]?r.cores[0].energy+' E':'— E'):inventory.textContent+' // '+r.cores.length+'/'+r.player.coreCapacity;
+  if(slotCount)slotCount.textContent='Slot '+r.cores.length+'/'+r.player.coreCapacity;
   if(secured)secured.textContent=r.securedEnergy+' E';
- }catch(error){inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';}
+  if(count)count.textContent=Number.isInteger(r.catchCount)&&r.catchCount>=0?String(r.catchCount):'—';
+  if(eventStatus){const active=r.event?.active;eventStatus.dataset.state=active===true?'active':active===false?'inactive':'unknown';eventStatus.textContent=active===true?'EVENT AKTIV':active===false?'KEIN EVENT':'EVENT —';}
+ }catch(error){inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';if(slotCount)slotCount.textContent='Slot —/—';if(count)count.textContent='—';if(eventStatus){eventStatus.dataset.state='unknown';eventStatus.textContent='EVENT —';}}
 });
+function catchPrimary(action,label){const button=document.querySelector('#catchStart');if(button){button.dataset.action=action;button.textContent=label;}}
 window.addEventListener('nodiv-catch',async e=>{
  if(!sessionToken||catchBusy||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
- const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),confirm=document.querySelector('#catchConfirm'),result=document.querySelector('#catchResult');if(!hint||!start)return;
+ const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),result=document.querySelector('#catchResult');if(!hint||!start)return;
  if(e.detail?.action==='scan'){
+  // An unresolved confirmation must retain its receipt ID instead of starting a new Catch.
+  if(catchOrder)return;
   if(typeof NDEFReader==='undefined'){hint.textContent='WEB NFC NICHT VERFÜGBAR // Android + Chrome erforderlich.';return;}
-  catchOrder=null;confirm.hidden=true;confirm.disabled=true;result.hidden=true;catchBusy=true;start.disabled=true;
+  result.hidden=true;catchBusy=true;start.disabled=true;catchPrimary('scan','KARTE ANS HANDY HALTEN');hint.textContent='Pioneer-Karte jetzt scannen.';
   catchStep('catchTargetStep','running','1 · Karte jetzt ans Handy halten');catchStep('catchCommitStep','required','2 · Fang bestätigen');
   try{
    catchScanController?.abort();catchScanController=new AbortController();const reader=new NDEFReader();await reader.scan({signal:catchScanController.signal});let handled=false;
-   const finish=()=>{catchBusy=false;start.disabled=false;catchScanController.abort();};
+   const finish=()=>{catchBusy=false;start.disabled=false;catchScanController.abort();if(!catchOrder)catchPrimary('scan','PIONEER-KARTE SCANNEN');};
    reader.onreadingerror=()=>{if(handled)return;handled=true;finish();catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent='Karte nicht erkannt. Bitte erneut scannen.';};
-   reader.onreading=async ev=>{if(handled)return;handled=true;catchScanController.abort();try{
+   reader.onreading=async ev=>{if(handled)return;handled=true;catchScanController.abort();catchPrimary('scan','KARTE WIRD GEPRÜFT …');try{
     const r=await apiRequest({action:'catch',mode:'preview',token:sessionToken,targetUid:String(ev.serialNumber||'')});
     if(!r?.ok||!r.session||!r.canConfirm||r.status!=='CATCH_READY')throw Error(r?.error||r?.status||'CATCH DENIED');
-    catchOrder=r;catchStep('catchTargetStep','accepted','✓ '+r.target+' erkannt');hint.textContent=r.target+' erkannt. Bestätige jetzt den Fang.';confirm.hidden=false;confirm.disabled=false;
+    catchOrder=r;catchStep('catchTargetStep','accepted','✓ '+r.target+' erkannt');hint.textContent=r.target+' erkannt. Tippe erneut, um den Fang zu bestätigen.';catchPrimary('confirm','FANG BESTÄTIGEN');
    }catch(error){catchStep('catchTargetStep','required','Karte nicht angenommen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);}finally{finish();}};
-  }catch(error){catchBusy=false;start.disabled=false;catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);}
+  }catch(error){catchBusy=false;start.disabled=false;catchPrimary('scan','PIONEER-KARTE SCANNEN');catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);}
   return;
  }
  if(e.detail?.action!=='confirm'||!catchOrder)return;
- catchBusy=true;start.disabled=true;confirm.disabled=true;catchStep('catchCommitStep','running','2 · Fang wird gebucht …');
+ catchBusy=true;start.disabled=true;catchPrimary('confirm','FANG WIRD GEBUCHT …');catchStep('catchCommitStep','running','2 · Fang wird gebucht …');
  try{
   const r=await apiRequest({action:'catch',mode:'confirm',token:sessionToken,catchId:catchOrder.catchId});
   if(!r?.ok||r.status!=='CATCH_COMPLETE')throw Error(r?.error||r?.status||'CATCH DENIED');
-  catchStep('catchCommitStep','accepted','✓ Fang gebucht');result.hidden=false;result.textContent='✓ '+r.core.energy+' E · Fang erfolgreich';hint.textContent='Der Pioneer übergibt dir jetzt diesen N-Core.';confirm.hidden=true;catchOrder=null;
+  catchStep('catchCommitStep','accepted','✓ Fang gebucht');result.hidden=false;result.textContent='✓ '+r.core.energy+' E · Fang erfolgreich';hint.textContent='Der Pioneer übergibt dir jetzt diesen N-Core.';catchOrder=null;catchPrimary('scan','PIONEER-KARTE SCANNEN');
   window.dispatchEvent(new CustomEvent('nodiv-catch-live'));window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
- }catch(error){catchStep('catchCommitStep','required','Buchung noch nicht bestätigt');hint.textContent=catchMessage(error);hint.title=String(error.message||error);confirm.disabled=false;}finally{catchBusy=false;start.disabled=false;}
+ }catch(error){catchStep('catchCommitStep','required','Buchung noch nicht bestätigt');hint.textContent=catchMessage(error);hint.title=String(error.message||error);if(['CATCH_EXPIRED','CATCH_SESSION_MISMATCH','CATCH_TARGET_INVALID','CATCH_EVENT_CHANGED','CATCH_SNAPSHOT_CHANGED','TARGET_PROTECTED','CATCHER_CAPACITY_FULL','NO_CATCHABLE_CORE','FIELD_ACTIVE_REQUIRED'].includes(String(error.message||error))){catchOrder=null;catchPrimary('scan','PIONEER-KARTE SCANNEN');}else catchPrimary('confirm','FANG ERNEUT PRÜFEN');}finally{catchBusy=false;start.disabled=false;}
 });
 // Refresh ownership after returning from a physical encounter on another device.
 window.addEventListener('focus',()=>{window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));window.dispatchEvent(new CustomEvent('nodiv-catch-live'));});
