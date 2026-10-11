@@ -2996,11 +2996,11 @@ function normalHqUpload(e,action){
    const completed=exchangeLogRows().find(row=>row[2]==='HQ_UPLOAD_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS'&&(()=>{try{const r=JSON.parse(row[15]);return r.upload===id&&r.cardId===player.cardId;}catch(error){return false;}})());
    if(completed)return {...JSON.parse(completed[15]),replayed:true};
   }
-  const terminal=readUploadTerminalRecord(),order=JSON.parse(props.getProperty(HQ_UPLOAD_PREFIX+id)||'null')||(terminal.state==='RED'&&terminal.order.id===id?terminal.order:null);
+  const terminal=readUploadTerminalRecordForUpload(id),order=JSON.parse(props.getProperty(HQ_UPLOAD_PREFIX+id)||'null')||(terminal.state==='RED'&&terminal.order.id===id?terminal.order:null);
   if(!order||order.identity!==player.identity||order.cardId!==player.cardId)throw new Error('UPLOAD_SESSION_MISMATCH');
   if(order.expiresAt<=Date.now())throw new Error('UPLOAD_EXPIRED');
   assertUploadTerminalOwner(terminal,player);
-  if(terminal.state!=='RED'||terminal.order.id!==id)throw new Error('UPLOAD_TERMINAL_BUSY');
+  if(terminal.state!=='RED'||terminal.order.id!==id)throw new Error('UPLOAD_POINT_BUSY');
   if(order.eventId&&readCurrentEvent()?.eventId!==order.eventId)throw new Error('UPLOAD_EVENT_CHANGED');
   const context=hqUploadContext(player,order.bayUid);if(context.bay.id!==order.bay.id)throw new Error('UPLOAD_BAY_CHANGED');
   let selected=order.cores;
@@ -7645,6 +7645,11 @@ function readUploadTerminalRecords(){return activeHqUploadBays().map(readUploadT
 function readUploadTerminalRecord(){
  const records=readUploadTerminalRecords();
  return records.find(record=>record.state!=='GREEN')||records[0]||{state:'GREEN'};
+}
+function readUploadTerminalRecordForUpload(uploadId){
+ const wanted=String(uploadId||'');
+ const records=readUploadTerminalRecords();
+ return records.find(record=>record.state==='RED'&&record.order&&record.order.id===wanted)||records.find(record=>record.state!=='GREEN')||records[0]||{state:'GREEN'};
 }
 function uploadTerminalPointResponse(record,player){
  const now=Date.now(),own=record.identity===player.identity&&record.cardId===player.cardId;
