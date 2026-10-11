@@ -385,6 +385,19 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
+test('Pioneer shell keeps field mechanics but uses NODIV energy identity and clear scan action',()=>{
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ assert.match(router,/class="pioneer-energy-core"/);
+ assert.match(router,/id="pioneerCapacity">—\/— CORES/);
+ assert.match(router,/class="pioneer-priority"><h3>NODIV OBJEKT SCANNEN<\/h3>/);
+ assert.match(router,/id="pioneerScan" type="button">NODIV OBJEKT SCANNEN<\/button>/);
+ assert.equal(router.includes('FIELD STATUS NOMINAL'),false);
+ assert.match(router,/id="pioneerRestoreBoard"/);
+ assert.match(router,/id="pioneerRestore"/);
+ assert.match(router,/id="pioneerExchange"/);
+ assert.match(router,/id="pioneerReSupply"/);
+});
+
 test('FOP shell has no visible operations-channel/status bar and starts with founder directive plus hidden EVAC',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  assert.equal(router.includes("accent:'OPERATIONS CHANNEL'"),false);
