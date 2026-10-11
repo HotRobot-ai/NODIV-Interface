@@ -1484,3 +1484,105 @@
   color:#809ba8;
   font:700 9px/1.45 ui-monospace,monospace;
 }
+
+
+/* PIONEER HQ LARGE CHOICE — UI-23 */
+.hq-upload-summary article[data-state="GREEN"]{
+  border-color:#72efa966;
+  background:#092018;
+}
+.hq-upload-summary article[data-state="RED"]{
+  border-color:#ff858566;
+  background:#241013;
+}
+.hq-upload-summary article[data-state="GREEN"] strong{
+  color:#8ff3b6;
+}
+.hq-upload-summary article[data-state="RED"] strong{
+  color:#ff9b9b;
+}
+.hq-upload-choice{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+  margin-top:14px;
+}
+.hq-choice{
+  width:100%;
+  min-height:128px;
+  box-sizing:border-box;
+  padding:16px 15px;
+  border:1px solid #3f789466;
+  border-radius:12px;
+  text-align:left;
+  background:linear-gradient(145deg,#071722,#041018);
+  color:#eafcff;
+  font-family:ui-monospace,monospace;
+  touch-action:manipulation;
+}
+.hq-choice:disabled{
+  opacity:.42;
+  filter:saturate(.55);
+}
+.hq-choice-kicker{
+  display:block;
+  color:#89a9b7;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.11em;
+}
+.hq-choice strong{
+  display:block;
+  margin-top:7px;
+  font-size:clamp(28px,8.5vw,38px);
+  line-height:1;
+  font-weight:950;
+  letter-spacing:.02em;
+}
+.hq-choice b{
+  display:block;
+  margin-top:8px;
+  font-size:14px;
+  line-height:1.25;
+  font-weight:950;
+  letter-spacing:.035em;
+}
+.hq-choice-action{
+  display:block;
+  margin-top:11px;
+  color:#a8bec8;
+  font-size:12px;
+  line-height:1.4;
+  font-weight:800;
+}
+.hq-choice-free{
+  border-color:#54b9dd77;
+  box-shadow:inset 0 0 24px #42eaff0b;
+}
+.hq-choice-free strong{
+  color:#dffcff;
+}
+.hq-choice-secure{
+  border-color:#f4cd7088;
+  background:linear-gradient(145deg,#211a0c,#0e0b05);
+  box-shadow:inset 0 0 24px #f4cd700b;
+}
+.hq-choice-secure strong,
+.hq-choice-secure b{
+  color:#ffe598;
+}
+.hq-choice:focus-visible,
+.hq-choice:active{
+  outline:2px solid #bff9ff;
+  outline-offset:2px;
+}
+[data-role="PIONEER"] .hq-upload-summary small{
+  font-size:10px;
+}
+[data-role="PIONEER"] .hq-upload-summary strong{
+  font-size:clamp(24px,7vw,32px);
+}
+[data-role="PIONEER"] .hq-upload-summary span{
+  font-size:11px;
+  line-height:1.35;
+}
