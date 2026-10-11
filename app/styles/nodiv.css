@@ -1623,8 +1623,8 @@
 #pioneerExchange .exchange-slots{display:grid;gap:10px}
 #pioneerExchange .exchange-slot{padding:16px;border:1px solid #284553;border-radius:12px;background:#08121a;font:700 16px/1.4 system-ui,sans-serif;color:#9cb2c0;text-align:left;letter-spacing:0;min-height:56px}
 #pioneerExchange .exchange-slot[data-state="available"]{border-color:#d3faff;background:#113245;color:#f1feff;box-shadow:0 0 16px #69e5ff35}
-#pioneerExchange .exchange-slot[data-state="scanned"]{border-color:#72efa9;background:#103424;color:#c0ffd6}
-#pioneerExchange .exchange-slot[data-state="booked"],#pioneerExchange #exchangeHint[data-state="booked"]{border-color:#72efa9;background:#103424;color:#c0ffd6}
+#pioneerExchange .exchange-slot[data-state="scanned"]{border-color:#72efa9;background:#103424;color:#fff}
+#pioneerExchange .exchange-slot[data-state="booked"],#pioneerExchange #exchangeHint[data-state="booked"]{border-color:#72efa9;background:#103424;color:#fff}
 #pioneerExchange .exchange-slot[data-state="error"],#pioneerExchange #exchangeHint[data-state="error"]{border:1px solid #ff7885;background:#35171e;color:#ffc8ce}
 #pioneerExchange #exchangeHint[data-state="error"],#pioneerExchange #exchangeHint[data-state="booked"]{padding:14px;border-radius:12px}
 
@@ -1638,4 +1638,4 @@
 
 #pioneerExchange .exchange-head{position:relative;padding-right:50px}
 #pioneerExchange .exchange-close{position:absolute;top:-8px;right:0;width:44px;min-height:44px;padding:0;background:#0b2635;border:1px solid #72d7f0;color:#d6f8ff;font:700 28px/1 system-ui,sans-serif;letter-spacing:0}
-#pioneerExchange .exchange-slot[data-action="confirm"]{border-color:#b6ffcd;background:#103424;color:#c0ffd6;box-shadow:0 0 16px #72efa935}
+#pioneerExchange .exchange-slot[data-action="confirm"]{border-color:#b6ffcd;background:#103424;color:#fff;box-shadow:0 0 16px #72efa935}
