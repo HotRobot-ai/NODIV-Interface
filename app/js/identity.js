@@ -99,7 +99,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   if(state.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:state.evacuation});
   if(capacity>0&&cores.length===0&&(!pioneerReSupply||pioneerReSupply.status==='RESUPPLY_COMPLETE')&&!pioneerReSupplyBusy)window.dispatchEvent(new CustomEvent('nodiv-pioneer-resupply-status'));
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
-  if(eventStatus){const event=state.event||{};eventStatus.hidden=!event.active;eventStatus.textContent=event.active?'EVENT AKTIV // NODES '+Number(event.discoveredNodes||0)+'/'+Number(event.activeNodes||0):'';if(statusStrip)statusStrip.hidden=!event.active&&document.querySelector('#pioneerGhostStatus')?.hidden!==false;}
+  if(eventStatus){const event=state.event||{};eventStatus.hidden=!event.active;eventStatus.textContent=event.active?'EVENT AKTIV // NODES '+Number(event.discoveredNodes||0)+'/'+Number(event.activeNodes||0):'';if(statusStrip)statusStrip.hidden=!event.active&&document.querySelector('#pioneerProtectionStatus')?.hidden!==false;}
   if(total)total.textContent=String(state.carriedEnergy??0)+' E';if(capacityView)capacityView.textContent=cores.length+'/'+capacity+' CORES';
   if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
   if(inv){
