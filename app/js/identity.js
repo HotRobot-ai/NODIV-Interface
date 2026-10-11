@@ -640,7 +640,7 @@ function pioneerCoreFeedback(coreId,state){
 function pioneerMissionCoreFeedback(card,state){
  if(!card)return;
  card.dataset.feedback=state||'';
- if(state==='success'||state==='error')setTimeout(()=>{if(card.dataset.feedback===state)delete card.dataset.feedback;},1400);
+ if(state==='error')setTimeout(()=>{if(card.dataset.feedback==='error')card.dataset.feedback='required';},1400);
 }
 
 let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false;
