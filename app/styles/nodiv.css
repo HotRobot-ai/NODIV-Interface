@@ -1057,3 +1057,45 @@
   color:#72efa9;
   background:#0c241ae8;
 }
+
+
+/* PIONEER CORE FEEDBACK + EVENT STATUS — UI-18 */
+#pioneerEventStatus[hidden]{display:none!important}
+#pioneerEventStatus:not([hidden]){
+  display:inline-flex;
+}
+#pioneerInventory .pioneer-core[data-feedback="required"],
+.restore-core[data-feedback="required"],
+#pioneerReSupply[data-feedback="required"]{
+  border-color:#c9fbff!important;
+  box-shadow:0 0 0 1px #eaffff99,inset 0 0 28px #42eaff1c,0 0 28px #42eaff66!important;
+  animation:pioneerCoreRequired 1.45s ease-in-out infinite;
+}
+#pioneerInventory .pioneer-core[data-feedback="success"],
+.restore-core[data-feedback="success"],
+#pioneerReSupply[data-feedback="success"]{
+  border-color:#72efa9!important;
+  box-shadow:0 0 0 1px #bfffd488,inset 0 0 28px #72efa91c,0 0 24px #72efa955!important;
+}
+#pioneerInventory .pioneer-core[data-feedback="success"] b,
+.restore-core[data-feedback="success"] b,
+#pioneerReSupply[data-feedback="success"]{
+  color:#bfffd4!important;
+}
+#pioneerInventory .pioneer-core[data-feedback="error"],
+.restore-core[data-feedback="error"],
+#pioneerReSupply[data-feedback="error"]{
+  border-color:#ff5b69!important;
+  box-shadow:0 0 0 1px #ff8c9688,inset 0 0 28px #ff44551f,0 0 24px #ff445555!important;
+}
+@keyframes pioneerCoreRequired{
+  0%,100%{box-shadow:0 0 0 1px #eaffff66,inset 0 0 22px #42eaff14,0 0 18px #42eaff44}
+  50%{box-shadow:0 0 0 1px #ffffffcc,inset 0 0 32px #42eaff28,0 0 36px #9bf5ffaa}
+}
+@media(prefers-reduced-motion:reduce){
+  #pioneerInventory .pioneer-core[data-feedback="required"],
+  .restore-core[data-feedback="required"],
+  #pioneerReSupply[data-feedback="required"]{
+    animation:none!important;
+  }
+}
