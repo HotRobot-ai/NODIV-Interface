@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-exchange24';
+import {routeIdentity} from './router.js?v=20261011-exchange25';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -656,6 +656,8 @@ function renderPioneerExchange(result){
  for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' N-Core'+(size===1?'':'s')+' tauschen';sizes.appendChild(option)}
  if(pioneerExchangePreview.sizes.includes(Number(selected)))sizes.value=selected;
  sizes.disabled=active||complete||pioneerExchangeBusy;
+ sizes.hidden=active||complete;
+ for(const id of ['exchangeSizeLabel','exchangeRule']){const el=document.querySelector('#'+id);if(el)el.hidden=active||complete;}
  document.querySelector('#exchangeAuthorize').hidden=active||complete;
  document.querySelector('#exchangeAuthorize').disabled=!pioneerExchangePreview.sizes.length||pioneerExchangeBusy;
  document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
@@ -666,6 +668,7 @@ function renderPioneerExchange(result){
  document.querySelector('#exchangeScan').disabled=pioneerExchangeBusy||Boolean(result?.canConfirm);
  document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
  if(active)document.querySelector('#exchangeScan').textContent=result.inCount<result.size?'EIGENEN CORE SCANNEN':'ENTNOMMENEN NODE-CORE SCANNEN';
+ document.querySelector('#exchangeProgress').hidden=active||!complete&&Boolean(pioneerExchangePreview.sizes.length);
  const slots=document.querySelector('#exchangeSlots');
  if(slots){
   slots.hidden=!active&&!complete;slots.replaceChildren();
@@ -689,12 +692,12 @@ function exchangeRejected(message,phase){
 function resumePioneerExchange(resume){
  pioneerExchangeFeedback=null;pioneerExchangePreview=resume;pioneerExchange=resume;
  renderPioneerExchange(resume);
- document.querySelector('#exchangeHint').textContent='Tausch fortgesetzt. Bestätigte Scans sind wiederhergestellt; die Buchung erfolgt erst mit TAUSCH BESTÄTIGEN.';
+ document.querySelector('#exchangeHint').textContent='Tausch fortgesetzt. Dein bestätigter Scanfortschritt bleibt erhalten.';
 }
 function showPioneerExchangePreview(preview){
  if(pioneerExchange)return;
  pioneerExchangeFeedback=null;pioneerExchangePreview=preview;renderPioneerExchange(null);
- document.querySelector('#exchangeHint').textContent='Nach dem Öffnen physisch tauschen. Erst eigene N-Cores, danach entnommene Node-Cores scannen.';
+ document.querySelector('#exchangeHint').textContent='';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
  if(pioneerExchangeBusy||pioneerRestoreBusy||catchBusy||!pioneerExchangePreview||!sessionToken)return;
@@ -714,7 +717,7 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
      const phase=pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT';
      const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,phase,uid:String(ev.serialNumber||'')});
      if(!r?.ok||r.action!==true)throw new Error(exchangeRejected(r?.error||r?.message||r?.status||'Scan abgelehnt',phase));
-     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E · Scan bestätigt, noch nicht gebucht';
+     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E';
     }catch(err){hint.textContent=pioneerExchangeFeedback?String(err.message||err):'Prüfung offen: '+String(err.message||err);}
     finally{pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);}
    };
@@ -731,7 +734,7 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
   if(action==='cancel'){pioneerExchange=null;pioneerExchangePreview=null;document.querySelector('#pioneerExchange').hidden=true;document.querySelector('#pioneerScan').disabled=false;return;}
   pioneerExchangeBusy=false;renderPioneerExchange(r);
   if(action==='confirm'){pioneerExchange=null;pioneerExchangePreview=null;window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));}
-  hint.textContent=action==='confirm'?'Tausch gebucht. Der Node enthält weiterhin genau drei N-Cores.':'Code autorisiert. Cores physisch tauschen und scannen.';
+  hint.textContent=action==='confirm'?'':'Setze die eigenen N-Cores ein und entnimm dieselbe Anzahl. Scanne zuerst deine eingesetzten Cores.';
  }catch(err){hint.textContent=pioneerExchangeFeedback?String(err.message||err):'Prüfung offen: '+String(err.message||err);}
  finally{pioneerExchangeBusy=false;if(pioneerExchangePreview)renderPioneerExchange(pioneerExchange);}
 });
