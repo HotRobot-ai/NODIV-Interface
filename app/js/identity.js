@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-pioneer-qc1';
+import {routeIdentity} from './router.js?v=20261011-pioneer-hq1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -1049,12 +1049,17 @@ let secureApproachBusy=false,secureApproachRequest='',pioneerTerminal=null;
 function renderUploadTerminal(result){
  pioneerTerminal=result;
  pioneerSecureProtection=result?.ownReservation&&['YELLOW','RED'].includes(result?.state)?{state:result.state,ownReservation:true,expiresAt:Number(result.expiresAt||0)}:null;
- const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach');
+ const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach'),next=document.querySelector('#hqUploadNext');
  if(!status){updatePioneerProtection();return;}
  status.dataset.state=result.state;
+ const bayId=String(result.bay?.id||'UPLOAD BAY');
  const remaining=Math.max(0,Math.ceil((Number(result.expiresAt||0)-Number(result.serverNow||Date.now()))/1000));
  const timer=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
- status.textContent='TERMINAL // '+({GREEN:'GRÜN // FREI',YELLOW:'GELB // SECURE APPROACH',RED:'ROT // UPLOAD IN PROGRESS'}[result.state]||'UNAVAILABLE')+(result.state!=='GREEN'?' // '+timer+(result.ownReservation?' // DEIN ZUGANG':''):'');
+ const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');
+ if(label)label.textContent=bayId;
+ if(value)value.textContent=result.state==='GREEN'?'FREI':result.ownReservation?'DEIN ZUGANG':result.state==='YELLOW'?'RESERVIERT':'BELEGT';
+ if(detail)detail.textContent=result.state==='GREEN'?'UPLOAD BEREIT':result.ownReservation?timer+' VERBLEIBEND':result.state==='YELLOW'?'SECURE APPROACH AKTIV':'UPLOAD LÄUFT';
+ if(next)next.textContent=result.state==='GREEN'?'Zugang wählen. Danach zur HQ Upload Bay gehen und NFC scannen.':result.ownReservation?'Deine Upload Bay ist reserviert. Zum HQ gehen und diese Bay per NFC scannen.':'Upload Bay ist aktuell nicht verfügbar.';
  if(button)button.disabled=secureApproachBusy||result.state!=='GREEN';
  if(result.state!=='GREEN'){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
  updatePioneerProtection();
@@ -1068,9 +1073,9 @@ window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
 window.addEventListener('nodiv-hq-approach',async e=>{
  const hint=document.querySelector('#hqApproachHint'),confirm=document.querySelector('#secureApproachConfirm');if(!hint||!confirm||secureApproachBusy)return;
  await refreshUploadTerminal();
- if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='Kostenlos // kein zusätzlicher Schutz. Bei GRÜN die reale HQ Upload Bay per NFC scannen.';return;}
+ if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='KOSTENLOS // Keine Reservierung, kein Catch-Schutz. Bei FREI direkt zur Upload Bay gehen.';return;}
  if(e.detail?.mode!=='secure'||pioneerTerminal?.state!=='GREEN')return;
- hint.textContent='150 E SECURED werden sofort verbraucht. 05:00 Catch-Schutz und exklusive Upload Bay. Keine Erstattung bei Ablauf.';confirm.hidden=false;confirm.disabled=false;
+ hint.textContent='150 E werden sofort vom Energiekonto abgezogen. Dafür erhältst du 05:00 Catch-Schutz und die Upload Bay exklusiv.';confirm.hidden=false;confirm.disabled=false;
 });
 window.addEventListener('nodiv-secure-approach-confirm',async()=>{
  if(!sessionToken||secureApproachBusy)return;
