@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-fop-final';
+import {routeIdentity} from './router.js?v=20261011-fop-final2';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -467,7 +467,7 @@ function renderFopInstallation(result){
   const item=document.createElement('article');item.className='fop-core'+(core.scanned?' verified':'');
   for(const [tag,text] of [['small',core.id],['strong',core.energy+' E'],['span',core.scanned?'VERIFIED':'AWAITING SCAN']]){const el=document.createElement(tag);el.textContent=text;item.appendChild(el)}list.appendChild(item);
  }}
- setText('#fopDeploymentNode',result?.node?.id||'Operation auswählen');
+ setText('#fopDeploymentNode',result?.node?.id||'Auftrag auswählen');
  setText('#fopLoadoutEnergy',result?result.totalEnergy+' E':'— E');
  setText('#fopLoadoutState',result?.nodeState||'—');
  const state=document.querySelector('#fopLoadoutState');if(state)state.dataset.state=result?.nodeState||'';
