@@ -2967,9 +2967,8 @@ function getHqUploadPreview(e){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
-  const player=session.player,context=hqUploadContext(player,e.parameter.uid||''),props=PropertiesService.getScriptProperties(),bay=activeHqUploadBay();
-  if(normalizeUid(e.parameter.uid)!==bay.uid)throw new Error('UPLOAD_BAY_INVALID');
-  const terminal=readUploadTerminalRecord();assertUploadTerminalOwner(terminal,player);
+  const player=session.player,context=hqUploadContext(player,e.parameter.uid||''),props=PropertiesService.getScriptProperties(),bay=activeHqUploadBayByUid(e.parameter.uid||'');
+  const terminal=readUploadTerminalRecordForBay(bay);assertUploadTerminalOwner(terminal,player);
   if(terminal.eventId&&terminal.eventId!==readCurrentEvent()?.eventId)throw new Error('UPLOAD_EVENT_CHANGED');
   if(terminal.state==='RED'){
    const stored=props.getProperty(HQ_UPLOAD_PREFIX+terminal.order.id),order=stored?JSON.parse(stored):terminal.order;
