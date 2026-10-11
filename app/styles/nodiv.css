@@ -1586,3 +1586,25 @@
   font-size:11px;
   line-height:1.35;
 }
+
+
+/* PIONEER HQ HEADERLESS CLOSE — UI-24 */
+[data-role="PIONEER"] .hq-upload-panel{
+  position:relative;
+  padding-top:16px;
+}
+.hq-upload-close{
+  position:absolute;
+  top:8px;
+  right:8px;
+  width:38px;
+  height:38px;
+  border:1px solid #315f7366;
+  border-radius:8px;
+  background:#06131b;
+  color:#b9d9e5;
+  font:900 22px/1 ui-monospace,monospace;
+}
+.hq-upload-summary{
+  margin-top:34px;
+}
