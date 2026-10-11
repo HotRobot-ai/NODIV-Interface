@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-pioneer-top1';
+import {routeIdentity} from './router.js?v=20261011-pioneer-state1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -90,7 +90,7 @@ window.addEventListener('pagehide',()=>{if(identityAttempt)finishIdentityAttempt
 window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
  window.dispatchEvent(new CustomEvent('nodiv-upload-terminal-refresh'));
- const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),capacityView=document.querySelector('#pioneerCapacity'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
+ const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),capacityView=document.querySelector('#pioneerCapacity'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy'),eventStatus=document.querySelector('#pioneerEventStatus'),statusStrip=document.querySelector('#pioneerStatusStrip');
  try{
   const state=await apiRequest({action:'playerstate',token:sessionToken});
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
@@ -99,13 +99,14 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   if(state.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:state.evacuation});
   if(capacity>0&&cores.length===0&&(!pioneerReSupply||pioneerReSupply.status==='RESUPPLY_COMPLETE')&&!pioneerReSupplyBusy)window.dispatchEvent(new CustomEvent('nodiv-pioneer-resupply-status'));
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
+  if(eventStatus){const event=state.event||{};eventStatus.hidden=!event.active;eventStatus.textContent=event.active?'EVENT AKTIV // NODES '+Number(event.discoveredNodes||0)+'/'+Number(event.activeNodes||0):'';if(statusStrip)statusStrip.hidden=!event.active&&document.querySelector('#pioneerGhostStatus')?.hidden!==false;}
   if(total)total.textContent=String(state.carriedEnergy??0)+' E';if(capacityView)capacityView.textContent=cores.length+'/'+capacity+' CORES';
   if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
   if(inv){
    const slots=[];
    for(let i=0;i<3;i++){
     const core=cores[i];
-    if(core)slots.push('<div class="pioneer-core"><span><b>'+String(core.energy??'—')+' E</b>'+String(core.status||'FIELD')+'</span></div>');
+    if(core)slots.push('<div class="pioneer-core" data-core-id="'+String(core.coreId||'')+'"><span><b>'+String(core.energy??'—')+' E</b>'+String(core.status||'FIELD')+'</span></div>');
     else if(i<capacity)slots.push('<div class="pioneer-core"><span><b>EMPTY</b>READY</span></div>');
     else slots.push('<div class="pioneer-core locked">SLOT 0'+(i+1)+'<br>LOCKED</div>');
    }
@@ -630,6 +631,18 @@ window.addEventListener('nodiv-founder-status',async()=>{
  }catch(err){showFounderResult('STATUS UNAVAILABLE',String(err.message||err),false)}
 });
 
+function pioneerCoreFeedback(coreId,state){
+ const id=String(coreId||'').trim().toUpperCase(),card=id?document.querySelector('#pioneerInventory .pioneer-core[data-core-id="'+id+'"]'):null;
+ if(!card)return;
+ card.dataset.feedback=state||'';
+ if(state==='success'||state==='error')setTimeout(()=>{if(card.dataset.feedback===state)delete card.dataset.feedback;},1400);
+}
+function pioneerMissionCoreFeedback(card,state){
+ if(!card)return;
+ card.dataset.feedback=state||'';
+ if(state==='success'||state==='error')setTimeout(()=>{if(card.dataset.feedback===state)delete card.dataset.feedback;},1400);
+}
+
 let pioneerExchangePreview=null,pioneerExchange=null,pioneerExchangeBusy=false;
 function renderPioneerExchange(result){
  const panel=document.querySelector('#pioneerExchange');if(!panel)return;
@@ -734,7 +747,7 @@ function renderPioneerRestore(result,atNode=false){
  document.querySelector('#restoreInCore').textContent=result.inCore.id;document.querySelector('#restoreInEnergy').textContent=result.inCore.energy+' E';
  document.querySelector('#restoreOutCore').textContent=result.outCore.id;document.querySelector('#restoreOutEnergy').textContent=result.outCore.energy+' E';
  document.querySelector('#restoreCurrentEnergy').textContent=result.totalEnergy+' E';document.querySelector('#restoreProjectedEnergy').textContent=result.projectedEnergy+' E';
- if(inCard)inCard.dataset.state=result.inCount?'done':'pending';if(outCard)outCard.dataset.state=result.outCount?'done':'pending';
+ if(inCard){inCard.dataset.state=result.inCount?'done':'pending';inCard.dataset.feedback=!result.inCount&&result.authorized?'required':result.inCount?'success':'';}if(outCard){outCard.dataset.state=result.outCount?'done':'pending';outCard.dataset.feedback=result.inCount&&!result.outCount?'required':result.outCount?'success':'';}
  const badge=document.querySelector('#restoreStateBadge');if(badge){badge.textContent=complete?'ERLEDIGT':result.authorized?'NODE OFFEN':atNode?'AM NODE':'AKTIV';badge.dataset.state=complete?'done':result.authorized?'active':'pending';}
  document.querySelector('#restoreProjection').textContent=result.nodeState+' → '+result.projectedState;
  document.querySelector('#restoreCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'ZUGANGSCODE  '+result.accessCode:'';
@@ -772,7 +785,7 @@ window.addEventListener('nodiv-pioneer-restore',async e=>{
  const request=async uid=>{
   const r=await apiRequest({action:'restore'+action,token:sessionToken,node:pioneerRestore.nodeId,restore:pioneerRestore.restore,phase:pioneerRestore.inCount?'OUT':'IN',uid:uid||''});
   if(!r?.ok||r.action!==true)throw Error(r?.error||r?.message||r?.status||'RESTORE REJECTED');
-  pioneerRestoreBusy=false;renderPioneerRestore({...pioneerRestore,...r},true);
+  pioneerRestoreBusy=false;renderPioneerRestore({...pioneerRestore,...r},true);if(action==='scan'){const phaseBefore=pioneerRestore.inCount?'OUT':'IN';pioneerMissionCoreFeedback(document.querySelector(phaseBefore==='OUT'?'#restoreOutCard':'#restoreInCard'),'success');if(r.core?.id)pioneerCoreFeedback(r.core.id,'success');}
   if(['RESTORE_1_COMPLETE','RESTORE_2_COMPLETE'].includes(r.status))window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
  };
  if(action==='scan'){
@@ -781,7 +794,7 @@ window.addEventListener('nodiv-pioneer-restore',async e=>{
   pioneerRestoreBusy=true;renderPioneerRestore(pioneerRestore,true);
   try{const controller=new AbortController(),reader=new NDEFReader();let handled=false;await reader.scan({signal:controller.signal});
    reader.onreadingerror=()=>{if(handled)return;handled=true;controller.abort();pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent='NFC LESEFEHLER // ERNEUT';};
-   reader.onreading=async ev=>{if(handled)return;handled=true;controller.abort();try{await request(String(ev.serialNumber||''));}catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}};
+   reader.onreading=async ev=>{if(handled)return;handled=true;controller.abort();try{await request(String(ev.serialNumber||''));}catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);pioneerMissionCoreFeedback(document.querySelector(pioneerRestore.inCount?'#restoreOutCard':'#restoreInCard'),'error');hint.textContent=String(err.message||err);}};
   }catch(err){pioneerRestoreBusy=false;renderPioneerRestore(pioneerRestore,true);hint.textContent=String(err.message||err);}
   return;
  }
@@ -955,7 +968,7 @@ function renderPioneerReSupply(result,atNode=false){
  document.querySelector('#resupplyEnergy').textContent=active?(atNode?'EINSETZEN: '+result.inCore.energy+' E // ENTNEHMEN: '+result.outCore.energy+' E':result.inCore.energy+' E // IN TRANSIT // MISSION CARGO'):'';
  document.querySelector('#resupplyCode').textContent=active&&atNode&&result.authorized&&result.accessCode?'MECHANISCHER CODE // '+result.accessCode:'';
  document.querySelector('#resupplyProgress').textContent=active&&atNode?'IN '+result.inCount+'/1 // OUT '+result.outCount+'/1':'';
- document.querySelector('#resupplyGuide').textContent=complete?'Zurück im Field HUD.':!mission?'Ein Transportauftrag bringt dir wieder einen persönlichen Core.':!result.accepted?'MISSION CARGO READY // Angezeigten HQ-Core übernehmen und scannen.':!atNode?'Transport-Core zum Ziel-Node bringen und Node per NFC scannen.':!result.authorized?'Ziel erkannt. Node-Zugang jetzt autorisieren.':result.canConfirm?'Beide Cores gescannt. Physischen Tausch bestätigen.':result.inCount?'Angezeigten niedrigsten Node-Core entnehmen und scannen.':'Transport-Core einsetzen und per NFC scannen.';
+ document.querySelector('#resupplyGuide').textContent=complete?'Zurück im Field HUD.':!mission?'Ein Transportauftrag bringt dir wieder einen persönlichen Core.':!result.accepted?'MISSION CARGO READY // Angezeigten HQ-Core übernehmen und scannen.':!atNode?'Transport-Core zum Ziel-Node bringen und Node per NFC scannen.':!result.authorized?'Ziel erkannt. Node-Zugang jetzt autorisieren.':result.canConfirm?'Beide Cores gescannt. Physischen Tausch bestätigen.':result.inCount?'Angezeigten niedrigsten Node-Core entnehmen und scannen.':'Transport-Core einsetzen und per NFC scannen.';panel.dataset.feedback=complete?'success':active&&atNode&&result.authorized?'required':'';
  const final=document.querySelector('#resupplyResult');final.hidden=!complete;final.textContent=complete?'RE-SUPPLY COMPLETE // '+result.acquiredCore.energy+' E CORE ACQUIRED':'';
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active&&atNode&&result.authorized;
 }
@@ -980,7 +993,7 @@ window.addEventListener('nodiv-pioneer-resupply',async e=>{
   pioneerReSupplyBusy=false;renderPioneerReSupply({...mission,...r},atNode);
   if(r.status==='RESUPPLY_COMPLETE')window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
  };
- const failed=error=>{pioneerReSupplyBusy=false;renderPioneerReSupply(mission,atNode);document.querySelector('#resupplyGuide').textContent=String(error.message||error);};
+ const failed=error=>{pioneerReSupplyBusy=false;renderPioneerReSupply(mission,atNode);if(action==='scan'){const panel=document.querySelector('#pioneerReSupply');if(panel){panel.dataset.feedback='error';setTimeout(()=>{if(panel.dataset.feedback==='error')panel.dataset.feedback='required';},1400);}}document.querySelector('#resupplyGuide').textContent=String(error.message||error);};
  try{
   if(['accept','scan'].includes(action)){
    if(!('NDEFReader' in window))throw Error('Android + Chrome / Web NFC erforderlich.');
