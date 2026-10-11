@@ -385,6 +385,21 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
+test('Event upload points are founder-configured and multi-point aware',()=>{
+ const backend=fs.readFileSync('Code.js','utf8');
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ const identity=fs.readFileSync('app/js/identity.js','utf8');
+ assert.match(backend,/EVENT_UPLOAD_POINTS_DRAFT_KEY/);
+ assert.match(backend,/requested<2\|\|requested>4/);
+ assert.match(backend,/activeHqUploadBays\(\)/);
+ assert.match(backend,/readUploadTerminalRecordForBay/);
+ assert.match(backend,/readUploadTerminalRecordForUpload/);
+ assert.match(router,/id="eventUploadPoints"/);
+ assert.equal(router.includes('value="1">1 Uploadpunkt'),false);
+ assert.match(identity,/params\.uploadPoints/);
+ assert.match(identity,/available\+'\/\'+total\+' FREI'/);
+});
+
 test('Pioneer HQ upload panel prioritizes balance price and assigned bay',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  const identity=fs.readFileSync('app/js/identity.js','utf8');
