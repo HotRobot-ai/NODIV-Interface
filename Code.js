@@ -7619,24 +7619,28 @@ function activeHqUploadBayByUid(uid){
  if(!bay)throw new Error('UPLOAD_POINT_INVALID');
  return bay;
 }
-function readUploadTerminalRecord(){
+function readUploadTerminalRecordForBay(bay){
  const rows=exchangeLogRows(),completed=new Set();
  for(const row of rows)if(row[2]==='HQ_UPLOAD_COMPLETE'&&row[14]==='SUCCESS'){try{completed.add(JSON.parse(row[15]).upload);}catch(error){}}
- const props=PropertiesService.getScriptProperties();
+ const props=PropertiesService.getScriptProperties(),wanted=bay.uid;
  for(let i=rows.length-1;i>=0;i--){
   const row=rows[i];if(row[14]!=='SUCCESS'||!['SECURE_APPROACH_ACTIVATED','UPLOAD_TERMINAL_CLAIMED'].includes(row[2]))continue;
-  // Corrupt authoritative receipts must never silently make a reserved terminal free.
-  const record=JSON.parse(row[15]);if(!record.id||!record.identity||!record.cardId||!Number.isFinite(record.expiresAt))throw new Error('UPLOAD_TERMINAL_RECEIPT_INVALID');
-  if(row[2]==='SECURE_APPROACH_ACTIVATED')return record.expiresAt>Date.now()?{state:'YELLOW',...record}:{state:'GREEN'};
-  if(completed.has(record.id)||record.expiresAt<=Date.now())return {state:'GREEN'};
+  const record=JSON.parse(row[15]);if(record.bayUid!==wanted)continue;
+  if(!record.id||!record.identity||!record.cardId||!Number.isFinite(record.expiresAt))throw new Error('UPLOAD_POINT_RECEIPT_INVALID');
+  if(row[2]==='SECURE_APPROACH_ACTIVATED')return record.expiresAt>Date.now()?{state:'YELLOW',...record,bay}:{state:'GREEN',bay};
+  if(completed.has(record.id)||record.expiresAt<=Date.now())return {state:'GREEN',bay};
   const raw=props.getProperty(HQ_UPLOAD_PREFIX+record.id),order=raw?JSON.parse(raw):record;
-  if(!order||!Number.isFinite(order.expiresAt)||order.id!==record.id||order.identity!==record.identity||order.cardId!==record.cardId||order.bayUid!==record.bayUid||order.eventId!==record.eventId)throw new Error('UPLOAD_TERMINAL_ORDER_MISMATCH');
-  if(order.expiresAt<=Date.now())return {state:'GREEN'};
-  return {state:'RED',id:record.id,identity:record.identity,cardId:record.cardId,expiresAt:record.expiresAt,order};
+  if(!order||!Number.isFinite(order.expiresAt)||order.id!==record.id||order.identity!==record.identity||order.cardId!==record.cardId||order.bayUid!==record.bayUid||order.eventId!==record.eventId)throw new Error('UPLOAD_POINT_ORDER_MISMATCH');
+  if(order.expiresAt<=Date.now())return {state:'GREEN',bay};
+  return {state:'RED',id:record.id,identity:record.identity,cardId:record.cardId,expiresAt:record.expiresAt,order,bay};
  }
- // Pre-deployment upload orders use the existing TTL/receipt rules; no migration.
- const old=Object.entries(props.getProperties()).filter(([key])=>key.startsWith(HQ_UPLOAD_PREFIX)).flatMap(([,raw])=>{try{const order=JSON.parse(raw);return order?.id&&order.identity&&order.cardId&&Number.isFinite(order.expiresAt)&&Array.isArray(order.cores)?[order]:[];}catch(error){return [];}}).filter(order=>order.expiresAt>Date.now()&&!completed.has(order.id)).sort((a,b)=>a.expiresAt-b.expiresAt||a.id.localeCompare(b.id))[0];
- return old?{state:'RED',id:old.id,identity:old.identity,cardId:old.cardId,expiresAt:old.expiresAt,order:old}:{state:'GREEN'};
+ const old=Object.entries(props.getProperties()).filter(([key])=>key.startsWith(HQ_UPLOAD_PREFIX)).flatMap(([,raw])=>{try{const order=JSON.parse(raw);return order?.id&&order.identity&&order.cardId&&Number.isFinite(order.expiresAt)&&Array.isArray(order.cores)&&order.bayUid===wanted?[order]:[];}catch(error){return [];}}).filter(order=>order.expiresAt>Date.now()&&!completed.has(order.id)).sort((a,b)=>a.expiresAt-b.expiresAt||a.id.localeCompare(b.id))[0];
+ return old?{state:'RED',id:old.id,identity:old.identity,cardId:old.cardId,expiresAt:old.expiresAt,order:old,bay}:{state:'GREEN',bay};
+}
+function readUploadTerminalRecords(){return activeHqUploadBays().map(readUploadTerminalRecordForBay);}
+function readUploadTerminalRecord(){
+ const records=readUploadTerminalRecords();
+ return records.find(record=>record.state!=='GREEN')||records[0]||{state:'GREEN'};
 }
 function uploadTerminalResponse(record,player){
  const now=Date.now(),own=record.identity===player.identity&&record.cardId===player.cardId;
