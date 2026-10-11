@@ -7609,11 +7609,15 @@ function preEventReset(e){
  * PRE_EVENT_RESET_COMPLETE scopes these receipts through exchangeLogRows(). */
 const SECURE_APPROACH_COST=150;
 const SECURE_APPROACH_TTL_MS=5*60*1000;
-function activeHqUploadBay(){
- const sheet=findUploadTerminalSheet(),rows=sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues():[];
- const bays=rows.filter(row=>String(row[1]).toUpperCase()==='UPLOAD_HQ'&&String(row[3]).toUpperCase()==='ACTIVE'&&normalizeUid(row[2]));
- if(bays.length!==1)throw new Error('UPLOAD_TERMINAL_CONFIGURATION_INVALID');
- return {id:String(bays[0][0]),uid:normalizeUid(bays[0][2])};
+function activeHqUploadBays(){
+ const all=activeHqUploadPointList(),required=configuredEventUploadPoints();
+ if(all.length<required)throw new Error('UPLOAD_POINT_CONFIGURATION_INVALID');
+ return all.slice(0,required);
+}
+function activeHqUploadBayByUid(uid){
+ const wanted=normalizeUid(uid),bay=activeHqUploadBays().find(item=>item.uid===wanted);
+ if(!bay)throw new Error('UPLOAD_POINT_INVALID');
+ return bay;
 }
 function readUploadTerminalRecord(){
  const rows=exchangeLogRows(),completed=new Set();
