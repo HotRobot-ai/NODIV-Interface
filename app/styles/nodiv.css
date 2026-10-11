@@ -1143,10 +1143,8 @@
   inset:0;
   z-index:2;
   pointer-events:none;
-  opacity:.26;
-  background:
-    linear-gradient(112deg,transparent 59%,#bffaff18 60%,#eaffffb8 60.5%,#42eaff32 61%,transparent 62.5%),
-    radial-gradient(ellipse at 67% 30%,#bffaff1f 0 2%,#42eaff13 8%,transparent 24%);
+  opacity:.22;
+  background:radial-gradient(ellipse at 67% 30%,#bffaff24 0 2%,#42eaff14 8%,transparent 24%);
   mix-blend-mode:screen;
   animation:pioneerFortressPulse 4.8s ease-in-out infinite;
 }
