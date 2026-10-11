@@ -385,11 +385,12 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
-test('Pioneer shell keeps field mechanics but uses NODIV energy identity and clear scan action',()=>{
+test('Pioneer shell keeps field mechanics with shared NODIV header and top Ghost status',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
- assert.match(router,/class="pioneer-energy-core"/);
+ assert.equal(router.includes('class="pioneer-energy-core"'),false);
+ assert.match(router,/id="pioneerStatusStrip"/);
+ assert.match(router,/id="pioneerGhostStatus"/);
  assert.match(router,/id="pioneerCapacity">—\/— CORES/);
- assert.match(router,/class="pioneer-priority"><h3>NODIV OBJEKT SCANNEN<\/h3>/);
  assert.match(router,/id="pioneerScan" type="button">NODIV OBJEKT SCANNEN<\/button>/);
  assert.equal(router.includes('FIELD STATUS NOMINAL'),false);
  assert.match(router,/id="pioneerRestoreBoard"/);
