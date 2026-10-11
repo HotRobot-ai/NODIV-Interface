@@ -724,7 +724,7 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
      const phase=pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT';
      const r=await apiRequest({action:'exchangescan',token:sessionToken,node:pioneerExchangePreview.nodeId,exchange:pioneerExchange.exchange,phase,uid:String(ev.serialNumber||'')});
      if(!r?.ok||r.action!==true)throw new Error(exchangeRejected(r?.error||r?.message||r?.status||'Scan abgelehnt',phase));
-     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.id+' // '+r.core.energy+' E';
+     pioneerExchange={...pioneerExchange,...r};hint.textContent=r.core.energy+' E';
     }catch(err){hint.textContent=pioneerExchangeFeedback?String(err.message||err):'Prüfung offen: '+String(err.message||err);}
     finally{pioneerExchangeBusy=false;renderPioneerExchange(pioneerExchange);}
    };
