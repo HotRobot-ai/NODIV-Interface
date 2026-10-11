@@ -96,7 +96,7 @@ test('Pioneer UI shows server size without code, authorizes before scanning, gat
   return {ok:true,action:true,status:p.action==='exchangeconfirm'?'EXCHANGE_COMPLETE':'EXCHANGE_AUTHORIZED',exchange:'ex-1',size:1,inCount:incoming,outCount:outgoing,canConfirm:incoming===1&&outgoing===1,...(p.action==='exchangeauthorize'?{accessCode:'0123'}:{}),core:{id:p.uid==='own'?'NC-002':'NC-006',energy:341}};
  };
  f.ctx.showPioneerExchangePreview({preview:'preview-1',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
- assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core tauschen');assert.equal(e['#exchangeScan'].hidden,true);
+ assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core');assert.equal(e['#exchangeScan'].hidden,true);
  e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
  assert.equal(e['#exchangeHint'].textContent,'');assert.equal(e['#exchangeProgress'].hidden,true);
  await action('authorize');assert.equal(e['#exchangeSize'].hidden,true);assert.equal(e['#exchangeRule'].hidden,true);assert.equal(e['#exchangeProgress'].hidden,true);assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#pioneerScan'].disabled,true);

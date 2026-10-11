@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-exchange25';
+import {routeIdentity} from './router.js?v=20261011-exchange26';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -653,7 +653,7 @@ function renderPioneerExchange(result){
  const complete=result?.status==='EXCHANGE_COMPLETE',active=Boolean(pioneerExchange)&&!complete;
  document.querySelector('#exchangeNode').textContent=pioneerExchangePreview.nodeId+' · '+pioneerExchangePreview.totalEnergy+' E · '+pioneerExchangePreview.nodeState;
  const sizes=document.querySelector('#exchangeSize'),selected=sizes.value;sizes.replaceChildren();
- for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' N-Core'+(size===1?'':'s')+' tauschen';sizes.appendChild(option)}
+ for(const size of pioneerExchangePreview.sizes){const option=document.createElement('option');option.value=String(size);option.textContent=size+' N-Core';sizes.appendChild(option)}
  if(pioneerExchangePreview.sizes.includes(Number(selected)))sizes.value=selected;
  sizes.disabled=active||complete||pioneerExchangeBusy;
  sizes.hidden=active||complete;

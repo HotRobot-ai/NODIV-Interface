@@ -1612,12 +1612,11 @@
 /* Exchange: server-confirmed scans and completed bookings stay distinct. */
 #pioneerExchange .exchange-head{display:grid;gap:12px;margin-bottom:20px}
 #pioneerExchange .exchange-head strong{font:700 clamp(15px,4vw,19px)/1.5 monospace;overflow-wrap:anywhere;color:#b4d4e0}
-#pioneerExchange .exchange-head h3{margin:0;font:800 clamp(26px,7vw,34px)/1.15 system-ui,sans-serif;color:#edfaff}
 #pioneerExchange .exchange-size-label{display:block;margin-bottom:10px;font:700 16px/1.4 system-ui,sans-serif}
 #pioneerExchange select{width:100%;min-height:56px;padding:14px;border:1px solid #72d7f0;border-radius:12px;background:#07151e;color:#edfcff;font:700 18px/1.4 system-ui,sans-serif}
 #pioneerExchange .role-action{min-height:56px;font-size:16px}
 #pioneerExchange .role-action:not(:disabled){border-color:#b4f1ff;box-shadow:0 0 14px #55d8ff20}
-#pioneerExchange .exchange-rule{font:700 16px/1.5 system-ui,sans-serif;color:#daf4fa}
+#pioneerExchange .exchange-rule{margin:0 0 16px;font:400 15px/1.5 system-ui,sans-serif;color:#b8ced9}
 #pioneerExchange .exchange-code:not(:empty){padding:16px;border:1px solid #65cbea;border-radius:12px;background:#0c2635;font:800 22px/1.4 monospace;color:#ecfcff}
 #pioneerExchange .exchange-code:empty{display:none}
 #pioneerExchange #exchangeProgress,#pioneerExchange #exchangeHint{font:16px/1.6 system-ui,sans-serif}
