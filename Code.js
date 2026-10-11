@@ -3558,8 +3558,8 @@ const EVENT_UPLOAD_POINTS_DRAFT_KEY='NODIV_EVENT_UPLOAD_POINTS_DRAFT';
 function configuredEventUploadPoints(){
   const event=readCurrentEvent();
   if(event&&['INITIALIZED','FIELD_ACTIVE'].includes(event.state))return Math.max(1,Math.min(4,Number(event.uploadPoints||1)));
-  const stored=Number(PropertiesService.getScriptProperties().getProperty(EVENT_UPLOAD_POINTS_DRAFT_KEY)||1);
-  return Math.max(1,Math.min(4,Number.isFinite(stored)?stored:1));
+  const stored=Number(PropertiesService.getScriptProperties().getProperty(EVENT_UPLOAD_POINTS_DRAFT_KEY)||2);
+  return Math.max(2,Math.min(4,Number.isFinite(stored)?stored:2));
 }
 function activeHqUploadPointList(){
   const sheet=findUploadTerminalSheet(),rows=sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues():[];
@@ -3648,7 +3648,7 @@ function confirmEventPreflight(e) {
   const idx=rows.findIndex(v=>String(v).trim().toUpperCase()===checkId);
   if(checkId==='EVENT_CONFIGURATION'){
     const requested=Number(e.parameter.uploadPoints||0);
-    if(!Number.isInteger(requested)||requested<1||requested>4)return gameplayActionDenied(actor,'UPLOAD_POINT_COUNT_INVALID','HQ Uploadpunkte müssen vor Eventstart zwischen 1 und 4 liegen.');
+    if(!Number.isInteger(requested)||requested<2||requested>4)return gameplayActionDenied(actor,'UPLOAD_POINT_COUNT_INVALID','HQ Uploadpunkte müssen vor Eventstart zwischen 2 und 4 liegen.');
     const available=activeHqUploadPointList().length;
     if(available<requested)return gameplayActionDenied(actor,'UPLOAD_POINTS_NOT_READY',requested+' Uploadpunkte gewählt, aber nur '+available+' aktive Upload-Koffer registriert.');
     PropertiesService.getScriptProperties().setProperty(EVENT_UPLOAD_POINTS_DRAFT_KEY,String(requested));
