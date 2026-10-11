@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-fop-auftrag';
+import {routeIdentity} from './router.js?v=20261011-fop-copy';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -448,10 +448,10 @@ async function refreshFopOperations(){
   if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'OPERATIONS QUEUE UNAVAILABLE');
   if(r.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:r.evacuation,eventId:r.eventId});
   fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
-  select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'OPERATION AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
+  select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'AUFTRAG AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
   for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value=fopOperations.find(operation=>operation.resume===true)?.id||'';
-  fopQueueState='ready';if(queueHint)queueHint.textContent=fopOperations.length?'Operation auswählen.':'Server bestätigt: aktuell keine verfügbaren Operationen.';
- }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='QUEUE NICHT GELADEN';select.appendChild(option);fopQueueState='error';const message='Aufträge konnten nicht geladen werden: '+String(err.message||err)+' // QUEUE AKTUALISIEREN.';if(queueHint)queueHint.textContent=message;if(hint)hint.textContent=message}
+  fopQueueState='ready';if(queueHint)queueHint.textContent=fopOperations.length?'':'Server bestätigt: aktuell keine verfügbaren Operationen.';
+ }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='QUEUE NICHT GELADEN';select.appendChild(option);fopQueueState='error';const message='Aufträge konnten nicht geladen werden: '+String(err.message||err)+' // AKTUALISIEREN.';if(queueHint)queueHint.textContent=message;if(hint)hint.textContent=message}
  finally{fopQueueBusy=false;renderFopInstallation(fopInstallation)}
 }
 window.addEventListener('nodiv-fop-operations',refreshFopOperations);
