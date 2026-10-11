@@ -99,9 +99,9 @@ test('Pioneer UI shows server size without code, authorizes before scanning, gat
  assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core');assert.equal(e['#exchangeSlots'].hidden,true);
  e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
  assert.equal(e['#exchangeHint'].textContent,'');assert.equal(e['#exchangeProgress'].hidden,true);
- await action('authorize');assert.equal(e['#exchangeSize'].hidden,true);assert.equal(e['#exchangeRule'].hidden,true);assert.equal(e['#exchangeProgress'].hidden,true);assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#pioneerScan'].disabled,true);
+ await action('authorize');assert.equal(e['#exchangeSize'].hidden,true);assert.equal(e['#exchangeRule'].hidden,true);assert.equal(e['#exchangeProgress'].hidden,true);assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#exchangeConfirm'].hidden,true);assert.equal(e['#pioneerScan'].disabled,true);
  for(const uid of ['own','node']){await action('scan');await f.ctx.reader.onreading({serialNumber:uid});}
- assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
+ assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.equal(e['#exchangeConfirm'].hidden,false);assert.match(e['#exchangeCode'].textContent,/0123/);
  await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'TAUSCH GEBUCHT · NODE-SPERRE 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
 });
 

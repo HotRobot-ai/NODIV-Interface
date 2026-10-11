@@ -663,7 +663,7 @@ function renderPioneerExchange(result){
  document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
  document.querySelector('#exchangeCancel').hidden=!active;
  document.querySelector('#exchangeCancel').disabled=pioneerExchangeBusy;
- const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
+ const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active||result?.canConfirm!==true;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
  document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
  document.querySelector('#exchangeProgress').hidden=active||!complete&&Boolean(pioneerExchangePreview.sizes.length);
  const slots=document.querySelector('#exchangeSlots');
