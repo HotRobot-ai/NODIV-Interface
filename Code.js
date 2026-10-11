@@ -2705,6 +2705,8 @@ function getGameplayRoute(e) {
 
   if (hit.type === 'NODE') {
     const status=getNodeGameplayStatus(hit.id);
+    const currentEvent=readCurrentEvent();
+    if(player.role==='PIONEER')recordPioneerDiscovery(player,hit.id,currentEvent);
     const resupply=player.role==='PIONEER'?getReSupplyRoute(e,hit.id):null;
     if(resupply)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},resupply.action?'RESUPPLY_MISSION':'NO_ACTION',resupply.action,resupply.status,resupply.message||'RE-SUPPLY // Ziel-Node erkannt.',resupply.action?{resupplyMission:resupply}:null);
     const restore=player.role==='PIONEER'?getRestoreRoute(e,hit.id):null;
@@ -2859,6 +2861,29 @@ function bookPlayerEnergy(data, batchRequests) {
   return {entryId:entryId,before:before,amount:amount,balance:after};
 }
 
+const PIONEER_DISCOVERY_PREFIX='NODIV_PIONEER_DISCOVERY_';
+function pioneerDiscoveryKey(eventId,identity){
+  return PIONEER_DISCOVERY_PREFIX+String(eventId||'').replace(/[^A-Z0-9_-]/gi,'_')+'_'+String(identity||'').replace(/[^A-Z0-9_-]/gi,'_');
+}
+function readPioneerDiscoveries(eventId,identity){
+  if(!eventId||!identity)return [];
+  try{
+    const raw=PropertiesService.getScriptProperties().getProperty(pioneerDiscoveryKey(eventId,identity));
+    const values=raw?JSON.parse(raw):[];
+    return Array.isArray(values)?[...new Set(values.map(id=>String(id||'').trim().toUpperCase()).filter(id=>/^NODE-\d{3}$/.test(id)))].sort():[];
+  }catch(error){return [];}
+}
+function recordPioneerDiscovery(player,nodeId,event){
+  if(!player||player.role!=='PIONEER'||!event||event.state!=='FIELD_ACTIVE')return [];
+  const id=String(nodeId||'').trim().toUpperCase();
+  if(!findEventNodeCode(event.eventId,id))return readPioneerDiscoveries(event.eventId,player.identity);
+  const found=readPioneerDiscoveries(event.eventId,player.identity);
+  if(found.includes(id))return found;
+  found.push(id);found.sort();
+  PropertiesService.getScriptProperties().setProperty(pioneerDiscoveryKey(event.eventId,player.identity),JSON.stringify(found));
+  return found;
+}
+
 function getPlayerState(e) {
   const session = resolvePlayerSession(e.parameter.token || '');
   if (!session.ok) return session.response;
@@ -2882,10 +2907,14 @@ function getPlayerState(e) {
     });
   });
   const carriedEnergy = cores.reduce((sum, core) => sum + (Number.isFinite(Number(core.energy)) ? Number(core.energy) : 0), 0);
+  const event=readCurrentEvent();
+  const eventActive=Boolean(event&&event.state==='FIELD_ACTIVE');
+  const discoveredNodes=eventActive&&player.role==='PIONEER'?readPioneerDiscoveries(event.eventId,player.identity):[];
   return {
     ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
     evacuation:evacuationPlayerState(player),
+    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length},
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
     cores:cores.slice(0, Math.max(0, Number(player.coreCapacity || 0)))
