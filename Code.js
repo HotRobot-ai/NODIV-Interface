@@ -7618,6 +7618,11 @@ function activeHqUploadBayByUid(uid){
  if(!bay)throw new Error('UPLOAD_POINT_INVALID');
  return bay;
 }
+function activeHqUploadBay(){
+ const bays=activeHqUploadBays();
+ if(!bays.length)throw new Error('UPLOAD_POINT_CONFIGURATION_INVALID');
+ return bays[0];
+}
 function readUploadTerminalRecordForBay(bay){
  const rows=exchangeLogRows(),completed=new Set();
  for(const row of rows)if(row[2]==='HQ_UPLOAD_COMPLETE'&&row[14]==='SUCCESS'){try{completed.add(JSON.parse(row[15]).upload);}catch(error){}}
