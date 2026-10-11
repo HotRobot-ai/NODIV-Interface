@@ -385,6 +385,19 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
+test('Pioneer HQ upload panel prioritizes balance price and assigned bay',()=>{
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ const identity=fs.readFileSync('app/js/identity.js','utf8');
+ const backend=fs.readFileSync('Code.js','utf8');
+ assert.match(router,/ENERGIEKONTO/);
+ assert.match(router,/BAY RESERVIEREN \/\/ 150 E/);
+ assert.match(router,/id="uploadTerminalState" class="hq-bay-state"/);
+ assert.equal(router.includes('id="hqCarriedEnergy"'),false);
+ assert.match(identity,/DEIN ZUGANG/);
+ assert.match(identity,/result\.bay\?\.id/);
+ assert.match(backend,/bay:\{id:bay\.id\}/);
+});
+
 test('Pioneer lower interface keeps test EVAC separate and HQ wording player-facing',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  assert.match(router,/id="pioneerEvacTestToggle"/);
