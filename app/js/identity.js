@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-exchange28';
+import {routeIdentity} from './router.js?v=20261011-exchange33';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -673,7 +673,7 @@ function renderPioneerExchange(result){
  document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
  document.querySelector('#exchangeCancel').hidden=!active;
  document.querySelector('#exchangeCancel').disabled=pioneerExchangeBusy;
- const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active||result?.canConfirm!==true;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
+ const close=document.querySelector('#exchangeClose');if(close)close.hidden=!complete;
  document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
  document.querySelector('#exchangeProgress').hidden=active||!complete&&Boolean(pioneerExchangePreview.sizes.length);
  if(complete){
@@ -688,9 +688,11 @@ function renderPioneerExchange(result){
    const available=active&&!result.canConfirm&&index===count&&(phase==='IN'||result.inCount===result.size);
    const state=complete?'booked':index<count?'scanned':available&&pioneerExchangeFeedback?.phase===phase?'error':available?'available':'waiting';
    const slot=document.createElement('button');slot.type='button';slot.className='exchange-slot';slot.dataset.state=state;
-   slot.disabled=!available||pioneerExchangeBusy;
-   slot.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-pioneer-exchange',{detail:{action:'scan',phase,index}})));
+   const finishHere=active&&result.canConfirm===true&&phase==='OUT'&&index===result.size-1;
+   slot.disabled=(!available&&!finishHere)||pioneerExchangeBusy;slot.dataset.action=finishHere?'confirm':'scan';
+   slot.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-pioneer-exchange',{detail:{action:finishHere?'confirm':'scan',phase,index}})));
    slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Scan bereit',waiting:'Danach scannen'}[state]);
+   if(finishHere)slot.textContent='Heraus '+(index+1)+' · '+(pioneerExchangeBusy?'Tausch wird gebucht':'Scans bestätigt · Tausch abschließen');
    slots.appendChild(slot);
   }
  }
@@ -719,6 +721,10 @@ function showPioneerExchangePreview(preview){
  document.querySelector('#exchangeHint').textContent='';
 }
 window.addEventListener('nodiv-pioneer-exchange',async e=>{
+ if(e.detail?.action==='close'){
+  if(pioneerExchange||!pioneerExchangeCooldown||pioneerExchangeBusy)return;
+  document.querySelector('#pioneerExchange').hidden=true;pioneerExchangeCooldown=null;return;
+ }
  if(pioneerExchangeBusy||pioneerRestoreBusy||catchBusy||!pioneerExchangePreview||!sessionToken)return;
  const action=e.detail?.action;
  const hint=document.querySelector('#exchangeHint');
@@ -747,6 +753,7 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
  }
  if(!['authorize','confirm','cancel'].includes(action))return;
  if(action!=='authorize'&&!pioneerExchange)return;
+ if(action==='confirm'&&pioneerExchange?.canConfirm!==true)return;
  pioneerExchangeFeedback=null;pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
  try{
   const r=await apiRequest({action:'exchange'+action,token:sessionToken,node:pioneerExchangePreview.nodeId,preview:pioneerExchangePreview.preview,size:document.querySelector('#exchangeSize').value,exchange:pioneerExchange?.exchange||''});

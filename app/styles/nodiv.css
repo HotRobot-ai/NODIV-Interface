@@ -1635,3 +1635,7 @@
 #pioneerExchange .exchange-slot:disabled{opacity:1;cursor:default}
 #pioneerExchange .exchange-slot:not(:disabled){cursor:pointer}
 #pioneerExchange .exchange-slot:focus-visible{outline:2px solid #eaffff;outline-offset:3px}
+
+#pioneerExchange .exchange-head{position:relative;padding-right:50px}
+#pioneerExchange .exchange-close{position:absolute;top:-8px;right:0;width:44px;min-height:44px;padding:0;background:#0b2635;border:1px solid #72d7f0;color:#d6f8ff;font:700 28px/1 system-ui,sans-serif;letter-spacing:0}
+#pioneerExchange .exchange-slot[data-action="confirm"]{border-color:#d3faff;background:#113245;color:#f1feff;box-shadow:0 0 16px #69e5ff35}
