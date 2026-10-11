@@ -1242,3 +1242,73 @@
  [data-role="PIONEER"] .role-head,
  [data-role="PIONEER"] .role-head:before{animation:none!important;transform:none;opacity:1}
 }
+
+
+/* PIONEER QC LOWER AREA — UI-20 */
+.pioneer-test-tools{
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid #42eaff22;
+}
+.nodiv-test-button{
+  min-height:46px;
+  border-style:dashed!important;
+  border-color:#e5b86b88!important;
+  color:#e7c68a!important;
+  background:#171208!important;
+  box-shadow:none!important;
+  font-size:10px!important;
+  letter-spacing:.08em!important;
+}
+.nodiv-test-button:before{
+  content:"TEST";
+  display:inline-block;
+  margin-right:8px;
+  padding:2px 5px;
+  border:1px solid #e5b86b66;
+  border-radius:4px;
+  font-size:8px;
+  line-height:1;
+}
+[data-role="PIONEER"] #hqAccessPanel{
+  margin-top:10px;
+  padding:14px;
+  border:1px solid #3d789666;
+  border-radius:12px;
+  background:linear-gradient(145deg,#081a25,#041018);
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-access-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  padding-bottom:10px;
+  border-bottom:1px solid #42eaff22;
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-access-head small{
+  color:#8fb7c8;
+  font-size:9px;
+  letter-spacing:.12em;
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-access-head strong{
+  display:block;
+  margin-top:4px;
+  color:#eafcff;
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-approach{
+  display:grid;
+  gap:9px;
+  margin-top:12px;
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-approach article{
+  padding:12px;
+  border:1px solid #315f7366;
+  border-radius:9px;
+  background:#06131b;
+}
+[data-role="PIONEER"] #hqAccessPanel .hq-approach p,
+[data-role="PIONEER"] #hqAccessPanel .hq-gate p{
+  color:#9fb7c2;
+  font-size:11px;
+  line-height:1.55;
+}
