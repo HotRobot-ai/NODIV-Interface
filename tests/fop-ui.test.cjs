@@ -597,3 +597,19 @@ test('Exchange final OUT slot books explicitly and only successful completion en
  await f.listeners['nodiv-pioneer-exchange']({detail:{action:'close'}});assert.equal(e['#pioneerExchange'].hidden,true);assert.equal(requests.length,1);f.ctx.updatePioneerExchangeCooldown();assert.equal(e['#pioneerExchange'].hidden,true);
  assert.equal(fs.readFileSync('app/js/router.js','utf8').includes('id="exchangeConfirm"'),false);
 });
+
+
+test('Exchange accepted scans turn green without a booked checkmark, which appears only after successful final booking',()=>{
+ const f=ui(),e=f.elements;f.ctx.resumePioneerExchange({exchange:'color',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[1],size:1,inCount:1,outCount:1,canConfirm:true,accessCode:'0123'});
+ assert.ok(e['#exchangeSlots'].children.every(b=>/Erkannt/.test(b.textContent)&&!b.textContent.includes('✓')));
+ const css=fs.readFileSync('app/styles/nodiv.css','utf8');assert.match(css,/exchange-slot\[data-state="scanned"\]\{[^}]*background:#103424/);assert.match(css,/exchange-slot\[data-action="confirm"\]\{[^}]*background:#103424/);
+ f.ctx.renderPioneerExchange({status:'EXCHANGE_COMPLETE',exchange:'color',size:1,inCount:1,outCount:1,canConfirm:false,cooldownSeconds:300});assert.ok(e['#exchangeSlots'].children.every(b=>b.textContent.includes('✓ Gebucht')));
+});
+test('Repeated Node scan shows the server cooldown deadline as a ticking countdown and never requests automatic access',async()=>{
+ const f=ui(),b=f.elements['#pioneerScan'];let now=Date.parse('2026-10-11T16:00:00Z');f.ctx.Date={now:()=>now,parse:Date.parse};const requests=[];
+ f.ctx.apiRequest=async p=>{requests.push(p);return {ok:false,error:'NODE_EXCHANGE_COOLDOWN // 2026-10-11T16:03:00.000Z'}};
+ await f.listeners['nodiv-pioneer-scan']();await f.ctx.reader.onreading({serialNumber:'node'});assert.equal(b.textContent,'NODE GESPERRT // 03:00');assert.equal(b.disabled,false);assert.doesNotMatch(b.textContent+b.title,/2026|T16/);
+ now+=1000;f.ctx.updatePioneerNodeCooldown();assert.equal(b.textContent,'NODE GESPERRT // 02:59');assert.equal(requests.length,1);now+=179000;f.ctx.updatePioneerNodeCooldown();assert.equal(b.textContent,'NODIV OBJEKT SCANNEN');assert.equal(requests.length,1);
+ f.ctx.showPioneerNodeCooldown('NODE_EXCHANGE_COOLDOWN // 2026-10-11T16:10:00.000Z');await f.listeners['nodiv-pioneer-scan']();const armed=b.textContent;f.ctx.updatePioneerNodeCooldown();assert.equal(b.textContent,armed);f.ctx.reader.onreadingerror();
+ assert.equal(f.ctx.showPioneerNodeCooldown('unrelated network error'),false);
+});

@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-exchange33';
+import {routeIdentity} from './router.js?v=20261011-exchange34';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -114,6 +114,22 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   }
  }catch(err){if(inv)inv.innerHTML='<div class="pioneer-core loading">LIVE DATA OFFLINE</div><div class="pioneer-core locked">SLOT 02<br>LOCKED</div><div class="pioneer-core locked">SLOT 03<br>LOCKED</div>';if(total)total.textContent='— E';if(hqTotal)hqTotal.textContent='— E'}
 });
+
+let pioneerNodeCooldown=null;
+function updatePioneerNodeCooldown(){
+ if(!pioneerNodeCooldown)return;
+ const button=document.querySelector('#pioneerScan');if(!button||button.dataset.scanActive==='1')return;
+ const remaining=Math.max(0,Math.ceil((pioneerNodeCooldown.until-Date.now())/1000));
+ if(!remaining){pioneerNodeCooldown=null;button.textContent='NODIV OBJEKT SCANNEN';button.title='Zugang beim nächsten Node-Scan prüfen.';return;}
+ button.textContent='NODE GESPERRT // '+String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
+ button.title='Node-Sperre · verbleibende Zeit';
+}
+function showPioneerNodeCooldown(message){
+ const match=String(message||'').match(/NODE_EXCHANGE_COOLDOWN\s*\/\/\s*(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)/);
+ const until=match?Date.parse(match[1]):NaN;if(!Number.isFinite(until))return false;
+ pioneerNodeCooldown={until};updatePioneerNodeCooldown();return true;
+}
+setInterval(updatePioneerNodeCooldown,1000);
 let pioneerObjectScan=null;
 function stopPioneerObjectReader(attempt){
  if(attempt.reader){attempt.reader.onreading=null;attempt.reader.onreadingerror=null;}attempt.controller.abort();
@@ -128,6 +144,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
  if(!b||pioneerObjectScan||b.dataset.scanActive==='1'||pioneerRestoreBusy||pioneerExchangeBusy||catchBusy||pioneerUploadBusy||pioneerReSupplyBusy||evacuationBusy)return;
  if(!sessionToken){b.textContent='SESSION FEHLT // NEU ANMELDEN';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
  if(!('NDEFReader' in window)){b.textContent='WEB NFC NICHT VERFÜGBAR';emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});return}
+ pioneerNodeCooldown=null;
  const attempt={controller:new AbortController(),reader:null,handling:false,button:b};pioneerObjectScan=attempt;
  b.dataset.scanActive='1';b.disabled=true;b.textContent='NFC ARMED // NODIV OBJECT SCANNEN';emitNodiv('NFC_ARMED',{target:'#pioneerScan'});
  try{
@@ -152,11 +169,11 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
     const allowed=decision.allowed!==undefined?Boolean(decision.allowed):route.allowed!==false;
     const status=String(object.status||route.status||'').toUpperCase();
     const message=String(decision.message||decision.reason||route.message||route.reason||'').trim();
-    b.textContent=(id||type)+' // '+(action==='NODE_INTERACTION'?'ACCESS READY':action.replaceAll('_',' '));
-    b.title=[status,message].filter(Boolean).join(' // ');
+    if(!allowed&&showPioneerNodeCooldown(message)){updatePioneerNodeCooldown();}
+    else{b.textContent=(id||type)+' // '+(action==='NODE_INTERACTION'?'ACCESS READY':action.replaceAll('_',' '));b.title=[status,message].filter(Boolean).join(' // ');}
     emitNodiv(allowed?'IDENTITY_VERIFIED':'ACCESS_DENIED',{target:'#pioneerScan'});
-   }catch(error){if(pioneerObjectScan!==attempt)return;b.textContent=String(error.message||error);b.title=b.textContent;emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}
-   finally{finishPioneerObjectScan(attempt);}
+   }catch(error){if(pioneerObjectScan!==attempt)return;if(!showPioneerNodeCooldown(error.message||error)){b.textContent=String(error.message||error);b.title=b.textContent;}emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}
+   finally{finishPioneerObjectScan(attempt);updatePioneerNodeCooldown();}
   };
   await reader.scan({signal:attempt.controller.signal});
  }catch(error){if(pioneerObjectScan===attempt){b.textContent=String(error.message||error);finishPioneerObjectScan(attempt);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}}
@@ -691,8 +708,8 @@ function renderPioneerExchange(result){
    const finishHere=active&&result.canConfirm===true&&phase==='OUT'&&index===result.size-1;
    slot.disabled=(!available&&!finishHere)||pioneerExchangeBusy;slot.dataset.action=finishHere?'confirm':'scan';
    slot.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-pioneer-exchange',{detail:{action:finishHere?'confirm':'scan',phase,index}})));
-   slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Scan bereit',waiting:'Danach scannen'}[state]);
-   if(finishHere)slot.textContent='Heraus '+(index+1)+' · '+(pioneerExchangeBusy?'Tausch wird gebucht':'Scans bestätigt · Tausch abschließen');
+   slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'✓ Gebucht',scanned:'Erkannt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Scan bereit',waiting:'Danach scannen'}[state]);
+   if(finishHere)slot.textContent='Heraus '+(index+1)+' · '+(pioneerExchangeBusy?'Tausch wird gebucht':'Erkannt · Tausch abschließen');
    slots.appendChild(slot);
   }
  }
