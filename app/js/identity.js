@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-exchange26';
+import {routeIdentity} from './router.js?v=20261011-exchange28';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -661,13 +661,10 @@ function renderPioneerExchange(result){
  document.querySelector('#exchangeAuthorize').hidden=active||complete;
  document.querySelector('#exchangeAuthorize').disabled=!pioneerExchangePreview.sizes.length||pioneerExchangeBusy;
  document.querySelector('#exchangeCode').textContent=active?'MECHANISCHER CODE // '+pioneerExchange.accessCode:'';
- document.querySelector('#exchangeScan').hidden=!active;
  document.querySelector('#exchangeCancel').hidden=!active;
  document.querySelector('#exchangeCancel').disabled=pioneerExchangeBusy;
  const confirm=document.querySelector('#exchangeConfirm');confirm.hidden=!active;confirm.disabled=!result?.canConfirm||pioneerExchangeBusy;
- document.querySelector('#exchangeScan').disabled=pioneerExchangeBusy||Boolean(result?.canConfirm);
  document.querySelector('#exchangeProgress').textContent=complete?'TAUSCH GEBUCHT · NODE-SPERRE 05:00':active?'HINEIN '+result.inCount+'/'+result.size+' · HERAUS '+result.outCount+'/'+result.size:!pioneerExchangePreview.sizes.length?'Kein zulässiger Tausch verfügbar.':'Anzahl wählen und Tausch autorisieren.';
- if(active)document.querySelector('#exchangeScan').textContent=result.inCount<result.size?'EIGENEN CORE SCANNEN':'ENTNOMMENEN NODE-CORE SCANNEN';
  document.querySelector('#exchangeProgress').hidden=active||!complete&&Boolean(pioneerExchangePreview.sizes.length);
  const slots=document.querySelector('#exchangeSlots');
  if(slots){
@@ -676,7 +673,9 @@ function renderPioneerExchange(result){
    const count=phase==='IN'?result.inCount:result.outCount;
    const available=active&&!result.canConfirm&&index===count&&(phase==='IN'||result.inCount===result.size);
    const state=complete?'booked':index<count?'scanned':available&&pioneerExchangeFeedback?.phase===phase?'error':available?'available':'waiting';
-   const slot=document.createElement('div');slot.className='exchange-slot';slot.dataset.state=state;
+   const slot=document.createElement('button');slot.type='button';slot.className='exchange-slot';slot.dataset.state=state;
+   slot.disabled=!available||pioneerExchangeBusy;
+   slot.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-pioneer-exchange',{detail:{action:'scan',phase,index}})));
    slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Jetzt scannen',waiting:'Danach scannen'}[state]);
    slots.appendChild(slot);
   }
@@ -705,6 +704,8 @@ window.addEventListener('nodiv-pioneer-exchange',async e=>{
  const hint=document.querySelector('#exchangeHint');
  if(action==='scan'){
   if(!pioneerExchange||pioneerExchange.canConfirm)return;
+  const nextPhase=pioneerExchange.inCount<pioneerExchange.size?'IN':'OUT',nextIndex=nextPhase==='IN'?pioneerExchange.inCount:pioneerExchange.outCount;
+  if((e.detail.phase!==undefined||e.detail.index!==undefined)&&(e.detail.phase!==nextPhase||e.detail.index!==nextIndex))return;
   if(!('NDEFReader' in window)){hint.textContent='Web NFC benötigt Android + Chrome.';return;}
   pioneerExchangeFeedback=null;pioneerExchangeBusy=true;renderPioneerExchange(pioneerExchange);
   try{

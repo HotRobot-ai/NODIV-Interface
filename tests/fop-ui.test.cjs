@@ -96,13 +96,13 @@ test('Pioneer UI shows server size without code, authorizes before scanning, gat
   return {ok:true,action:true,status:p.action==='exchangeconfirm'?'EXCHANGE_COMPLETE':'EXCHANGE_AUTHORIZED',exchange:'ex-1',size:1,inCount:incoming,outCount:outgoing,canConfirm:incoming===1&&outgoing===1,...(p.action==='exchangeauthorize'?{accessCode:'0123'}:{}),core:{id:p.uid==='own'?'NC-002':'NC-006',energy:341}};
  };
  f.ctx.showPioneerExchangePreview({preview:'preview-1',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
- assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core');assert.equal(e['#exchangeScan'].hidden,true);
+ assert.equal(e['#exchangeCode'].textContent,'');assert.equal(e['#exchangeSize'].children.length,1);assert.equal(e['#exchangeSize'].children[0].textContent,'1 N-Core');assert.equal(e['#exchangeSlots'].hidden,true);
  e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});
  assert.equal(e['#exchangeHint'].textContent,'');assert.equal(e['#exchangeProgress'].hidden,true);
  await action('authorize');assert.equal(e['#exchangeSize'].hidden,true);assert.equal(e['#exchangeRule'].hidden,true);assert.equal(e['#exchangeProgress'].hidden,true);assert.equal(requests[0].action,'exchangeauthorize');assert.equal(requests[0].preview,'preview-1');assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeConfirm'].disabled,true);assert.equal(e['#pioneerScan'].disabled,true);
  for(const uid of ['own','node']){await action('scan');await f.ctx.reader.onreading({serialNumber:uid});}
  assert.equal(e['#exchangeProgress'].textContent,'HINEIN 1/1 · HERAUS 1/1');assert.equal(e['#exchangeConfirm'].disabled,false);assert.match(e['#exchangeCode'].textContent,/0123/);
- await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'TAUSCH GEBUCHT · NODE-SPERRE 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeScan','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
+ await action('confirm');assert.equal(e['#exchangeProgress'].textContent,'TAUSCH GEBUCHT · NODE-SPERRE 05:00');assert.equal(e['#exchangeCode'].textContent,'');for(const id of ['exchangeAuthorize','exchangeConfirm','exchangeCancel'])assert.equal(e['#'+id].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
 });
 
 test('Pioneer adopts accepted retry server counts after lost response and ignores repeated NFC callbacks',async()=>{
@@ -120,13 +120,13 @@ test('Pioneer adopts accepted retry server counts after lost response and ignore
 test('NFC read error closes that reader before a delayed reading can send a request',async()=>{
  const f=ui(),e=f.elements;f.ctx.apiRequest=async()=>({ok:true,action:true,exchange:'ex-1',size:1,inCount:0,outCount:0,accessCode:'0123'});
  f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:859,nodeState:'STABLE',sizes:[1]});e['#exchangeSize'].value='1';const action=action=>f.listeners['nodiv-pioneer-exchange']({detail:{action}});await action('authorize');await action('scan');
- let requests=0;f.ctx.apiRequest=async()=>{requests++;};f.ctx.reader.onreadingerror();await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests,0);assert.equal(e['#exchangeScan'].disabled,false);
+ let requests=0;f.ctx.apiRequest=async()=>{requests++;};f.ctx.reader.onreadingerror();await f.ctx.reader.onreading({serialNumber:'NC-002'});assert.equal(requests,0);assert.equal(e['#exchangeSlots'].children.find(c=>c.dataset.state==='available').disabled,false);
 });
 
 test('reload recovery restores code, server counts, phase/confirm gating and usable cancel',async()=>{
  for(const [incoming,outgoing] of [[0,0],[1,0],[1,1]]){
   const f=ui(),e=f.elements;f.ctx.resumePioneerExchange({exchange:'existing',status:'EXCHANGE_RESUMED',nodeId:'NODE-001',size:1,inCount:incoming,outCount:outgoing,canConfirm:outgoing===1,accessCode:'0123',totalEnergy:859,nodeState:'STABLE',sizes:[1]});
-  assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeProgress'].textContent,'HINEIN '+incoming+'/1 · HERAUS '+outgoing+'/1');assert.equal(e['#exchangeConfirm'].disabled,outgoing!==1);assert.equal(e['#exchangeAuthorize'].hidden,true);assert.equal(e['#exchangeCancel'].hidden,false);assert.match(e['#exchangeScan'].textContent,incoming?/NODE-CORE/:/EIGENEN CORE/);
+  assert.equal(e['#exchangeCode'].textContent,'MECHANISCHER CODE // 0123');assert.equal(e['#exchangeProgress'].textContent,'HINEIN '+incoming+'/1 · HERAUS '+outgoing+'/1');assert.equal(e['#exchangeConfirm'].disabled,outgoing!==1);assert.equal(e['#exchangeAuthorize'].hidden,true);assert.equal(e['#exchangeCancel'].hidden,false);if(outgoing!==1)assert.match(e['#exchangeSlots'].children.find(c=>c.dataset.state==='available').textContent,incoming?/Heraus/:/Hinein/);
   f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:true,action:true,status:'EXCHANGE_CANCELLED'}};await f.listeners['nodiv-pioneer-exchange']({detail:{action:'cancel'}});assert.equal(f.requests[0].action,'exchangecancel');assert.equal(f.requests[0].exchange,'existing');assert.equal(f.requests[0].node,'NODE-001');assert.equal(e['#pioneerExchange'].hidden,true);assert.equal(e['#pioneerScan'].disabled,false);
  }
 });
@@ -545,4 +545,21 @@ test('Exchange preserves 2-Core selection while authorizing and restores server 
  release({ok:true,action:true,exchange:'ex2',size:2,inCount:0,outCount:0,accessCode:'0123'});await pending;
  f.ctx.resumePioneerExchange({exchange:'ex2',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[2],size:2,inCount:2,outCount:1,canConfirm:false,accessCode:'0123'});
  assert.deepEqual(e['#exchangeSlots'].children.map(c=>c.dataset.state),['scanned','scanned','scanned','available']);assert.equal(e['#exchangeConfirm'].disabled,true);
+});
+
+
+test('Exchange slot buttons activate only the next IN/OUT scan and reject stale or invented slot clicks',async()=>{
+ const f=ui(),e=f.elements;let incoming=0,outgoing=0;const requests=[];
+ f.ctx.window.dispatchEvent=event=>f.listeners[event.type]?.(event);
+ f.ctx.apiRequest=async p=>{requests.push(p);if(p.action==='exchangescan'){if(p.phase==='IN')incoming++;else outgoing++;}return {ok:true,action:true,exchange:'ex-slot',size:2,inCount:incoming,outCount:outgoing,canConfirm:incoming===2&&outgoing===2,accessCode:'0123',core:{id:'NC-001',energy:200}}};
+ f.ctx.showPioneerExchangePreview({preview:'p',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[2]});e['#exchangeSize'].value='2';await f.listeners['nodiv-pioneer-exchange']({detail:{action:'authorize'}});
+ const buttons=()=>e['#exchangeSlots'].children;
+ assert.deepEqual(buttons().map(b=>b.disabled),[false,true,true,true]);const stale=buttons()[0];
+ await f.listeners['nodiv-pioneer-exchange']({detail:{action:'scan',phase:'OUT',index:0}});assert.equal(f.ctx.reader,undefined);
+ for(const [position,phase,index]of [[0,'IN',0],[1,'IN',1],[2,'OUT',0],[3,'OUT',1]]){
+  assert.equal(buttons()[position].disabled,false);await buttons()[position].listeners.click();assert.ok(buttons().every(b=>b.disabled));await f.ctx.reader.onreading({serialNumber:'uid'+position});assert.equal(requests.at(-1).phase,phase);
+  if(position===0){const count=requests.length;await stale.listeners.click();assert.equal(requests.length,count);}
+ }
+ assert.ok(buttons().every(b=>b.disabled));assert.equal(e['#exchangeConfirm'].disabled,false);
+ const router=fs.readFileSync('app/js/router.js','utf8');assert.equal(router.includes('id="exchangeScan"'),false);
 });
