@@ -385,6 +385,19 @@ test('FOP keeps EVAC hidden in standby, swaps founder directive for active EVAC 
  f.ctx.apiRequest=async()=>({ok:false,error:'EVACUATION_FIELD_ACTIVE_REQUIRED'});await f.listeners['nodiv-evacuation-refresh']();assert.equal(e['#fopEventStatus'].dataset.state,'inactive');assert.equal(e['#evacuationPanel'].hidden,true);assert.equal(e['#fopFounderDirective'].hidden,false);
 });
 
+test('Pioneer protection screen precedes the in-interface protection timer',()=>{
+ const router=fs.readFileSync('app/js/router.js','utf8');
+ const identity=fs.readFileSync('app/js/identity.js','utf8');
+ assert.match(router,/id="pioneerProtectionOverlay"/);
+ assert.match(router,/id="pioneerProtectionAcknowledge"/);
+ assert.match(router,/id="pioneerProtectionStatus"/);
+ assert.equal(router.includes('id="pioneerGhostStatus"'),false);
+ assert.match(identity,/nodiv-pioneer-protection-ack/);
+ assert.match(identity,/CATCH-SCHUTZ AKTIV/);
+ assert.match(identity,/SECURE APPROACH/);
+ assert.match(identity,/pioneerProtectionAcked/);
+});
+
 test('Pioneer field state exposes event progress and discovery tracking',()=>{
  const backend=fs.readFileSync('Code.js','utf8');
  const identity=fs.readFileSync('app/js/identity.js','utf8');
