@@ -1099,3 +1099,148 @@
     animation:none!important;
   }
 }
+
+
+/* PIONEER FOP-REFERENCE HEADER + PROTECTION SCREEN — UI-19 */
+/* Exact FOP header geometry for Pioneer; only the role text differs. */
+[data-role="PIONEER"] .role-head{
+  box-sizing:border-box;
+  min-height:238px;
+  align-items:flex-end;
+  margin-bottom:14px;
+  padding:24px 18px 20px;
+  border:1px solid #82efffbb;
+  border-radius:12px;
+  background:
+    linear-gradient(180deg,#020a1210 0%,#020a1220 32%,#020a12e8 80%,#020a12 100%),
+    url('../../f6072312-e4b9-448b-84ee-3283e200b198.png') center top/100% auto no-repeat;
+  box-shadow:0 0 32px #42eaff35,inset 0 0 38px #42eaff12,0 14px 34px #0006;
+  animation:fopLink .9s ease-out both;
+  overflow:hidden;
+}
+[data-role="PIONEER"] .role-head>div{min-width:0;position:relative;z-index:3}
+[data-role="PIONEER"] .role-head small{display:none!important}
+[data-role="PIONEER"] .role-head h2{
+  margin:6px 0;
+  font-size:18px;
+  color:#c9f9ff;
+  overflow-wrap:anywhere;
+  text-shadow:0 0 16px #42eaff78,0 2px 12px #000;
+}
+[data-role="PIONEER"] .role-head p{
+  margin:0;
+  font-size:clamp(25px,7.5vw,36px);
+  font-weight:950;
+  line-height:1.05;
+  letter-spacing:.035em;
+  color:#f4fdff;
+  text-shadow:0 0 10px #42eaffaa,0 0 28px #42eaff55,0 2px 12px #000;
+}
+[data-role="PIONEER"] .role-head .role-sigil{display:none}
+[data-role="PIONEER"] .role-head:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:2;
+  pointer-events:none;
+  opacity:.26;
+  background:
+    linear-gradient(112deg,transparent 59%,#bffaff18 60%,#eaffffb8 60.5%,#42eaff32 61%,transparent 62.5%),
+    radial-gradient(ellipse at 67% 30%,#bffaff1f 0 2%,#42eaff13 8%,transparent 24%);
+  mix-blend-mode:screen;
+  animation:pioneerFortressPulse 4.8s ease-in-out infinite;
+}
+.pioneer-protection-overlay{
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  display:grid;
+  place-items:center;
+  padding:22px;
+  background:
+    radial-gradient(circle at 50% 42%,#0b567344,transparent 36%),
+    linear-gradient(180deg,#02080df7,#030b12fc);
+  backdrop-filter:blur(8px);
+}
+.pioneer-protection-overlay[hidden]{display:none!important}
+.pioneer-protection-overlay>div{
+  width:min(440px,100%);
+  box-sizing:border-box;
+  padding:26px 20px 20px;
+  border:1px solid #8df2ffbb;
+  border-radius:14px;
+  text-align:center;
+  background:linear-gradient(145deg,#0a2737f5,#041018fa);
+  box-shadow:0 0 42px #42eaff38,inset 0 0 34px #42eaff12;
+  font-family:ui-monospace,monospace;
+}
+.pioneer-protection-overlay small{
+  display:block;
+  color:#9bf5ff;
+  font:900 10px ui-monospace,monospace;
+  letter-spacing:.16em;
+}
+.pioneer-protection-overlay strong{
+  display:block;
+  margin-top:12px;
+  color:#f2feff;
+  font-size:clamp(25px,8vw,36px);
+  line-height:1.1;
+  text-shadow:0 0 14px #42eaff88,0 0 30px #42eaff44;
+}
+.pioneer-protection-overlay b{
+  display:block;
+  margin:22px 0 14px;
+  color:#bffbff;
+  font-size:clamp(52px,16vw,76px);
+  line-height:1;
+  letter-spacing:.04em;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 18px #42eaffaa,0 0 42px #42eaff55;
+}
+.pioneer-protection-overlay p{
+  margin:0 auto 18px;
+  max-width:340px;
+  color:#b6ccd6;
+  font:700 12px/1.65 ui-monospace,monospace;
+}
+.pioneer-protection-overlay .role-action{
+  width:100%;
+  min-height:54px;
+  margin:0;
+}
+#pioneerProtectionStatus{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:32px;
+  padding:0 10px;
+  border:1px solid #42eaff77;
+  border-radius:7px;
+  color:#9bf5ff;
+  background:#071b26e8;
+  box-shadow:0 0 16px #42eaff18;
+}
+#pioneerProtectionStatus[hidden]{display:none!important}
+#pioneerProtectionStatus .pioneer-timer{
+  position:static;
+  transform:none;
+  font-size:16px;
+  color:#eaffff;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 10px #42eaff66;
+}
+@media(max-width:390px){
+ [data-role="PIONEER"] .role-head{
+   min-height:238px;
+   padding:24px 18px 20px;
+   background-size:100% auto;
+   background-position:center top;
+ }
+ .pioneer-protection-overlay{padding:14px}
+ .pioneer-protection-overlay>div{padding:22px 16px 16px}
+}
+@media(prefers-reduced-motion:reduce){
+ [data-role="PIONEER"] .role-head,
+ [data-role="PIONEER"] .role-head:before{animation:none!important;transform:none;opacity:1}
+}
