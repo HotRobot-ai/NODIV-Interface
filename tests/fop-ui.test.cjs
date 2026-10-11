@@ -639,3 +639,12 @@ test('Catch definite expired preview returns primary button to scan without a ne
  await f.listeners['nodiv-catch']({detail:{action:'scan'}});await f.ctx.reader.onreading({serialNumber:'target'});await f.listeners['nodiv-catch']({detail:{action:'confirm'}});
  assert.equal(e['#catchStart'].dataset.action,'scan');assert.match(e['#catchHint'].textContent,/abgelaufen/);assert.equal(f.requests.length,2);assert.equal(e['#catchResult'].hidden,true);
 });
+
+
+test('Catch rejected scan flashes red then resets without requests; stale feedback cannot reset a new scan',async()=>{
+ const f=ui(),e=f.elements,timers=[];f.ctx.setTimeout=(fn,ms)=>{timers.push({fn,ms});return timers.length;};f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:false,error:'TARGET_PROTECTED'};};
+ const action=()=>f.listeners['nodiv-catch']({detail:{action:'scan'}});
+ await action();await f.ctx.reader.onreading({serialNumber:'protected'});assert.equal(e['#catchStart'].dataset.state,'error');assert.equal(timers[0].ms,3000);assert.match(e['#catchHint'].textContent,/geschützt/);
+ timers[0].fn();assert.equal(e['#catchStart'].dataset.state,'ready');assert.equal(e['#catchStart'].dataset.action,'scan');assert.match(e['#catchHint'].textContent,/Scan bereit/);assert.equal(f.requests.length,1);
+ await action();await f.ctx.reader.onreading({serialNumber:'protected'});const stale=timers[1];await action();stale.fn();assert.equal(e['#catchStart'].textContent,'KARTE ANS HANDY HALTEN');assert.equal(e['#catchStart'].disabled,true);assert.equal(f.requests.length,2);
+});

@@ -1679,3 +1679,5 @@
 [data-role="LOCAL"] .local-metrics .role-metric small{font-size:11px;color:#a8bdc8}
 [data-role="LOCAL"] .catch-panel{margin-top:20px}
 [data-role="LOCAL"] #catchStart[data-action="confirm"]{border-color:#72efa9;background:#103424;color:#fff}
+
+.catch-panel #catchStart[data-state="error"]{border-color:#ef828a;background:#411b21;color:#fff;box-shadow:0 0 18px #ef828a20}

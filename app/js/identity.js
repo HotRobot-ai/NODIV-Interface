@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-local37';
+import {routeIdentity} from './router.js?v=20261011-local38';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -938,7 +938,13 @@ window.addEventListener('nodiv-catch-live',async()=>{
   if(eventStatus){const active=r.event?.active;eventStatus.dataset.state=active===true?'active':active===false?'inactive':'unknown';eventStatus.textContent=active===true?'EVENT AKTIV':active===false?'KEIN EVENT':'EVENT —';}
  }catch(error){inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';if(slotCount)slotCount.textContent='Slot —/—';if(count)count.textContent='—';if(eventStatus){eventStatus.dataset.state='unknown';eventStatus.textContent='EVENT —';}}
 });
-function catchPrimary(action,label){const button=document.querySelector('#catchStart');if(button){button.dataset.action=action;button.textContent=label;}}
+let catchFeedback=null;
+function catchPrimary(action,label){catchFeedback=null;const button=document.querySelector('#catchStart');if(button){button.dataset.state='ready';button.dataset.action=action;button.textContent=label;}}
+function catchRejected(){
+ const button=document.querySelector('#catchStart');if(!button)return;
+ const feedback={button,action:catchOrder?'confirm':'scan'};catchFeedback=feedback;button.dataset.state='error';button.textContent='CATCH NICHT MÖGLICH';
+ setTimeout(()=>{if(catchFeedback!==feedback||document.querySelector('#catchStart')!==button||catchBusy)return;catchPrimary(feedback.action,feedback.action==='confirm'?'FANG ERNEUT PRÜFEN':'PIONEER-KARTE SCANNEN');const hint=document.querySelector('#catchHint');if(hint&&feedback.action==='scan')hint.textContent='Scan bereit. Pioneer-Karte erneut scannen.';},3000);
+}
 window.addEventListener('nodiv-catch',async e=>{
  if(!sessionToken||catchBusy||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
  const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),result=document.querySelector('#catchResult');if(!hint||!start)return;
@@ -950,13 +956,13 @@ window.addEventListener('nodiv-catch',async e=>{
   catchStep('catchTargetStep','running','1 · Karte jetzt ans Handy halten');catchStep('catchCommitStep','required','2 · Fang bestätigen');
   try{
    catchScanController?.abort();catchScanController=new AbortController();const reader=new NDEFReader();await reader.scan({signal:catchScanController.signal});let handled=false;
-   const finish=()=>{catchBusy=false;start.disabled=false;catchScanController.abort();if(!catchOrder)catchPrimary('scan','PIONEER-KARTE SCANNEN');};
-   reader.onreadingerror=()=>{if(handled)return;handled=true;finish();catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent='Karte nicht erkannt. Bitte erneut scannen.';};
+   const finish=()=>{catchBusy=false;start.disabled=false;catchScanController.abort();if(!catchOrder&&start.dataset.state!=='error')catchPrimary('scan','PIONEER-KARTE SCANNEN');};
+   reader.onreadingerror=()=>{if(handled)return;handled=true;finish();catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent='Karte nicht erkannt. Bitte erneut scannen.';catchRejected();};
    reader.onreading=async ev=>{if(handled)return;handled=true;catchScanController.abort();catchPrimary('scan','KARTE WIRD GEPRÜFT …');try{
     const r=await apiRequest({action:'catch',mode:'preview',token:sessionToken,targetUid:String(ev.serialNumber||'')});
     if(!r?.ok||!r.session||!r.canConfirm||r.status!=='CATCH_READY')throw Error(r?.error||r?.status||'CATCH DENIED');
     catchOrder=r;catchStep('catchTargetStep','accepted','✓ '+r.target+' erkannt');hint.textContent=r.target+' erkannt. Tippe erneut, um den Fang zu bestätigen.';catchPrimary('confirm','FANG BESTÄTIGEN');
-   }catch(error){catchStep('catchTargetStep','required','Karte nicht angenommen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);}finally{finish();}};
+   }catch(error){catchStep('catchTargetStep','required','Karte nicht angenommen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);if(!String(error.message||error).includes('TIMEOUT'))catchRejected();}finally{finish();}};
   }catch(error){catchBusy=false;start.disabled=false;catchPrimary('scan','PIONEER-KARTE SCANNEN');catchStep('catchTargetStep','required','1 · Pioneer-Karte scannen');hint.textContent=catchMessage(error);hint.title=String(error.message||error);}
   return;
  }
@@ -967,7 +973,7 @@ window.addEventListener('nodiv-catch',async e=>{
   if(!r?.ok||r.status!=='CATCH_COMPLETE')throw Error(r?.error||r?.status||'CATCH DENIED');
   catchStep('catchCommitStep','accepted','✓ Fang gebucht');result.hidden=false;result.textContent='✓ '+r.core.energy+' E · Fang erfolgreich';hint.textContent='Der Pioneer übergibt dir jetzt diesen N-Core.';catchOrder=null;catchPrimary('scan','PIONEER-KARTE SCANNEN');
   window.dispatchEvent(new CustomEvent('nodiv-catch-live'));window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));
- }catch(error){catchStep('catchCommitStep','required','Buchung noch nicht bestätigt');hint.textContent=catchMessage(error);hint.title=String(error.message||error);if(['CATCH_EXPIRED','CATCH_SESSION_MISMATCH','CATCH_TARGET_INVALID','CATCH_EVENT_CHANGED','CATCH_SNAPSHOT_CHANGED','TARGET_PROTECTED','CATCHER_CAPACITY_FULL','NO_CATCHABLE_CORE','FIELD_ACTIVE_REQUIRED'].includes(String(error.message||error))){catchOrder=null;catchPrimary('scan','PIONEER-KARTE SCANNEN');}else catchPrimary('confirm','FANG ERNEUT PRÜFEN');}finally{catchBusy=false;start.disabled=false;}
+ }catch(error){catchStep('catchCommitStep','required','Buchung noch nicht bestätigt');hint.textContent=catchMessage(error);hint.title=String(error.message||error);if(['CATCH_EXPIRED','CATCH_SESSION_MISMATCH','CATCH_TARGET_INVALID','CATCH_EVENT_CHANGED','CATCH_SNAPSHOT_CHANGED','TARGET_PROTECTED','CATCHER_CAPACITY_FULL','NO_CATCHABLE_CORE','FIELD_ACTIVE_REQUIRED'].includes(String(error.message||error))){catchOrder=null;catchPrimary('scan','PIONEER-KARTE SCANNEN');catchRejected();}else catchPrimary('confirm','FANG ERNEUT PRÜFEN');}finally{catchBusy=false;start.disabled=false;}
 });
 // Refresh ownership after returning from a physical encounter on another device.
 window.addEventListener('focus',()=>{window.dispatchEvent(new CustomEvent('nodiv-pioneer-live'));window.dispatchEvent(new CustomEvent('nodiv-catch-live'));});
