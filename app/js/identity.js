@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-pioneer-hero2';
+import {routeIdentity} from './router.js?v=20261011-pioneer-top1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -891,14 +891,11 @@ function renderPioneerGhost(player,serverNow){
  updatePioneerGhostClock();
 }
 function updatePioneerGhostClock(){
- const panel=document.querySelector('.pioneer-priority'),timer=document.querySelector('.pioneer-timer');if(!panel||!timer)return;
+ const strip=document.querySelector('#pioneerStatusStrip'),ghost=document.querySelector('#pioneerGhostStatus'),timer=document.querySelector('.pioneer-timer');if(!strip||!ghost||!timer)return;
  const remaining=Math.max(0,Math.ceil((pioneerGhostUntil-Date.now()-pioneerGhostClockOffset)/1000)),active=remaining>0;
- panel.dataset.ghost=active?'active':'inactive';timer.hidden=!active;
+ ghost.hidden=!active;
  timer.textContent=active?String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0'):'';
- const title=document.querySelector('.pioneer-priority h3'),hint=document.querySelector('.pioneer-priority p'),status=document.querySelector('.pioneer-state b');
- if(title)title.textContent=active?'GHOST ACTIVE':'NODIV OBJEKT SCANNEN';
- if(hint)hint.textContent=active?'CATCH-SCHUTZ // SERVER BESTÄTIGT':'Node, HQ oder autorisiertes Ziel per NFC erfassen.';
- if(status)status.textContent=active?'GHOST':'ACTIVE';
+ strip.hidden=!active&&document.querySelector('#pioneerEventStatus')?.hidden!==false;
 }
 setInterval(updatePioneerGhostClock,1000);
 
