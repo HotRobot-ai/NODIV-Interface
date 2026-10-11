@@ -563,3 +563,15 @@ test('Exchange slot buttons activate only the next IN/OUT scan and reject stale 
  assert.ok(buttons().every(b=>b.disabled));assert.equal(e['#exchangeConfirm'].disabled,false);
  const router=fs.readFileSync('app/js/router.js','utf8');assert.equal(router.includes('id="exchangeScan"'),false);
 });
+
+
+test('Exchange rejected scan returns to ready without mutation and stale feedback timers cannot affect a new attempt',async()=>{
+ const f=ui(),e=f.elements,timers=[],requests=[];
+ f.ctx.setTimeout=fn=>{timers.push(fn);return timers.length};
+ f.ctx.apiRequest=async p=>{requests.push(p);return p.action==='exchangescan'?{ok:true,action:false,error:'CORE_NOT_IN_NODE'}:{ok:true,action:true,exchange:'same-ex',size:1,inCount:1,outCount:0,canConfirm:false,accessCode:'0123'}};
+ f.ctx.resumePioneerExchange({exchange:'same-ex',nodeId:'NODE-001',totalEnergy:1095,nodeState:'STABLE',sizes:[1],size:1,inCount:1,outCount:0,canConfirm:false,accessCode:'0123'});
+ const scan=async()=>{await f.listeners['nodiv-pioneer-exchange']({detail:{action:'scan'}});await f.ctx.reader.onreading({serialNumber:'wrong'});};
+ await scan();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'error');assert.match(e['#exchangeHint'].textContent,/gehört nicht zu diesem Node/);
+ const count=requests.length;timers.shift()();assert.equal(requests.length,count);assert.deepEqual(e['#exchangeSlots'].children.map(c=>c.dataset.state),['scanned','available']);assert.match(e['#exchangeSlots'].children[1].textContent,/Scan bereit/);assert.equal(e['#exchangeHint'].textContent,'');assert.equal(e['#exchangeConfirm'].hidden,true);
+ await scan();const old=timers.shift();await scan();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'error');old();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'error');timers.shift()();assert.equal(e['#exchangeSlots'].children[1].dataset.state,'available');
+});

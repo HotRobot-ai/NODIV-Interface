@@ -676,7 +676,7 @@ function renderPioneerExchange(result){
    const slot=document.createElement('button');slot.type='button';slot.className='exchange-slot';slot.dataset.state=state;
    slot.disabled=!available||pioneerExchangeBusy;
    slot.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('nodiv-pioneer-exchange',{detail:{action:'scan',phase,index}})));
-   slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Jetzt scannen',waiting:'Danach scannen'}[state]);
+   slot.textContent=(phase==='IN'?'Hinein':'Heraus')+' '+(index+1)+' · '+({booked:'Gebucht',scanned:'Scan bestätigt',error:'Scan abgelehnt',available:pioneerExchangeBusy?'Wird geprüft':'Scan bereit',waiting:'Danach scannen'}[state]);
    slots.appendChild(slot);
   }
  }
@@ -684,7 +684,13 @@ function renderPioneerExchange(result){
  const nodeScan=document.querySelector('#pioneerScan');if(nodeScan)nodeScan.disabled=active;
 }
 function exchangeRejected(message,phase){
- pioneerExchangeFeedback={phase};
+ const feedback={phase},exchange=pioneerExchange?.exchange;
+ pioneerExchangeFeedback=feedback;
+ if(phase)setTimeout(()=>{
+  if(pioneerExchangeFeedback!==feedback||!pioneerExchange||pioneerExchange.exchange!==exchange)return;
+  pioneerExchangeFeedback=null;renderPioneerExchange(pioneerExchange);
+  document.querySelector('#exchangeHint').textContent='';
+ },1800);
  const explanations={CORE_NOT_FOUND:'Kein registrierter N-Core. Scanne einen gültigen N-Core.',CORE_NOT_OWNED_BY_PIONEER:'Dieser N-Core gehört nicht zu deinem zulässigen Bestand.',CORE_NOT_IN_NODE:'Dieser N-Core gehört nicht zu diesem Node.',DUPLICATE_CORE_SCAN:'Dieser N-Core wurde bereits für die andere Tauschrichtung gescannt.',EXCHANGE_SCAN_PHASE_MISMATCH:'Zuerst alle eigenen N-Cores scannen, danach die entnommenen Node-Cores.'};
  return 'Nicht möglich: '+(explanations[message]||message);
 }
