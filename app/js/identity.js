@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-fop-final3';
+import {routeIdentity} from './router.js?v=20261011-pioneer-shell1';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -90,7 +90,7 @@ window.addEventListener('pagehide',()=>{if(identityAttempt)finishIdentityAttempt
 window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
  window.dispatchEvent(new CustomEvent('nodiv-upload-terminal-refresh'));
- const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
+ const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),capacityView=document.querySelector('#pioneerCapacity'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy');
  try{
   const state=await apiRequest({action:'playerstate',token:sessionToken});
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
@@ -99,7 +99,7 @@ window.addEventListener('nodiv-pioneer-live',async()=>{
   if(state.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:state.evacuation});
   if(capacity>0&&cores.length===0&&(!pioneerReSupply||pioneerReSupply.status==='RESUPPLY_COMPLETE')&&!pioneerReSupplyBusy)window.dispatchEvent(new CustomEvent('nodiv-pioneer-resupply-status'));
   if(secured)secured.textContent=String(state.securedEnergy??0)+' E';
-  if(total)total.textContent=String(state.carriedEnergy??0)+' E';
+  if(total)total.textContent=String(state.carriedEnergy??0)+' E';if(capacityView)capacityView.textContent=cores.length+'/'+capacity+' CORES';
   if(hqTotal)hqTotal.textContent=String(state.carriedEnergy??0)+' E';
   if(inv){
    const slots=[];
@@ -160,7 +160,7 @@ window.addEventListener('nodiv-pioneer-scan',async()=>{
   await reader.scan({signal:attempt.controller.signal});
  }catch(error){if(pioneerObjectScan===attempt){b.textContent=String(error.message||error);finishPioneerObjectScan(attempt);emitNodiv('ACCESS_DENIED',{target:'#pioneerScan'});}}
 });
-window.addEventListener('pagehide',()=>{if(pioneerObjectScan){pioneerObjectScan.button.textContent='NFC // JETZT SCANNEN';finishPioneerObjectScan(pioneerObjectScan);}});
+window.addEventListener('pagehide',()=>{if(pioneerObjectScan){pioneerObjectScan.button.textContent='NODIV OBJEKT SCANNEN';finishPioneerObjectScan(pioneerObjectScan);}});
 
 let startCorePioneerUid='';
 window.addEventListener('nodiv-founder-startcore-open',()=>{startCorePioneerUid='';const state=document.querySelector('#startCoreIssueState'),hint=document.querySelector('#startCoreIssueHint'),btn=document.querySelector('#scanStartCore');if(state)state.textContent='PIONEER ACCESS CARD';if(hint)hint.textContent='Zuerst die Access Card des Pioneers scannen. Danach den auszugebenden N-Core.';if(btn){btn.disabled=false;btn.dataset.scanActive='0';btn.textContent='AUSGABE STARTEN'}});
@@ -896,8 +896,8 @@ function updatePioneerGhostClock(){
  panel.dataset.ghost=active?'active':'inactive';timer.hidden=!active;
  timer.textContent=active?String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0'):'';
  const title=document.querySelector('.pioneer-priority h3'),hint=document.querySelector('.pioneer-priority p'),status=document.querySelector('.pioneer-state b');
- if(title)title.textContent=active?'GHOST ACTIVE':'FIELD STATUS NOMINAL';
- if(hint)hint.textContent=active?'CATCH-SCHUTZ // SERVER BESTÄTIGT':'No immediate action required.';
+ if(title)title.textContent=active?'GHOST ACTIVE':'NODIV OBJEKT SCANNEN';
+ if(hint)hint.textContent=active?'CATCH-SCHUTZ // SERVER BESTÄTIGT':'Node, HQ oder autorisiertes Ziel per NFC erfassen.';
  if(status)status.textContent=active?'GHOST':'ACTIVE';
 }
 setInterval(updatePioneerGhostClock,1000);
