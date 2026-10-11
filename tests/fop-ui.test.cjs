@@ -657,14 +657,14 @@ test('Local hunt release is gated by authoritative state and announces once per 
  const player={identity:'L001',role:'LOCAL',status:'ACTIVE',catchAccess:true,coreCapacity:1};
  const stored=new Map();f.ctx.window.sessionStorage={getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)};
  f.ctx.apiRequest=async p=>{f.requests.push(p);if(fail)throw Error('OFFLINE');return {ok:true,session:true,player,securedEnergy:0,cores:[],event,catchCount:0};};
- await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchRelease'].dataset.state,'inactive');assert.equal(e['#catchStart'].disabled,true);assert.match(e['#localCatchReleaseTitle'].textContent,/NOCH GESPERRT/);
+ await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchRelease'].dataset.state,'inactive');assert.equal(e['#catchStart'].disabled,true);assert.match(e['#localCatchReleaseTitle'].textContent,/KEINE FREIGABE/);
  const before=f.requests.length;await f.listeners['nodiv-catch']({detail:{action:'scan'}});assert.equal(f.requests.length,before);assert.equal(f.ctx.reader,undefined);
- event={active:true,state:'FIELD_ACTIVE',eventId:'EVT-1'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchReleaseTitle'].textContent,'JAGD FREIGEGEBEN');assert.equal(e['#catchStart'].disabled,false);assert.equal(e['#localReleaseOverlay'].hidden,false);
+ event={active:true,state:'FIELD_ACTIVE',eventId:'EVT-1'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchReleaseTitle'].textContent,'SPIELFELD AKTIV');assert.equal(e['#catchStart'].disabled,false);assert.equal(e['#localReleaseOverlay'].hidden,false);
  f.listeners['nodiv-local-release-ack']();assert.equal(e['#localReleaseOverlay'].hidden,true);await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);assert.equal(stored.get('nodiv-local-release:L001:EVT-1'),'1');
  fail=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#localCatchRelease'].dataset.state,'unknown');assert.equal(e['#catchStart'].disabled,true);assert.equal(e['#localReleaseOverlay'].hidden,true);
  fail=false;await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);
  event={active:true,state:'FIELD_ACTIVE',eventId:'EVT-2'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,false);
- event={active:false,state:'COMPLETED',eventId:'EVT-2'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);assert.equal(e['#localCatchReleaseTitle'].textContent,'JAGD BEENDET');assert.equal(e['#catchStart'].disabled,true);
+ event={active:false,state:'COMPLETED',eventId:'EVT-2'};await f.listeners['nodiv-catch-live']();assert.equal(e['#localReleaseOverlay'].hidden,true);assert.equal(e['#localCatchReleaseTitle'].textContent,'SPIELFELD INAKTIV');assert.equal(e['#catchStart'].disabled,true);
 });
 
 test('Local polling cannot unlock busy NFC and unresolved confirmations remain available for receipt checking',async()=>{

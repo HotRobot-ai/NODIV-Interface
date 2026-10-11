@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-local39';
+import {routeIdentity} from './router.js?v=20261011-local40';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -931,8 +931,8 @@ function renderLocalCatchRelease(event,player){
  const title=document.querySelector('#localCatchReleaseTitle'),hint=document.querySelector('#localCatchReleaseHint'),overlay=document.querySelector('#localReleaseOverlay');
  const active=event?.active===true&&player?.status==='ACTIVE'&&player?.catchAccess===true;
  const state=active?'active':event?.active===false||player?.catchAccess===false?'inactive':'unknown';release.dataset.state=state;
- if(title)title.textContent=active?'JAGD FREIGEGEBEN':state==='inactive'?(event?.state==='COMPLETED'?'JAGD BEENDET':'JAGD NOCH GESPERRT'):'FREIGABE WIRD GEPRÜFT';
- if(hint)hint.textContent=active?'Du kannst jetzt Pioneer fangen. Scanne ihre Access Card.':state==='inactive'?(event?.state==='COMPLETED'?'Dieses Spiel ist beendet.':'Orientiere dich im Spielfeld. Die Jagd beginnt erst mit der Systemfreigabe.'):'Die Freigabe ist gerade nicht bestätigt. Warte auf den nächsten Statusabruf.';
+ if(title)title.textContent=active?'SPIELFELD AKTIV':state==='inactive'?(event?.state==='COMPLETED'?'SPIELFELD INAKTIV':'KEINE FREIGABE'):'FREIGABE WIRD GEPRÜFT';
+ if(hint)hint.textContent=active?'Du kannst jetzt Pioneer fangen. Scanne ihre Access Card.':state==='inactive'?(event?.state==='COMPLETED'?'Dieses Spiel ist beendet.':'Orientiere dich im Spielfeld. Warte auf die Freigabe des Spielfelds.'):'Die Freigabe ist gerade nicht bestätigt. Warte auf den nächsten Statusabruf.';
  localReleaseKey=active&&event.eventId&&player.identity?'nodiv-local-release:'+player.identity+':'+event.eventId:'';
  let acknowledged=localReleaseAcknowledged.has(localReleaseKey);try{acknowledged=acknowledged||window.sessionStorage?.getItem(localReleaseKey)==='1';}catch(error){}
  if(overlay){const visible=Boolean(localReleaseKey&&!acknowledged),wasHidden=overlay.hidden;overlay.hidden=!visible;if(visible&&wasHidden)document.querySelector('#localReleaseAcknowledge')?.focus?.();}
