@@ -1053,24 +1053,31 @@ function renderUploadTerminal(result){
  pioneerTerminal=result;
  pioneerSecureProtection=result?.ownReservation&&['YELLOW','RED'].includes(result?.state)?{state:result.state,ownReservation:true,expiresAt:Number(result.expiresAt||0)}:null;
  const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach'),next=document.querySelector('#hqUploadNext');
+ const availability=document.querySelector('#hqUploadAvailability'),availabilityValue=document.querySelector('#hqUploadAvailabilityValue'),availabilityDetail=document.querySelector('#hqUploadAvailabilityDetail');
  if(!status){updatePioneerProtection();return;}
  status.dataset.state=result.state;
  const bayId=String(result.bay?.id||'UPLOADPUNKT'),available=Number(result.available),total=Number(result.total);
  const remaining=Math.max(0,Math.ceil((Number(result.expiresAt||0)-Number(result.serverNow||Date.now()))/1000));
  const timer=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
+ if(availability){
+  availability.dataset.state=available>0?'GREEN':total>0?'RED':'';
+  if(availabilityValue)availabilityValue.textContent=Number.isFinite(available)&&Number.isFinite(total)?available+'/'+total+' FREI':'—';
+  if(availabilityDetail)availabilityDetail.textContent=available>0?'UPLOAD BEREIT':total>0?'AKTUELL BELEGT':'STATUS NICHT VERFÜGBAR';
+ }
  const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');
- if(label)label.textContent=result.ownReservation?bayId:(Number.isFinite(available)&&Number.isFinite(total)?'UPLOADPUNKTE':'UPLOADPUNKT');
- if(value)value.textContent=result.ownReservation?'DEIN ZUGANG':Number.isFinite(available)&&Number.isFinite(total)?available+'/'+total+' FREI':result.state==='GREEN'?'FREI':result.state==='YELLOW'?'RESERVIERT':'BELEGT';
- if(detail)detail.textContent=result.ownReservation?timer+' VERBLEIBEND':result.state==='GREEN'?'UPLOAD BEREIT':result.state==='YELLOW'?'SECURE APPROACH AKTIV':'UPLOAD LÄUFT';
- if(next)next.textContent=result.ownReservation?'Dein Uploadpunkt ist reserviert. Zum HQ gehen, den markierten Koffer öffnen und die NFC-Fläche scannen.':result.state==='GREEN'?'Zugang wählen. Danach zum freien Upload-Koffer gehen und die NFC-Fläche scannen.':'Aktuell ist kein freier Uploadpunkt verfügbar.';
- if(button)button.disabled=secureApproachBusy||result.state!=='GREEN';
- if(result.state!=='GREEN'){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
+ status.hidden=!result.ownReservation;
+ if(label)label.textContent=bayId;
+ if(value)value.textContent=result.ownReservation?'DEIN ZUGANG':'';
+ if(detail)detail.textContent=result.ownReservation?timer+' VERBLEIBEND':'';
+ if(next)next.textContent=result.ownReservation?'Dein Uploadpunkt ist reserviert. Zum HQ gehen, den markierten Koffer öffnen und die NFC-Fläche scannen.':available>0?'Zugang wählen. Danach zum freien Upload-Koffer gehen und die NFC-Fläche scannen.':'Aktuell ist kein freier Uploadpunkt verfügbar.';
+ if(button)button.disabled=secureApproachBusy||available<1;
+ if(available<1){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
  updatePioneerProtection();
 }
 async function refreshUploadTerminal(){
  if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
  try{const r=await apiRequest({action:'uploadterminalstate',token:sessionToken});if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
- catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.dataset.state='';const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');if(label)label.textContent='UPLOADPUNKT';if(value)value.textContent='STATUS NICHT VERFÜGBAR';if(detail)detail.textContent='Erneut versuchen';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
+ catch(error){const status=document.querySelector('#uploadTerminalState'),availability=document.querySelector('#hqUploadAvailability'),availabilityValue=document.querySelector('#hqUploadAvailabilityValue'),availabilityDetail=document.querySelector('#hqUploadAvailabilityDetail');if(status){status.hidden=true;status.dataset.state='';}if(availability)availability.dataset.state='';if(availabilityValue)availabilityValue.textContent='—';if(availabilityDetail)availabilityDetail.textContent='STATUS NICHT VERFÜGBAR';const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
 }
 window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
 window.addEventListener('nodiv-hq-approach',async e=>{
