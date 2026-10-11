@@ -395,7 +395,7 @@ window.addEventListener('nodiv-founder-preflight',async e=>{
  btn.disabled=true;
  try{
   const params={action:'eventpreflightconfirm',token:sessionToken,check};
-  if(check==='EVENT_CONFIGURATION')params.uploadPoints=document.querySelector('#eventUploadPoints')?.value||'1';
+  if(check==='EVENT_CONFIGURATION')params.uploadPoints=document.querySelector('#eventUploadPoints')?.value||'2';
   const r=await apiRequest(params);
   if(!r?.ok||r?.action!==true)throw new Error(r?.message||r?.status||r?.error||'PRE-FLIGHT BESTÄTIGUNG FEHLGESCHLAGEN');
   showFounderResult('PRE-FLIGHT BESTÄTIGT',check.replaceAll('_',' '),true,btn);
