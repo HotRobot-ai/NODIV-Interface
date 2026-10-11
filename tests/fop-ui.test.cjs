@@ -48,7 +48,7 @@ test('FOP installation completion still hides PRIMARY/scan/confirm actions and s
 test('queue contains only server options and empty queue disables action; invented selection makes no request',async()=>{
  const f=ui({empty:true}),e=f.elements;await f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'NO OPERATIONS AVAILABLE');assert.equal(e['#fopOperationSelect'].disabled,true);assert.equal(e['#fopInstallOrder'].disabled,true);
  e['#fopOperationSelect'].value='INSTALL:NODE-999';const before=f.requests.length;await f.listeners['nodiv-fop-install-order']();assert.equal(f.requests.length,before);
- const g=ui({operation:'DEINSTALL'});await g.queue();assert.deepEqual(g.elements['#fopOperationSelect'].children.map(o=>o.textContent),['OPERATION AUSWÄHLEN','DEINSTALL // NODE-001']);
+ const g=ui({operation:'DEINSTALL'});await g.queue();assert.deepEqual(g.elements['#fopOperationSelect'].children.map(o=>o.textContent),['AUFTRAG AUSWÄHLEN','DEINSTALL // NODE-001']);
 });
 test('recovery uses removal APIs/visual mode and hides actions after exact recovery summary',async()=>{
  const f=ui({operation:'DEINSTALL'}),e=f.elements;await f.order();assert.equal(f.requests.at(-1).action,'nodedeinstallorder');assert.equal(e['#fopDeploymentCard'].dataset.operation,'DEINSTALL');assert.equal(e['#fopLoadoutLabel'].textContent,'REMOVAL LOADOUT');assert.equal(e['#fopOperationStatus'].textContent,'RECOVERING');assert.equal(e['#fopInstallConfirm'].textContent,'RECOVERY BESTÄTIGEN');
@@ -372,7 +372,7 @@ test('FOP queue distinguishes pending, failed and authoritative empty responses 
  const pending=f.queue();assert.equal(e['#fopOperationSelect'].children[0].textContent,'QUEUE WIRD GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'LOADING');assert.equal(e['#fopQueueRefresh'].disabled,true);
  resolve({ok:false,status:'SESSION_EXPIRED'});await pending;assert.equal(e['#fopOperationSelect'].children[0].textContent,'QUEUE NICHT GELADEN');assert.equal(e['#fopOperationStatus'].textContent,'UNAVAILABLE');assert.match(e['#fopQueueHint'].textContent,/SESSION_EXPIRED/);assert.equal(e['#fopQueueRefresh'].disabled,false);assert.equal(e['#fopInstallOrder'].disabled,true);
  f.ctx.apiRequest=async()=>{throw Error('TIMEOUT')};await f.queue();assert.match(e['#fopQueueHint'].textContent,/TIMEOUT/);assert.equal(e['#fopQueueRefresh'].disabled,false);
- f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[{id:'DEINSTALL:NODE-001',type:'DEINSTALL',nodeId:'NODE-001',label:'DEINSTALL // NODE-001'}]});await f.queue();assert.equal(e['#fopOperationSelect'].disabled,false);assert.equal(e['#fopOperationStatus'].textContent,'READY');
+ f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[{id:'DEINSTALL:NODE-001',type:'DEINSTALL',nodeId:'NODE-001',label:'DEINSTALL // NODE-001'}]});await f.queue();assert.equal(e['#fopOperationSelect'].disabled,false);assert.equal(e['#fopOperationStatus'].textContent,'READY');assert.equal(e['#fopQueueHint'].textContent,'');
  f.ctx.apiRequest=async()=>({ok:true,session:true,operations:[]});await f.queue();assert.equal(e['#fopOperationStatus'].textContent,'NO OPERATIONS');assert.match(e['#fopQueueHint'].textContent,/Server bestätigt/);
 });
 
@@ -389,6 +389,8 @@ test('FOP shell has no visible operations-channel/status bar and starts with fou
  const router=fs.readFileSync('app/js/router.js','utf8');
  assert.equal(router.includes("accent:'OPERATIONS CHANNEL'"),false);
  assert.equal(router.includes('class="fop-statusbar"'),false);
+ assert.equal(router.includes('>QUEUE AKTUALISIEREN<'),false);
+ assert.match(router,/>AKTUALISIEREN<\/button>/);
  assert.match(router,/id="fopFounderDirective"/);
  assert.match(router,/id="evacuationPanel" class="event-control"\$\{role==='FOP'\?' hidden':'\'\'\}/);
 });
