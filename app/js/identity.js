@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-fop-copy';
+import {routeIdentity} from './router.js?v=20261011-fop-final';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
@@ -441,17 +441,17 @@ async function refreshFopOperations(){
  const select=document.querySelector('#fopOperationSelect'),hint=document.querySelector('#fopInstallHint');if(!select)return;
  fopQueueBusy=true;fopQueueState='loading';fopOperations=[];
  const queueHint=document.querySelector('#fopQueueHint');
- select.replaceChildren();const loading=document.createElement('option');loading.value='';loading.textContent='QUEUE WIRD GELADEN';select.appendChild(loading);
+ select.replaceChildren();const loading=document.createElement('option');loading.value='';loading.textContent='AUFTRÄGE WERDEN GELADEN';select.appendChild(loading);
  if(queueHint)queueHint.textContent='Aufträge werden vom Server geladen.';renderFopInstallation(fopInstallation);
  try{
   const r=await apiRequest({action:'fopoperations',token:sessionToken});
-  if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'OPERATIONS QUEUE UNAVAILABLE');
+  if(!r?.ok||!r?.session||!Array.isArray(r.operations))throw new Error(r?.message||r?.status||r?.error||'AUFTRÄGE NICHT VERFÜGBAR');
   if(r.evacuation)renderEvacuation({status:'EVACUATION_IN_PROGRESS',evacuation:r.evacuation,eventId:r.eventId});
   fopOperations=r.operations.filter(operation=>['INSTALL','DEINSTALL'].includes(operation.type)&&/^NODE-\d{3}$/.test(operation.nodeId));
-  select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'AUFTRAG AUSWÄHLEN':'NO OPERATIONS AVAILABLE';select.appendChild(prompt);
+  select.replaceChildren();const prompt=document.createElement('option');prompt.value='';prompt.textContent=fopOperations.length?'AUFTRAG AUSWÄHLEN':'KEINE AUFTRÄGE VERFÜGBAR';select.appendChild(prompt);
   for(const operation of fopOperations){const option=document.createElement('option');option.value=operation.id;option.textContent=operation.label;select.appendChild(option)}select.value=fopOperations.find(operation=>operation.resume===true)?.id||'';
   fopQueueState='ready';if(queueHint)queueHint.textContent=fopOperations.length?'':'Server bestätigt: aktuell keine verfügbaren Operationen.';
- }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='QUEUE NICHT GELADEN';select.appendChild(option);fopQueueState='error';const message='Aufträge konnten nicht geladen werden: '+String(err.message||err)+' // AKTUALISIEREN.';if(queueHint)queueHint.textContent=message;if(hint)hint.textContent=message}
+ }catch(err){select.replaceChildren();const option=document.createElement('option');option.value='';option.textContent='AUFTRÄGE NICHT GELADEN';select.appendChild(option);fopQueueState='error';const message='Aufträge konnten nicht geladen werden: '+String(err.message||err)+' // AKTUALISIEREN.';if(queueHint)queueHint.textContent=message;if(hint)hint.textContent=message}
  finally{fopQueueBusy=false;renderFopInstallation(fopInstallation)}
 }
 window.addEventListener('nodiv-fop-operations',refreshFopOperations);
@@ -490,13 +490,13 @@ function renderFopInstallation(result){
  const order=document.querySelector('#fopInstallOrder');if(order)order.disabled=fopInstallBusy||fopQueueBusy||active||!selected;
  const select=document.querySelector('#fopOperationSelect');if(select)select.disabled=fopInstallBusy||fopQueueBusy||active||!fopOperations.length;
  const refresh=document.querySelector('#fopQueueRefresh');if(refresh)refresh.disabled=fopInstallBusy||fopQueueBusy||active;
- let title='Operation auswählen',detail='Wähle eine Operation aus der Liste und tippe „Auftrag abrufen“.';
- if(complete){title='Auftrag abgeschlossen';detail='Der Server hat den Abschluss bestätigt. Wähle bei Bedarf die nächste Operation.';}
+ let title='Auftrag auswählen',detail='Wähle einen Auftrag aus der Liste und tippe „Auftrag abrufen“.';
+ if(complete){title='Auftrag abgeschlossen';detail='Der Server hat den Abschluss bestätigt. Wähle bei Bedarf den nächsten Auftrag.';}
  else if(fopInstallBusy){title='Auftrag wird geprüft';detail='Warte auf die Rückmeldung. Bereits laufende Scans oder Bestätigungen nicht wiederholen.';}
  else if(active){title=result.canConfirm?'Abschluss bestätigen':'Zugewiesene N-Cores scannen';detail=result.canConfirm?(removal?'Entferne die drei zugewiesenen N-Cores physisch. Bestätige erst danach den Rückbau.':'Setze die drei zugewiesenen N-Cores physisch ein. Bestätige erst danach die Installation.'):(removal?'Scanne nur die angezeigten Cores des Nodes. Nach 3/3 folgt die physische Entnahme.':'Stelle den angezeigten Code ein und scanne die zugewiesenen N-Cores.');}
- else if(fopQueueBusy){title='Aufträge laden';detail='Warte kurz. NODIV prüft deine verfügbaren Operationen.';}
- else if(fopQueueState==='error'){title='Aufträge erneut laden';detail='Prüfe den Hinweis unter der Auswahl und tippe „Queue aktualisieren“.';}
- else if(!fopOperations.length){title='Aktuell kein Auftrag';detail='Es liegen keine verfügbaren Operationen vor. Mit „Queue aktualisieren“ kannst du erneut prüfen.';}
+ else if(fopQueueBusy){title='Aufträge laden';detail='Warte kurz. NODIV prüft deine verfügbaren Aufträge.';}
+ else if(fopQueueState==='error'){title='Aufträge erneut laden';detail='Prüfe den Hinweis unter der Auswahl und tippe „Aktualisieren“.';}
+ else if(!fopOperations.length){title='Aktuell kein Auftrag';detail='Es liegen keine verfügbaren Aufträge vor. Mit „Aktualisieren“ kannst du erneut prüfen.';}
  else if(selected){title='Auftrag abrufen';detail=selected.nodeId+' – '+(selected.type==='DEINSTALL'?'Rückbau':'Installation')+(selected.resume?' fortsetzen.':' vom Server laden.');}
  setText('#fopNextTitle',title);setText('#fopNextDetail',detail);
 
@@ -505,7 +505,7 @@ function fopRequestParams(action){const resolved=fopInstallation.operation==='DE
 window.addEventListener('nodiv-fop-install-order',async()=>{
  if(!sessionToken||fopInstallBusy)return;
  const btn=document.querySelector('#fopInstallOrder'),panel=document.querySelector('#fopInstallCode'),value=document.querySelector('#fopCodeValue'),hint=document.querySelector('#fopInstallHint');
- const operation=selectedFopOperation();if(!operation||fopQueueBusy||fopInstallation&&!['NODE_INSTALLED','NODE_DEINSTALLED'].includes(fopInstallation.status)){if(hint)hint.textContent='Zulässige Operation aus der Queue auswählen.';return}
+ const operation=selectedFopOperation();if(!operation||fopQueueBusy||fopInstallation&&!['NODE_INSTALLED','NODE_DEINSTALLED'].includes(fopInstallation.status)){if(hint)hint.textContent='Verfügbaren Auftrag auswählen.';return}
  const node=operation.nodeId;
  fopInstallation=null;fopInstallBusy=true;renderFopInstallation(null);if(btn)btn.disabled=true;
  try{
