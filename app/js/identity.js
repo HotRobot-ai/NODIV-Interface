@@ -1,4 +1,4 @@
-import {routeIdentity} from './router.js?v=20261011-fop-final2';
+import {routeIdentity} from './router.js?v=20261011-fop-final3';
 import {emitNodiv} from './motion.js?v=20261003-1415';
 let sessionToken='',sessionRestoreBusy=false;
 const SESSION_STORAGE_KEY='nodiv_app_session_v1';
