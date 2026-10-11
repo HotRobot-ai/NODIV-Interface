@@ -1055,14 +1055,14 @@ function renderUploadTerminal(result){
  const status=document.querySelector('#uploadTerminalState'),button=document.querySelector('#secureApproach'),next=document.querySelector('#hqUploadNext');
  if(!status){updatePioneerProtection();return;}
  status.dataset.state=result.state;
- const bayId=String(result.bay?.id||'UPLOAD BAY');
+ const bayId=String(result.bay?.id||'UPLOADPUNKT'),available=Number(result.available),total=Number(result.total);
  const remaining=Math.max(0,Math.ceil((Number(result.expiresAt||0)-Number(result.serverNow||Date.now()))/1000));
  const timer=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
  const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');
- if(label)label.textContent=bayId;
- if(value)value.textContent=result.state==='GREEN'?'FREI':result.ownReservation?'DEIN ZUGANG':result.state==='YELLOW'?'RESERVIERT':'BELEGT';
- if(detail)detail.textContent=result.state==='GREEN'?'UPLOAD BEREIT':result.ownReservation?timer+' VERBLEIBEND':result.state==='YELLOW'?'SECURE APPROACH AKTIV':'UPLOAD LÄUFT';
- if(next)next.textContent=result.state==='GREEN'?'Zugang wählen. Danach zur HQ Upload Bay gehen und NFC scannen.':result.ownReservation?'Deine Upload Bay ist reserviert. Zum HQ gehen und diese Bay per NFC scannen.':'Upload Bay ist aktuell nicht verfügbar.';
+ if(label)label.textContent=result.ownReservation?bayId:(Number.isFinite(available)&&Number.isFinite(total)?'UPLOADPUNKTE':'UPLOADPUNKT');
+ if(value)value.textContent=result.ownReservation?'DEIN ZUGANG':Number.isFinite(available)&&Number.isFinite(total)?available+'/'+total+' FREI':result.state==='GREEN'?'FREI':result.state==='YELLOW'?'RESERVIERT':'BELEGT';
+ if(detail)detail.textContent=result.ownReservation?timer+' VERBLEIBEND':result.state==='GREEN'?'UPLOAD BEREIT':result.state==='YELLOW'?'SECURE APPROACH AKTIV':'UPLOAD LÄUFT';
+ if(next)next.textContent=result.ownReservation?'Dein Uploadpunkt ist reserviert. Zum HQ gehen, den markierten Koffer öffnen und die NFC-Fläche scannen.':result.state==='GREEN'?'Zugang wählen. Danach zum freien Upload-Koffer gehen und die NFC-Fläche scannen.':'Aktuell ist kein freier Uploadpunkt verfügbar.';
  if(button)button.disabled=secureApproachBusy||result.state!=='GREEN';
  if(result.state!=='GREEN'){const confirm=document.querySelector('#secureApproachConfirm');if(confirm)confirm.hidden=true;}
  updatePioneerProtection();
@@ -1070,15 +1070,15 @@ function renderUploadTerminal(result){
 async function refreshUploadTerminal(){
  if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
  try{const r=await apiRequest({action:'uploadterminalstate',token:sessionToken});if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
- catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.dataset.state='';const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');if(label)label.textContent='UPLOAD BAY';if(value)value.textContent='STATUS NICHT VERFÜGBAR';if(detail)detail.textContent='Erneut versuchen';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
+ catch(error){const status=document.querySelector('#uploadTerminalState');if(status){status.dataset.state='';const label=status.querySelector('small'),value=status.querySelector('strong'),detail=status.querySelector('span');if(label)label.textContent='UPLOADPUNKT';if(value)value.textContent='STATUS NICHT VERFÜGBAR';if(detail)detail.textContent='Erneut versuchen';}const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
 }
 window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
 window.addEventListener('nodiv-hq-approach',async e=>{
  const hint=document.querySelector('#hqApproachHint'),confirm=document.querySelector('#secureApproachConfirm');if(!hint||!confirm||secureApproachBusy)return;
  await refreshUploadTerminal();
- if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='KOSTENLOS // Keine Reservierung, kein Catch-Schutz. Bei FREI direkt zur Upload Bay gehen.';return;}
+ if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='KOSTENLOS // Keine Reservierung, kein Catch-Schutz. Bei FREI direkt zu einem freien Upload-Koffer gehen.';return;}
  if(e.detail?.mode!=='secure'||pioneerTerminal?.state!=='GREEN')return;
- hint.textContent='150 E werden sofort vom Energiekonto abgezogen. Dafür erhältst du 05:00 Catch-Schutz und die Upload Bay exklusiv.';confirm.hidden=false;confirm.disabled=false;
+ hint.textContent='150 E werden sofort vom Energiekonto abgezogen. Dafür erhältst du 05:00 Catch-Schutz und einen Uploadpunkt exklusiv.';confirm.hidden=false;confirm.disabled=false;
 });
 window.addEventListener('nodiv-secure-approach-confirm',async()=>{
  if(!sessionToken||secureApproachBusy)return;
