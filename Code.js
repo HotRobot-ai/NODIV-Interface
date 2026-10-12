@@ -4481,9 +4481,9 @@ function shutdownFieldEvent(e) {
     });
     const cores=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),owned={};
     cores.forEach(row=>{if(String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='NODE'){const id=String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()||'UNKNOWN NODE';owned[id]=(owned[id]||0)+1;}});
-    const strandedCores=cores.filter(row=>{const owner=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();return owner&&owner!=='HQ';}).map(row=>({id:String(row[CORE_COL.ID-1]||''),ownerType:String(row[CORE_COL.OWNER_TYPE-1]||''),ownerId:String(row[CORE_COL.OWNER_ID-1]||'')}));
+    const strandedCores=cores.filter(row=>{const owner=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();return owner&&owner!=='HQ'&&owner!=='NODIV_RESERVE';}).map(row=>({id:String(row[CORE_COL.ID-1]||''),ownerType:String(row[CORE_COL.OWNER_TYPE-1]||''),ownerId:String(row[CORE_COL.OWNER_ID-1]||'')}));
     Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
-    if(strandedCores.length)blockers.push('NON-HQ CORE INVENTORY: '+strandedCores.length+' CORE(S)');
+    if(strandedCores.length)blockers.push('NON-RESERVE CORE INVENTORY: '+strandedCores.length+' CORE(S)');
     readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
     // Record outstanding event-scoped operations before closing. Their stale records
     // remain for audit; normal live-readers reject them once this event is COMPLETED.
