@@ -454,8 +454,8 @@ window.addEventListener('nodiv-founder-event-shutdown',async()=>{
   if(!r?.ok||r.action!==true){
    if(r?.status!=='FIELD_SHUTDOWN_BLOCKED'||!Array.isArray(r.blockers)||!r.blockers.length)
     throw new Error(r?.message||r?.status||r?.error||'FIELD SHUTDOWN BLOCKED');
-   const details=r.blockers.join('\\n');
-   const acknowledged=window.confirm('EVENT MIT ABWEICHUNGEN ABSCHLIESSEN?\\n\\n'+eventId+'\\n\\n'+details+'\\n\\nFehlende Nodes/N-Cores werden NICHT ins HQ zurückgebucht. Offene Vorgänge können zurückbleiben und müssen vor dem nächsten Event geprüft werden. Fortfahren?');
+   const details=r.blockers.join('\n');
+   const acknowledged=window.confirm('EVENT MIT ABWEICHUNGEN ABSCHLIESSEN?\n\n'+eventId+'\n\n'+details+'\n\nFehlende Nodes/N-Cores werden NICHT ins HQ zurückgebucht. Offene Vorgänge können zurückbleiben und müssen vor dem nächsten Event geprüft werden. Fortfahren?');
    if(!acknowledged)return;
    r=await apiRequest({action:'eventshutdown',token:sessionToken,event:eventId,mode:'WITH_EXCEPTIONS',confirm:'CLOSE_WITH_EXCEPTIONS:'+eventId});
   }
