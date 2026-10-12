@@ -931,13 +931,14 @@ window.addEventListener('nodiv-founder-restore',async e=>{
 });
 
 /* Direct encounter: NFC target authentication never lets the browser select a Core. */
-let catchOrder=null,catchBusy=false,catchScanController=null;
+let catchOrder=null,catchBusy=false,catchScanController=null,catcherFieldActive=false;
 function catchMessage(error){const code=String(error.message||error);return ({TARGET_PROTECTED:'Dieser Pioneer ist geschützt. Ein Fang ist gerade nicht möglich.',CATCHER_CAPACITY_FULL:'Dein Inventar ist voll. Du kannst keinen weiteren N-Core aufnehmen.',NO_CATCHABLE_CORE:'Dieser Pioneer hat gerade keinen fangbaren N-Core.',CATCH_TARGET_INVALID:'Bitte die Access Card eines aktiven Pioneers scannen.',FIELD_ACTIVE_REQUIRED:'Aktuell läuft kein aktives Spiel.',CATCH_EXPIRED:'Die Bestätigung ist abgelaufen. Bitte die Pioneer-Karte erneut scannen.',SELF_CATCH:'Du kannst dich nicht selbst fangen.',CATCH_ACCESS_DENIED:'Deine Karte ist nicht zum Fangen berechtigt.'})[code]||(code.includes('TIMEOUT')?'Antwort noch offen. Erneut bestätigen prüft denselben Fang.':code);}
 function catchStep(id,state,text){const element=document.querySelector('#'+id);if(element){element.className='catch-step '+state;element.textContent=text;}}
 let localReleaseKey='',localReleaseAcknowledged=new Set();
-function syncLocalCatchGate(){const release=document.querySelector('#localCatchRelease'),button=document.querySelector('#catchStart');if(release&&button)button.disabled=catchBusy||(release.dataset.state!=='active'&&button.dataset.action!=='confirm');}
+function syncLocalCatchGate(){const release=document.querySelector('#localCatchRelease'),button=document.querySelector('#catchStart');if(button)button.disabled=catchBusy||((release?release.dataset.state!=='active':!catcherFieldActive)&&button.dataset.action!=='confirm');}
 function renderLocalCatchRelease(event,player){
- const release=document.querySelector('#localCatchRelease');if(!release)return;
+ catcherFieldActive=event?.active===true&&player?.status==='ACTIVE'&&player?.catchAccess===true;
+ const release=document.querySelector('#localCatchRelease');if(!release){syncLocalCatchGate();return;}
  const title=document.querySelector('#localCatchReleaseTitle'),hint=document.querySelector('#localCatchReleaseHint'),overlay=document.querySelector('#localReleaseOverlay');
  const active=event?.active===true&&player?.status==='ACTIVE'&&player?.catchAccess===true;
  const state=active?'active':event?.active===false||player?.catchAccess===false?'inactive':'unknown';release.dataset.state=state;
@@ -980,7 +981,7 @@ window.addEventListener('nodiv-catch',async e=>{
  const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),result=document.querySelector('#catchResult');if(!hint||!start)return;
  if(e.detail?.action==='scan'){
   // An unresolved confirmation must retain its receipt ID instead of starting a new Catch.
-  if(catchOrder||document.querySelector('#localCatchRelease')&&document.querySelector('#localCatchRelease').dataset.state!=='active')return;
+  if(catchOrder||(document.querySelector('#localCatchRelease')?document.querySelector('#localCatchRelease').dataset.state!=='active':!catcherFieldActive))return;
   if(typeof NDEFReader==='undefined'){hint.textContent='WEB NFC NICHT VERFÜGBAR // Android + Chrome erforderlich.';return;}
   result.hidden=true;catchBusy=true;start.disabled=true;catchPrimary('scan','KARTE ANS HANDY HALTEN');hint.textContent='Pioneer-Karte jetzt scannen.';
   catchStep('catchTargetStep','running','1 · Karte jetzt ans Handy halten');catchStep('catchCommitStep','required','2 · Fang bestätigen');

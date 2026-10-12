@@ -33,6 +33,8 @@ function ui({operation='INSTALL',empty=false,identitySource=fs.readFileSync('app
   }
   return {ok:true,action:true,operation,status:p.action.endsWith('order')?'NODE_OPERATION_ORDER':'CORE_SCANNED',installation:'order',node:{id:nodeId,code:'0427',slot:'PRIMARY'},loadout:assigned.map(c=>({...c,scanned:scanned.includes(c.id)})),count:scanned.length,canConfirm:scanned.length===3,totalEnergy:702,nodeState:'STABLE',instruction:'Nur zugewiesene Cores scannen.'};
  };
+ // The shared interaction fixture represents an already authorized active field.
+ ctx.renderLocalCatchRelease({active:true},{status:'ACTIVE',catchAccess:true});
  return {elements,listeners,ctx,requests,async queue(){await listeners['nodiv-fop-operations']()},async order(){await listeners['nodiv-fop-operations']();elements['#fopOperationSelect'].value=operation+':'+nodeId;await listeners['nodiv-fop-operation-select']();await listeners['nodiv-fop-install-order']()},async scan(uid){await listeners['nodiv-fop-install-scan']();await ctx.reader.onreading({serialNumber:uid})}};
 }
 test('FOP installation still shows IDs/energy, unordered progress, foreign rejection and 3/3 gate',async()=>{
@@ -685,4 +687,12 @@ for(const confirmed of [true,false])test('Founder exception-close confirmation '
 });
 test('Founder exception retry is never offered for authentication or foreign-event errors',async()=>{
  const f=ui();f.elements['#shutdownFieldEvent'].dataset.eventId='EVT-1';let prompted=false;f.ctx.window.confirm=()=>{prompted=true;return true};f.ctx.refreshFounderEventStatus=async()=>{};f.ctx.showFounderResult=()=>{};f.ctx.apiRequest=async p=>{f.requests.push(p);return {ok:false,status:'EVENT_MISMATCH',blockers:['wrong event']}};await f.listeners['nodiv-founder-event-shutdown']();assert.equal(prompted,false);assert.equal(f.requests.length,1);
+});
+
+test('Unbound without Local status card cannot scan before release or on status failure; receipt check remains available',async()=>{
+ const f=ui(),e=f.elements;delete e['#localCatchRelease'];delete e['#localReleaseOverlay'];let active=false,fail=false;
+ f.ctx.apiRequest=async p=>{f.requests.push(p);if(fail)throw Error('OFFLINE');return {ok:true,session:true,player:{identity:'U001',role:'UNBOUND',status:'ACTIVE',catchAccess:true,coreCapacity:2},cores:[],securedEnergy:0,event:{active}}};
+ await f.listeners['nodiv-catch-live']();assert.equal(e['#catchStart'].disabled,true);const before=f.requests.length;await f.listeners['nodiv-catch']({detail:{action:'scan'}});assert.equal(f.requests.length,before);assert.equal(f.ctx.reader,undefined);
+ active=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#catchStart'].disabled,false);fail=true;await f.listeners['nodiv-catch-live']();assert.equal(e['#catchStart'].disabled,true);
+ e['#catchStart'].dataset.action='confirm';f.ctx.renderLocalCatchRelease(null,null);assert.equal(e['#catchStart'].disabled,false);
 });

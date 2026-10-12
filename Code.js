@@ -5665,6 +5665,9 @@ function extractCoreTransfer(e) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
+    const session=resolvePlayerSession(e.parameter.token||'');
+    if(!session.ok)return session.response;
+    if(session.player.role!=='FOP')throw Error('FOP_SESSION_REQUIRED');
 
     const participantUid = normalizeUid(e.parameter.participantUid || '');
     const fopUid = normalizeUid(e.parameter.fopUid || '');
@@ -5683,6 +5686,7 @@ function extractCoreTransfer(e) {
     if (participant.status !== 'ACTIVE') throw new Error(participant.identity + ' ist nicht ACTIVE.');
     if (fop.status !== 'ACTIVE') throw new Error(fop.identity + ' ist nicht ACTIVE.');
     if (fop.role !== 'FOP') throw new Error(fop.identity + ' ist kein FOP.');
+    if(fop.identity!==session.player.identity||fop.cardId!==session.player.cardId)throw Error('SESSION_FOP_MISMATCH');
     if (participant.role !== 'LOCAL' && participant.role !== 'UNBOUND') {
       throw new Error('Extraction ist nur für LOCAL oder UNBOUND zulässig.');
     }
@@ -5700,25 +5704,26 @@ function extractCoreTransfer(e) {
     let state = readCoreState(coreId);
 
     if (state.uid !== coreUid) throw new Error('N-Core UID stimmt nicht mit dem Register überein.');
-    if (state.ownerType !== participant.role || state.ownerId !== participantId) {
+    const legacyCaught=state.ownerType===participant.role&&state.status==='CAUGHT';
+    const currentCaught=state.ownerType==='PIONEER'&&state.status==='FIELD';
+    if (![participant.role,'PIONEER'].includes(state.ownerType) || state.ownerId !== participantId) {
       throw new Error(coreId + ' gehört nicht zu ' + participantId + ' // tatsächlich ' +
         (state.ownerType || '—') + ' // ' + (state.ownerId || '—'));
     }
-    if (state.status !== 'CAUGHT') {
+    if (!legacyCaught&&!currentCaught) {
       throw new Error(coreId + ' besitzt keinen zulässigen CATCH Status // ' + (state.status || '—'));
     }
 
+    const requests=[];
     let scoreableEnergy = Number(state.actualEnergy);
     if (state.actualEnergy === '' || !isFinite(scoreableEnergy)) {
       scoreableEnergy = Number(state.visibleEnergy || 0) + Number(state.hiddenEnergy || 0);
-      getRegisterSheet().getRange(state.row, CORE_COL.ACTUAL_ENERGY).setValue(scoreableEnergy);
-      SpreadsheetApp.flush();
-      state = readCoreState(coreId);
+      requests.push(sheetCellsRequest(getRegisterSheet(),state.row,CORE_COL.ACTUAL_ENERGY,[[scoreableEnergy]]));
     }
 
     const result = transferCoreOwnership({
       coreId: coreId,
-      expectedFromType: participant.role,
+      expectedFromType: state.ownerType,
       expectedFromId: participantId,
       toType: 'FOP',
       toId: fopId,
@@ -5726,11 +5731,13 @@ function extractCoreTransfer(e) {
       actorId: participantId,
       actorRole: participant.role,
       newStatus: 'EXTRACTED',
-      details: 'EXTRACTION // ' + participantId + ' -> ' + fopId + ' // scoreable ' + scoreableEnergy + ' E'
+      details: 'EXTRACTION // ' + participantId + ' -> ' + fopId + ' // scoreable ' + scoreableEnergy + ' E',
+      batchRequests: requests
     });
 
+    Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     return {
-      ok: true,
+      ok: true, authenticated:true,session:true,action:true,
       extracted: true,
       participant: participantId,
       participantRole: participant.role,
@@ -5739,7 +5746,7 @@ function extractCoreTransfer(e) {
       scoreableEnergy: scoreableEnergy,
       transactionId: result.transactionId,
       ownership: result.to,
-      state: result.core
+      state: readCoreState(coreId)
     };
   } finally {
     try { lock.releaseLock(); } catch (error) {}
