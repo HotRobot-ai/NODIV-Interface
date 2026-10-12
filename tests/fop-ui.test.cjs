@@ -9,13 +9,14 @@ function prepareIdentitySource(source){
 function ui({operation='INSTALL',empty=false,identitySource=fs.readFileSync('app/js/identity.js','utf8')}={}){
  class Element{
   constructor(){this.textContent='';this.children=[];this.hidden=false;this.disabled=false;this.dataset={};this.value=''}
+  querySelector(selector){this.parts??={};return this.parts[selector]??=new Element()}
   addEventListener(name,fn){this.listeners??={};this.listeners[name]=fn}
   querySelectorAll(selector){return this.children.flatMap(child=>[child,...child.children]).filter(child=>selector==='input'&&child.type==='checkbox')}
   replaceChildren(){this.children=[]}
   appendChild(child){this.children.push(child)}
  }
- const elements={};for(const id of ['catcherSlotCount','localEventStatus','catcherCatchCount','fopNextTitle','fopNextDetail','fopQueueHint','catcherPersonalSlots','catcherSecuredEnergy','evacuationFinal','evacuationFinalHint','evacuationFinalCore','evacuationFinalScan','evacuationFinalConfirm','evacuationPanel','fopFounderDirective','evacuationStatus','evacuationDetails','evacuationStart','evacuationTeam','evacuationRefresh','startPreEvacuation','preEvacuationState','preEvacuationHint','uploadTerminalState','hqApproachHint','secureApproach','secureApproachConfirm','pioneerFeed','pioneerReSupply','resupplyNode','resupplyGuide','resupplyEnergy','resupplyCode','resupplyProgress','resupplyAccept','resupplyAuthorize','resupplyScan','resupplyConfirm','resupplyResult','pioneerUpload','uploadChoices','uploadBay','uploadHint','uploadAuthorize','uploadConfirm','uploadResult','pioneerInventory','pioneerCarriedEnergy','hqCarriedEnergy','pioneerSecuredEnergy','fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness','exchangeClose','exchangeSizeLabel','exchangeRule','exchangeSlots','pioneerExchange','exchangeNode','exchangeSize','exchangeAuthorize','exchangeCode','exchangeScan','exchangeCancel','exchangeConfirm','exchangeProgress','exchangeHint','pioneerScan','pioneerRestoreBoard','pioneerMissionCount','pioneerRestore','restoreNode','restoreLoadout','restoreInCard','restoreOutCard','restoreInCore','restoreInEnergy','restoreOutCore','restoreOutEnergy','restoreCurrentEnergy','restoreProjectedEnergy','restoreStateBadge','restoreStepHqDetail','restoreStepNodeDetail','restoreStepInTitle','restoreStepInDetail','restoreStepOutTitle','restoreStepOutDetail','restoreNowTitle','restoreProjection','restoreCode','restoreProgress','restoreHint','restoreAuthorize','restoreScan','restoreConfirm','restorePioneerSelect','founderRestoreHint','assignRestore','catchPanel','catchCatcherStep','catchTargetStep','catchCommitStep','catchHint','catchStart','catchConfirm','catchResult','catchInventory'])elements['#'+id]=new Element();
- for(const selector of ['.pioneer-priority','.pioneer-timer','.pioneer-priority h3','.pioneer-priority p','.pioneer-state b'])elements[selector]=new Element();
+ const elements={};for(const id of ['pioneerStatusStrip','pioneerProtectionStatus','pioneerProtectionStatusLabel','pioneerProtectionOverlay','pioneerProtectionKind','pioneerProtectionTitle','pioneerProtectionTimer','pioneerProtectionHint','pioneerEventStatus','hqUploadAvailability','hqUploadAvailabilityValue','hqUploadAvailabilityDetail','hqUploadNext','catcherSlotCount','localEventStatus','catcherCatchCount','fopNextTitle','fopNextDetail','fopQueueHint','catcherPersonalSlots','catcherSecuredEnergy','evacuationFinal','evacuationFinalHint','evacuationFinalCore','evacuationFinalScan','evacuationFinalConfirm','evacuationPanel','fopFounderDirective','evacuationStatus','evacuationDetails','evacuationStart','evacuationTeam','evacuationRefresh','startPreEvacuation','preEvacuationState','preEvacuationHint','uploadTerminalState','hqApproachHint','secureApproach','secureApproachConfirm','pioneerFeed','pioneerReSupply','resupplyNode','resupplyGuide','resupplyEnergy','resupplyCode','resupplyProgress','resupplyAccept','resupplyAuthorize','resupplyScan','resupplyConfirm','resupplyResult','pioneerUpload','uploadChoices','uploadBay','uploadHint','uploadAuthorize','uploadConfirm','uploadResult','pioneerInventory','pioneerCarriedEnergy','hqCarriedEnergy','pioneerSecuredEnergy','fopInstallProgress','fopInstallCores','fopInstallScan','fopInstallConfirm','fopProgressBar','fopDeploymentNode','fopLoadoutEnergy','fopLoadoutState','fopOperationStatus','fopInstallControls','fopPrimaryPanel','fopScanProgress','fopInstallActions','fopInstallCode','fopDeploymentComplete','fopInstallCancel','fopInstallOrder','fopOperationSelect','fopQueueRefresh','fopDeploymentCard','fopOperationLabel','fopDeploymentLabel','fopLoadoutLabel','fopCodeLabel','fopCodeValue','fopInstallHint','shutdownFieldEvent','eventState','eventHint','eventNodes','initializeEvent','activateEvent','checkEventReadiness','exchangeClose','exchangeSizeLabel','exchangeRule','exchangeSlots','pioneerExchange','exchangeNode','exchangeSize','exchangeAuthorize','exchangeCode','exchangeScan','exchangeCancel','exchangeConfirm','exchangeProgress','exchangeHint','pioneerScan','pioneerRestoreBoard','pioneerMissionCount','pioneerRestore','restoreNode','restoreLoadout','restoreInCard','restoreOutCard','restoreInCore','restoreInEnergy','restoreOutCore','restoreOutEnergy','restoreCurrentEnergy','restoreProjectedEnergy','restoreStateBadge','restoreStepHqDetail','restoreStepNodeDetail','restoreStepInTitle','restoreStepInDetail','restoreStepOutTitle','restoreStepOutDetail','restoreNowTitle','restoreProjection','restoreCode','restoreProgress','restoreHint','restoreAuthorize','restoreScan','restoreConfirm','restorePioneerSelect','founderRestoreHint','assignRestore','catchPanel','catchCatcherStep','catchTargetStep','catchCommitStep','catchHint','catchStart','catchConfirm','catchResult','catchInventory'])elements['#'+id]=new Element();
+ for(const selector of ['#pioneerProtectionStatus .pioneer-timer','.pioneer-priority','.pioneer-timer','.pioneer-priority h3','.pioneer-priority p','.pioneer-state b'])elements[selector]=new Element();
  const listeners={},document={querySelector:id=>elements[id]||null,createElement:()=>new Element(),addEventListener(){}},requests=[];
  const ctx={document,console,AbortController,setTimeout,clearTimeout,setInterval:()=>0,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail}},URLSearchParams,emitNodiv(){},window:{addEventListener:(name,fn)=>listeners[name]=fn,dispatchEvent(){}}};
  ctx.window.NDEFReader=ctx.NDEFReader=class{async scan(){ctx.reader=this}};
@@ -171,10 +172,12 @@ test('RESTORE #2 successful confirm refreshes live personal capacity and removes
  const f=ui(),events=[];f.ctx.window.dispatchEvent=e=>events.push(e.type);const mission={phase:2,restore:'RST2-1',status:'RESTORE_RESUMED',nodeId:'NODE-002',inCore:{id:'NC-009',energy:280},outCore:{id:'NC-004',energy:100},totalEnergy:420,nodeState:'CRITICAL',projectedEnergy:600,projectedState:'STABLE',inCount:1,outCount:1,authorized:true,accessCode:'5678',canConfirm:true};f.ctx.renderPioneerRestore(mission,true);f.ctx.apiRequest=async()=>({ok:true,action:true,status:'RESTORE_2_COMPLETE',phase:2,capacity:3});await f.listeners['nodiv-pioneer-restore']({detail:{action:'confirm'}});assert.ok(events.includes('nodiv-pioneer-live'));assert.match(f.elements['#restoreProgress'].textContent,/CAPACITY 3\/3/);assert.equal(f.elements['#restoreConfirm'].hidden,true);assert.equal(f.elements['#pioneerScan'].disabled,false);
 });
 
-test('Pioneer Ghost countdown uses authoritative playerstate/server time, ticks prominently and expires without client mutation',async()=>{
+test('Pioneer Ghost countdown uses authoritative time, requires acknowledgment and expires without a request',async()=>{
  const f=ui(),e=f.elements,now=Date.now();let clock=now;const RealDate=Date;f.ctx.Date=class extends RealDate{static now(){return clock;}};
- f.ctx.apiRequest=async()=>({ok:true,session:true,serverNow:now+60000,player:{coreCapacity:2,ghostUntil:new Date(now+360000).toISOString(),status:'GHOST'},cores:[],carriedEnergy:0});await f.listeners['nodiv-pioneer-live']();assert.equal(e['.pioneer-timer'].hidden,false);assert.equal(e['.pioneer-timer'].textContent,'05:00');assert.equal(e['.pioneer-priority h3'].textContent,'GHOST ACTIVE');assert.equal(e['.pioneer-state b'].textContent,'GHOST');
- clock+=1000;f.ctx.updatePioneerGhostClock();assert.equal(e['.pioneer-timer'].textContent,'04:59');clock+=300000;f.ctx.updatePioneerGhostClock();assert.equal(e['.pioneer-timer'].hidden,true);assert.equal(e['.pioneer-state b'].textContent,'ACTIVE');assert.equal(f.requests.length,0);
+ f.ctx.apiRequest=async()=>({ok:true,session:true,serverNow:now+60000,player:{coreCapacity:2,ghostUntil:new Date(now+360000).toISOString(),status:'GHOST'},cores:[],carriedEnergy:0});
+ await f.listeners['nodiv-pioneer-live']();assert.equal(e['#pioneerProtectionOverlay'].hidden,false);assert.equal(e['#pioneerProtectionTimer'].textContent,'05:00');assert.equal(e['#pioneerProtectionStatus'].hidden,true);
+ f.listeners['nodiv-pioneer-protection-ack']();assert.equal(e['#pioneerProtectionOverlay'].hidden,true);assert.equal(e['#pioneerProtectionStatus'].hidden,false);assert.equal(e['#pioneerProtectionStatusLabel'].textContent,'GHOST');
+ clock+=1000;f.ctx.updatePioneerGhostClock();assert.equal(e['#pioneerProtectionStatus .pioneer-timer'].textContent,'04:59');clock+=300000;f.ctx.updatePioneerGhostClock();assert.equal(e['#pioneerProtectionStatus'].hidden,true);assert.equal(e['#pioneerProtectionOverlay'].hidden,true);assert.equal(f.requests.length,0);
 });
 
 test('Normal HQ Upload displays server choices by energy, authorizes selection and refreshes inventory/SECURED after success',async()=>{
@@ -262,17 +265,17 @@ test('No-active Restore response never erases active Re-Supply board; absent Res
 
 test('Secure Approach UI renders private server GREEN/YELLOW/RED states and requires explicit 150 E confirmation',async()=>{
  const f=ui(),e=f.elements,requests=[];e['#secureApproachConfirm'].hidden=true;
- f.ctx.apiRequest=async p=>{requests.push(p);if(p.action==='secureapproach')return {ok:true,session:true,action:true,state:'YELLOW',ownReservation:true,serverNow:1000000,expiresAt:1300000,securedEnergy:0};return {ok:true,session:true,state:'GREEN',serverNow:1000000};};
- await f.listeners['nodiv-upload-terminal-refresh']();assert.match(e['#uploadTerminalState'].textContent,/GRÜN.*FREI/);assert.equal(e['#secureApproach'].disabled,false);
+ f.ctx.apiRequest=async p=>{requests.push(p);if(p.action==='secureapproach')return {ok:true,session:true,action:true,state:'YELLOW',available:0,total:1,ownReservation:true,serverNow:1000000,expiresAt:1300000,securedEnergy:0};return {ok:true,session:true,state:'GREEN',available:1,total:1,serverNow:1000000};};
+ await f.listeners['nodiv-upload-terminal-refresh']();assert.equal(e['#hqUploadAvailability'].dataset.state,'GREEN');assert.equal(e['#hqUploadAvailabilityValue'].textContent,'1/1 FREI');assert.equal(e['#secureApproach'].disabled,false);
  await f.listeners['nodiv-hq-approach']({detail:{mode:'secure'}});assert.equal(requests.filter(r=>r.action==='secureapproach').length,0);assert.equal(e['#secureApproachConfirm'].hidden,false);assert.match(e['#hqApproachHint'].textContent,/150 E.*Keine Erstattung/);
- await f.listeners['nodiv-secure-approach-confirm']();assert.equal(requests.filter(r=>r.action==='secureapproach').length,1);assert.ok(requests.at(-1).request.length>=8);assert.equal('amount' in requests.at(-1),false);assert.equal('price' in requests.at(-1),false);assert.match(e['#uploadTerminalState'].textContent,/GELB.*05:00.*DEIN ZUGANG/);assert.equal(e['#secureApproach'].disabled,true);assert.equal(e['#secureApproachConfirm'].hidden,true);
- f.ctx.renderUploadTerminal({state:'RED',serverNow:1000000,expiresAt:1060000,ownReservation:false});assert.match(e['#uploadTerminalState'].textContent,/ROT.*UPLOAD IN PROGRESS/);assert.doesNotMatch(e['#uploadTerminalState'].textContent,/DEIN ZUGANG/);
- f.ctx.renderUploadTerminal({state:'GREEN',serverNow:1060000});assert.equal(e['#secureApproach'].disabled,false);
+ await f.listeners['nodiv-secure-approach-confirm']();assert.equal(requests.filter(r=>r.action==='secureapproach').length,1);assert.ok(requests.at(-1).request.length>=8);assert.equal('amount' in requests.at(-1),false);assert.equal('price' in requests.at(-1),false);assert.equal(e['#uploadTerminalState'].dataset.state,'YELLOW');assert.equal(e['#uploadTerminalState'].querySelector('strong').textContent,'DEIN ZUGANG');assert.equal(e['#uploadTerminalState'].querySelector('span').textContent,'05:00 VERBLEIBEND');assert.equal(e['#secureApproach'].disabled,true);assert.equal(e['#secureApproachConfirm'].hidden,true);
+ f.ctx.renderUploadTerminal({state:'RED',available:0,total:1,serverNow:1000000,expiresAt:1060000,ownReservation:false});assert.equal(e['#hqUploadAvailability'].dataset.state,'RED');assert.equal(e['#hqUploadAvailabilityDetail'].textContent,'AKTUELL BELEGT');assert.equal(e['#uploadTerminalState'].hidden,true);
+ f.ctx.renderUploadTerminal({state:'GREEN',available:1,total:1,serverNow:1060000});assert.equal(e['#secureApproach'].disabled,false);
 });
 test('Secure Approach UI retries one request after timeout, survives reload storage and keeps normal approach free',async()=>{
  const storage=new Map([['nodiv-secure-approach-request','request-after-reload']]),f=ui(),e=f.elements,requests=[];f.ctx.window.sessionStorage={getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};e['#secureApproachConfirm'].hidden=true;let attempts=0;
- f.ctx.apiRequest=async p=>{requests.push(p);if(p.action!=='secureapproach')return {ok:true,session:true,state:'GREEN',serverNow:1000000};if(++attempts===1)throw Error('NODIV CORE TIMEOUT');return {ok:true,session:true,action:true,state:'YELLOW',serverNow:1000000,expiresAt:1300000,ownReservation:true,replayed:true};};
- await f.listeners['nodiv-hq-approach']({detail:{mode:'normal'}});assert.equal(requests.some(r=>r.action==='secureapproach'),false);assert.match(e['#hqApproachHint'].textContent,/Kostenlos/);
+ f.ctx.apiRequest=async p=>{requests.push(p);if(p.action!=='secureapproach')return {ok:true,session:true,state:'GREEN',available:1,total:1,serverNow:1000000};if(++attempts===1)throw Error('NODIV CORE TIMEOUT');return {ok:true,session:true,action:true,state:'YELLOW',serverNow:1000000,expiresAt:1300000,ownReservation:true,replayed:true};};
+ await f.listeners['nodiv-hq-approach']({detail:{mode:'normal'}});assert.equal(requests.some(r=>r.action==='secureapproach'),false);assert.match(e['#hqApproachHint'].textContent,/KOSTENLOS/);
  await f.listeners['nodiv-hq-approach']({detail:{mode:'secure'}});await f.listeners['nodiv-secure-approach-confirm']();assert.equal(e['#secureApproachConfirm'].hidden,false);assert.match(e['#hqApproachHint'].textContent,/TIMEOUT/);await f.listeners['nodiv-secure-approach-confirm']();const calls=requests.filter(r=>r.action==='secureapproach');assert.equal(calls.length,2);assert.equal(calls[0].request,'request-after-reload');assert.equal(calls[1].request,calls[0].request);assert.equal(storage.size,0);
 });
 test('RED Upload recovery renders existing authorized selection ready to confirm without reauthorizing',()=>{
@@ -398,7 +401,7 @@ test('Event upload points are founder-configured and multi-point aware',()=>{
  assert.match(router,/id="eventUploadPoints"/);
  assert.equal(router.includes('value="1">1 Uploadpunkt'),false);
  assert.match(identity,/params\.uploadPoints/);
- assert.match(identity,/available\+'\/\'+total\+' FREI'/);
+ assert.match(identity,/available\+'\/'\+total\+' FREI'/);
 });
 
 test('Pioneer HQ upload choices are large and non-duplicated',()=>{
@@ -418,12 +421,12 @@ test('Pioneer HQ upload panel prioritizes balance price and assigned bay',()=>{
  const identity=fs.readFileSync('app/js/identity.js','utf8');
  const backend=fs.readFileSync('Code.js','utf8');
  assert.match(router,/ENERGIEKONTO/);
- assert.match(router,/BAY RESERVIEREN \/\/ 150 E/);
+ assert.match(router,/SECURE APPROACH/);assert.match(router,/>150 E<\/strong>/);
  assert.match(router,/id="uploadTerminalState" class="hq-bay-state"/);
  assert.equal(router.includes('id="hqCarriedEnergy"'),false);
  assert.match(identity,/DEIN ZUGANG/);
  assert.match(identity,/result\.bay\?\.id/);
- assert.match(backend,/bay:\{id:bay\.id\}/);
+ assert.match(backend,/bay:\{id:bay\.id,uid:bay\.uid\}/);
 });
 
 test('Pioneer lower interface keeps test EVAC separate and HQ wording player-facing',()=>{
@@ -431,10 +434,9 @@ test('Pioneer lower interface keeps test EVAC separate and HQ wording player-fac
  assert.match(router,/id="pioneerEvacTestToggle"/);
  assert.match(router,/class="role-action secondary nodiv-test-button"/);
  assert.match(router,/HQ \/\/ UPLOAD/);
- assert.match(router,/GESICHERTE ENERGIE/);
- assert.match(router,/GETRAGENE ENERGIE/);
+ assert.match(router,/id="pioneerSecuredEnergy"/);assert.match(router,/id="pioneerCarriedEnergy"/);
  assert.equal(router.includes('>HQ ACCESS<'),false);
- assert.equal(router.includes('>LOCK INTERFACE<')&&router.includes("role==='PIONEER'"),false);
+ assert.match(router,/role==='PIONEER'\|\|role==='LOCAL'\?'INTERFACE SPERREN'/);
 });
 
 test('Pioneer protection screen precedes the in-interface protection timer',()=>{
@@ -458,14 +460,14 @@ test('Pioneer field state exposes event progress and discovery tracking',()=>{
  assert.match(backend,/discoveredNodes:discoveredNodes\.length/);
  assert.match(identity,/EVENT AKTIV \/\/ NODES /);
  assert.match(identity,/data-core-id=/);
- assert.match(identity,/data\.feedback='error'/);
+ assert.match(identity,/dataset\.feedback='error'/);
 });
 
 test('Pioneer shell keeps field mechanics with shared NODIV header and top Ghost status',()=>{
  const router=fs.readFileSync('app/js/router.js','utf8');
  assert.equal(router.includes('class="pioneer-energy-core"'),false);
  assert.match(router,/id="pioneerStatusStrip"/);
- assert.match(router,/id="pioneerGhostStatus"/);
+ assert.match(router,/id="pioneerProtectionStatus"/);
  assert.match(router,/id="pioneerCapacity">—\/— CORES/);
  assert.match(router,/id="pioneerScan" type="button">NODIV OBJEKT SCANNEN<\/button>/);
  assert.equal(router.includes('FIELD STATUS NOMINAL'),false);
@@ -476,7 +478,7 @@ test('Pioneer shell keeps field mechanics with shared NODIV header and top Ghost
 });
 
 test('FOP shell has no visible operations-channel/status bar and starts with founder directive plus hidden EVAC',()=>{
- const router=fs.readFileSync('app/js/router.js','utf8');
+ const source=fs.readFileSync('app/js/router.js','utf8'),router=source.split("if(role==='FOP') body=")[1].split("if(id.catchAccess")[0];
  assert.equal(router.includes("accent:'OPERATIONS CHANNEL'"),false);
  assert.equal(router.includes('class="fop-statusbar"'),false);
  assert.equal(router.includes('>JETZT TUN<'),false);
@@ -486,7 +488,7 @@ test('FOP shell has no visible operations-channel/status bar and starts with fou
  assert.match(router,/id="fopNextTitle">Auftrag auswählen<\/strong>/);
  assert.match(router,/id="fopFounderDirective"/);
  assert.match(router,/FOUNDER \/\/ ANWEISUNG<\/small><strong>KEINE AKTUELLE ANWEISUNG<\/strong><\/section>/);
- assert.match(router,/id="evacuationPanel" class="event-control"\$\{role==='FOP'\?' hidden':'\'\'\}/);
+ assert.match(source,/role==='FOP'\|\|role==='PIONEER'\?' hidden'/);
 });
 
 test('FOP next step follows selection and physical confirmation gate without requesting gameplay',async()=>{

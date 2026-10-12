@@ -1187,7 +1187,7 @@ window.addEventListener('nodiv-hq-approach',async e=>{
  await refreshUploadTerminal();
  if(e.detail?.mode==='normal'){confirm.hidden=true;hint.textContent='KOSTENLOS // Keine Reservierung, kein Catch-Schutz. Bei FREI direkt zu einem freien Upload-Koffer gehen.';return;}
  if(e.detail?.mode!=='secure'||pioneerTerminal?.state!=='GREEN')return;
- hint.textContent='150 E werden sofort vom Energiekonto abgezogen. Dafür erhältst du 05:00 Catch-Schutz und einen Uploadpunkt exklusiv.';confirm.hidden=false;confirm.disabled=false;
+ hint.textContent='150 E werden sofort vom Energiekonto abgezogen. Dafür erhältst du 05:00 Catch-Schutz und einen Uploadpunkt exklusiv. Keine Erstattung bei Ablauf ohne Anmeldung.';confirm.hidden=false;confirm.disabled=false;
 });
 window.addEventListener('nodiv-secure-approach-confirm',async()=>{
  if(!sessionToken||secureApproachBusy)return;

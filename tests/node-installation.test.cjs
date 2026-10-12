@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
 const source=fs.readFileSync('Code.js','utf8');
+const eventHeaders=['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','COMPLETED AT','HQ UPLOAD POINTS'];
 function fixture({legacy=false,state='INITIALIZED',count=0}={}){
  let uuid=0,batches=0,failBatch=false;
  const cache=new Map(),properties=new Map();
@@ -22,7 +23,7 @@ function fixture({legacy=false,state='INITIALIZED',count=0}={}){
  const sheets={
   'N-Core Register':new Sheet(1,[[],...cores]),
   'Node Register':new Sheet(2,[[],['NODE-001','nodeuid',legacy?'INSTALLED':'AVAILABLE']]),
-  'Event Register':new Sheet(3,[[],['EVT-1',state,'','','','ROOT',1,legacy?1:0]]),
+  'Event Register':new Sheet(3,[eventHeaders.slice(),['EVT-1',state,'','','','ROOT',1,legacy?1:0]]),
   'Event Node Codes':new Sheet(4,[[],['EVT-1','NODE-001','0123','1111','2222','3333','4444',legacy?'PRIMARY':'',legacy?'':'PRIMARY',legacy?'ACTIVE':'ASSIGNED_FOR_INSTALL','F001']]),
   'Transaction Log':new Sheet(5,[[]]),'Deployment Register':new Sheet(6,[[]]),
   'Access Card Register':new Sheet(7,[[],['CARD-001','F001','FOP','fopuid','ACTIVE','',0,true]]),
@@ -274,7 +275,7 @@ test('recovery then shutdown atomically completes event, preserves history and p
  assert.equal(f.sheets['Transaction Log'].rows.at(-1)[2],'FIELD_EVENT_SHUTDOWN');assert.equal(f.ctx.getFopOperations(f.e).operations.length,0);
  assert.equal(f.ctx.getNodeAccessAuthorization({nodeAccess:true},'NODE-001','AVAILABLE').allowed,false);
  // Real preflight remains mandatory; isolate lifecycle eligibility in this test.
- f.ctx.getEventReadiness=()=>({ok:true,authenticated:true,ready:true});let number=0;f.ctx.generateMechanicalCode=used=>{const code=String(++number).padStart(4,'0');used[code]=true;return code};
+ f.sheets['Upload Terminal Register'].rows.push(['HQ-01','UPLOAD_HQ','D001','ACTIVE'],['HQ-02','UPLOAD_HQ','D002','ACTIVE']);f.ctx.getEventReadiness=()=>({ok:true,authenticated:true,ready:true});let number=0;f.ctx.generateMechanicalCode=used=>{const code=String(++number).padStart(4,'0');used[code]=true;return code};
  for(let n=3;n<=10;n++)f.sheets['Node Register'].rows[n]=['NODE-'+String(n).padStart(3,'0'),'nodeuid'+n,'AVAILABLE'];
  const next=f.ctx.initializeEvent({parameter:{...e.parameter}});assert.equal(next.status,'EVENT_INITIALIZED');assert.notEqual(next.event.eventId,'EVT-1');assert.equal(f.ctx.readCurrentEvent().state,'INITIALIZED');assert.equal(f.sheets['Event Register'].rows[1][1],'COMPLETED');assert.deepEqual(f.sheets['Event Node Codes'].rows[1],beforeCodes);
 });
@@ -533,7 +534,7 @@ test('actual first Normal Exchange marker enables Restore assignment; FOP-reserv
 test('foreign authenticated Pioneer cannot resume Restore; unauthorized assignment/code forging and incomplete confirm fail',()=>{
  const f=restoreFixture();f.assign();assert.throws(()=>f.ctx.assignRestoreOne({parameter:{token:f.restoreE.parameter.token,pioneer:'P003'}}),/FOUNDER_REQUIRED/);assert.throws(()=>f.ctx.normalRestoreOne(f.restoreE,'authorize'),/SESSION_NODE_MISMATCH/);
  f.sheets['Access Card Register'].rows.push(['CARD-004','P004','PIONEER','p004uid','ACTIVE','',1,true]);const token='c'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P004',role:'PIONEER',cardId:'CARD-004'}));const e={parameter:{token,uid:'nodeuid2',node:'NODE-002',restore:f.restoreE.parameter.restore}};
- const before=JSON.stringify([...f.properties]);assert.equal(f.ctx.getGameplayRoute(e).decision.reason,'RESTORE_OPERATION_RESERVED');assert.throws(()=>f.ctx.normalRestoreOne(e,'authorize'),/SESSION_NODE_MISMATCH/);assert.equal(JSON.stringify([...f.properties]),before);
+ const before=JSON.stringify([...f.properties]);assert.equal(f.ctx.getGameplayRoute(e).decision.reason,'RESTORE_OPERATION_RESERVED');assert.throws(()=>f.ctx.normalRestoreOne(e,'authorize'),/SESSION_NODE_MISMATCH/);assert.equal(JSON.stringify([...f.properties].filter(([key])=>!key.startsWith('NODIV_PIONEER_DISCOVERY_'))),before);assert.deepEqual(Array.from(JSON.parse(f.properties.get('NODIV_PIONEER_DISCOVERY_EVT-1_P004'))),['NODE-002']);
  f.restoreAuthorize();assert.throws(f.restoreFinish,/SCANS_INCOMPLETE/);f.restoreScan(9,'IN');assert.throws(f.restoreFinish,/SCANS_INCOMPLETE/);assert.equal(f.ctx.findIdentityById('P003').coreCapacity,1);
 });
 
@@ -794,7 +795,7 @@ test('HQ Upload validates active HQ Bay and Pioneer authentication at preview an
  for(const kind of ['unknown','inactive','wrong-type','non-pioneer','lost-session']){
   const f=uploadFixture();f.uploadPreview();f.uploadAuthorize(['NC-006']);
   if(kind==='unknown')f.sheets['Upload Terminal Register'].rows[1][2]='different';if(kind==='inactive')f.sheets['Upload Terminal Register'].rows[1][3]='INACTIVE';if(kind==='wrong-type')f.sheets['Upload Terminal Register'].rows[1][1]='UPLOAD_FOP';if(kind==='non-pioneer')f.uploadE.parameter.token='a'.repeat(72);if(kind==='lost-session')f.cache.delete('NODIV_SESSION_'+f.uploadE.parameter.token);
-  const before=JSON.stringify(f.sheets);if(kind==='lost-session'){assert.equal(f.uploadConfirm().session,false);assert.equal(f.uploadPreview().session,false);}else{assert.throws(f.uploadConfirm,/UPLOAD_BAY_INVALID|ROLE_DENIED/);assert.throws(f.uploadPreview,/UPLOAD_BAY_INVALID|ROLE_DENIED/);}assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),1);
+  const before=JSON.stringify(f.sheets);if(kind==='lost-session'){assert.equal(f.uploadConfirm().session,false);assert.equal(f.uploadPreview().session,false);}else{assert.throws(f.uploadConfirm,/UPLOAD_BAY_INVALID|UPLOAD_POINT_INVALID|UPLOAD_POINT_CONFIGURATION_INVALID|UPLOAD_POINT_BUSY|ROLE_DENIED/);assert.throws(f.uploadPreview,/UPLOAD_BAY_INVALID|UPLOAD_POINT_INVALID|UPLOAD_POINT_CONFIGURATION_INVALID|UPLOAD_POINT_BUSY|ROLE_DENIED/);}assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.batches(),1);
  }
 });
 test('HQ Upload revalidates status, ownership, UID, actual energy, capacity-independent reservations and expiry',()=>{
@@ -947,7 +948,7 @@ test('Automatic Re-Supply state without a suitable Node or HQ Core creates no pa
 
 
 function eventLifecycleFixture(provisioned=15){
- const f=fixture();f.sheets['Event Register'].rows=[[]];f.sheets['Event Node Codes'].rows=[[]];
+ const f=fixture();f.sheets['Upload Terminal Register'].rows.push(['HQ-01','UPLOAD_HQ','hquid1','ACTIVE'],['HQ-02','UPLOAD_HQ','hquid2','ACTIVE']);f.sheets['Event Register'].rows=[eventHeaders.slice()];f.sheets['Event Node Codes'].rows=[[]];
  f.sheets['Node Register'].rows=[[],...Array.from({length:provisioned},(_,i)=>['NODE-'+String(i+1).padStart(3,'0'),'nodeuid'+(i+1),'AVAILABLE'])];
  for(let n=1;n<=40;n++)f.sheets['N-Core Register'].rows[n][2]='uid'+n;
  f.sheets['Access Card Register'].rows.push(['ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true]);const token='d'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'ROOT'}));
@@ -982,7 +983,7 @@ test('10+2 expansion is idempotent, stays inactive until FOP 3/3 confirm and blo
 test('10+2 expansion requires Founder, current FIELD_ACTIVE Event, provisioned empty reserve and no other open membership',()=>{
  const f=eventLifecycleFixture();f.initialize();assert.throws(()=>f.expand('NODE-011'),/NOT_FIELD_ACTIVE/);for(let n=1;n<=10;n++)f.install('NODE-'+String(n).padStart(3,'0'));f.ctx.activateEvent(f.founder);
  assert.equal(f.ctx.expandEventNode({parameter:{token:f.e.parameter.token,event:f.ctx.readCurrentEvent().eventId,node:'NODE-011'}}).status,'ROLE_DENIED');assert.throws(()=>f.ctx.expandEventNode({parameter:{...f.founder.parameter,event:'OTHER',node:'NODE-011'}}),/EVENT_MISMATCH/);assert.throws(()=>f.expand('NODE-099'),/NOT_REGISTERED/);
- const eventId=f.ctx.readCurrentEvent().eventId;f.sheets['Event Register'].rows.unshift([]);f.sheets['Event Register'].rows[1]=['OTHER','INITIALIZED'];f.sheets['Event Node Codes'].rows.push(['OTHER','NODE-011']);const before=JSON.stringify(f.sheets);assert.throws(()=>f.expand('NODE-011'),/OTHER_OPEN_EVENT/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().eventId,eventId);
+ const eventId=f.ctx.readCurrentEvent().eventId;f.sheets['Event Register'].rows.splice(1,0,['OTHER','INITIALIZED']);f.sheets['Event Node Codes'].rows.push(['OTHER','NODE-011']);const before=JSON.stringify(f.sheets);assert.throws(()=>f.expand('NODE-011'),/OTHER_OPEN_EVENT/);assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.ctx.readCurrentEvent().eventId,eventId);
 });
 test('10+2 expansion batch failure creates no partial member, counter or log and retry is safe',()=>{
  const f=eventLifecycleFixture();f.start();const batch=f.ctx.Sheets.Spreadsheets.batchUpdate,before=JSON.stringify(f.sheets);f.ctx.Sheets.Spreadsheets.batchUpdate=()=>{throw Error('BATCH_FAILED')};assert.throws(()=>f.expand('NODE-011'),/BATCH_FAILED/);assert.equal(JSON.stringify(f.sheets),before);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;assert.equal(f.expand('NODE-011').plannedNodes,11);assert.equal(f.ctx.exchangeLogRows().filter(row=>row[2]==='EVENT_NODE_EXPANDED').length,1);
@@ -1004,6 +1005,7 @@ test('10+2 expansion retry after lost committed response reuses member and log w
 
 function resetFixture(){
  const f=fixture({state:'COMPLETED'});
+ f.sheets['Upload Terminal Register'].rows.push(['RESET-HQ-01','UPLOAD_HQ','D001','ACTIVE'],['RESET-HQ-02','UPLOAD_HQ','D002','ACTIVE']);
  f.sheets['Event Node Codes'].rows[1]=['EVT-1','NODE-001','0123','1111','2222','3333','4444','','','DEINSTALLED','','historical'];
  f.sheets['Access Card Register'].rows.push(['ROOT','ROOT','FOUNDER','rootuid','ACTIVE','',0,true],['P3','P003','PIONEER','p3uid','ACTIVE','',1,true,true],['L1','L001','LOCAL','aabb1234','ACTIVE','',0],['U1','U001','UNBOUND','aabb5678','ACTIVE','',2]);
  const token='d'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'ROOT',role:'FOUNDER',cardId:'ROOT'}));
@@ -1087,11 +1089,21 @@ test('Secure Approach terminal starts GREEN; state discloses no Identity, card, 
  const f=secureApproachFixture(),before=resetSnapshot(f),r=f.terminal();assert.equal(r.state,'GREEN');assert.equal(resetSnapshot(f),before);assert.equal(r.serverNow,f.now());for(const key of ['identity','cardId','node','position','order','request'])assert.equal(key in r,false);
 });
 test('Secure Approach rejects insufficient SECURED, non-Pioneer, inactive, missing request, invalid Bay and non-FIELD Event before mutation',()=>{
- for(const kind of ['insufficient','role','inactive','request','event','bay','multiple-bays']){
+ for(const kind of ['insufficient','role','inactive','request','event','bay']){
   const f=secureApproachFixture(kind==='insufficient'?149:150);
   if(kind==='role')f.secureE.parameter.token='a'.repeat(72);if(kind==='inactive')f.sheets['Access Card Register'].rows[2][4]='INACTIVE';if(kind==='request')f.secureE.parameter.request='';if(kind==='event')f.sheets['Event Register'].rows[1][1]='INITIALIZED';if(kind==='bay')f.sheets['Upload Terminal Register'].rows[1][3]='INACTIVE';if(kind==='multiple-bays')f.sheets['Upload Terminal Register'].rows.push(['OTHER','UPLOAD_HQ','B098','ACTIVE']);
   const before=resetSnapshot(f);if(kind==='inactive')assert.equal(f.activate().session,false);else assert.throws(f.activate,/INSUFFICIENT_SECURED_ENERGY|PIONEER_REQUIRED|REQUEST_REQUIRED|FIELD_ACTIVE_REQUIRED|CONFIGURATION_INVALID/);assert.equal(resetSnapshot(f),before);assert.equal(f.batches(),0);
  }
+});
+for(const count of [2,3,4])test('Secure Approach reserves distinct configured upload points for two Pioneers at count '+count,()=>{
+ const f=secureApproachFixture();f.sheets['Event Register'].rows[1][11]=count;
+ for(let i=1;i<count;i++)f.sheets['Upload Terminal Register'].rows.push(['HQ-'+i,'UPLOAD_HQ','B'+String(100+i),'ACTIVE']);
+ const other=f.other();f.ctx.bookPlayerEnergy({identity:'P004',role:'PIONEER',type:'CREDIT',amount:150});
+ const first=f.activate(),second=f.ctx.activateSecureApproach(other);
+ assert.equal(first.state,'YELLOW');assert.equal(second.state,'YELLOW');assert.notEqual(first.bay.uid,second.bay.uid);
+ assert.equal(f.ctx.readPlayerEnergyBalance('P003'),0);assert.equal(f.ctx.readPlayerEnergyBalance('P004'),0);
+ const state=f.terminal();assert.equal(state.total,count);assert.equal(state.available,count-2);assert.equal(state.points.filter(point=>point.state==='YELLOW').length,2);
+ const before=resetSnapshot(f);assert.equal(f.activate().replayed,true);assert.equal(resetSnapshot(f),before);
 });
 test('Secure Approach atomically debits exactly 150, reserves YELLOW for exactly 5 minutes and writes Ghost/receipt in the same batch',()=>{
  const f=secureApproachFixture(),start=f.now(),beforeCores=JSON.stringify(f.sheets['N-Core Register'].rows);f.secureE.parameter.amount=-1;f.secureE.parameter.price=0;const r=f.activate();assert.equal(r.state,'YELLOW');assert.equal(r.expiresAt,start+300000);assert.equal(new Date(r.ghostUntil).getTime(),r.expiresAt);assert.equal(new Date(f.ctx.findIdentityById('P003').ghostUntil).getTime(),r.expiresAt);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),0);assert.equal(f.batches(),1);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),beforeCores);
@@ -1101,16 +1113,16 @@ test('Secure Approach longer existing Ghost is never shortened or cleared by tim
  const f=secureApproachFixture(),until=f.now()+3600000;f.sheets['Access Card Register'].rows[2][9]=new Date(until).toISOString();const r=f.activate();assert.equal(new Date(r.ghostUntil).getTime(),until);f.advance(300001);assert.equal(f.terminal().state,'GREEN');assert.equal(new Date(f.ctx.findIdentityById('P003').ghostUntil).getTime(),until);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),0);
 });
 test('Secure Approach YELLOW denies foreign upload and secure activation privately; owner enters RED via real Bay scan',()=>{
- const f=secureApproachFixture(300),other=f.other();f.ctx.bookPlayerEnergy({identity:'P004',role:'PIONEER',type:'CREDIT',amount:150});f.activate();const before=resetSnapshot(f),state=f.ctx.getUploadTerminalState(other);assert.equal(state.state,'YELLOW');assert.equal(state.ownReservation,false);assert.equal(JSON.stringify(state).includes('P003'),false);assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_TERMINAL_BUSY/);assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_TERMINAL_BUSY/);assert.equal(resetSnapshot(f),before);const preview=f.uploadPreview();assert.equal(preview.selectable,true);assert.equal(f.terminal().state,'RED');assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);assert.equal(f.ctx.readPlayerEnergyBalance('P004'),150);
+ const f=secureApproachFixture(300),other=f.other();f.ctx.bookPlayerEnergy({identity:'P004',role:'PIONEER',type:'CREDIT',amount:150});f.activate();const before=resetSnapshot(f),state=f.ctx.getUploadTerminalState(other);assert.equal(state.state,'YELLOW');assert.equal(state.ownReservation,false);assert.equal(JSON.stringify(state).includes('P003'),false);assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_POINTS?_BUSY/);assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_POINTS?_BUSY/);assert.equal(resetSnapshot(f),before);const preview=f.uploadPreview();assert.equal(preview.selectable,true);assert.equal(f.terminal().state,'RED');assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);assert.equal(f.ctx.readPlayerEnergyBalance('P004'),150);
 });
 test('GREEN normal Upload claims RED without debit/Ghost/ownership changes; another Pioneer cannot preview or activate',()=>{
- const f=secureApproachFixture(),other=f.other(),ghost=f.ctx.findIdentityById('P003').ghostUntil,cores=JSON.stringify(f.sheets['N-Core Register'].rows),ledger=JSON.stringify(f.sheets['Player Energy Ledger'].rows);const first=f.uploadPreview();assert.equal(f.terminal().state,'RED');assert.equal(f.ctx.findIdentityById('P003').ghostUntil,ghost);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),cores);assert.equal(JSON.stringify(f.sheets['Player Energy Ledger'].rows),ledger);const before=resetSnapshot(f),second=f.uploadPreview();assert.equal(second.upload,first.upload);assert.equal(second.replayed,true);assert.equal(resetSnapshot(f),before);assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_TERMINAL_BUSY/);assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_TERMINAL_BUSY/);assert.equal(resetSnapshot(f),before);
+ const f=secureApproachFixture(),other=f.other(),ghost=f.ctx.findIdentityById('P003').ghostUntil,cores=JSON.stringify(f.sheets['N-Core Register'].rows),ledger=JSON.stringify(f.sheets['Player Energy Ledger'].rows);const first=f.uploadPreview();assert.equal(f.terminal().state,'RED');assert.equal(f.ctx.findIdentityById('P003').ghostUntil,ghost);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),cores);assert.equal(JSON.stringify(f.sheets['Player Energy Ledger'].rows),ledger);const before=resetSnapshot(f),second=f.uploadPreview();assert.equal(second.upload,first.upload);assert.equal(second.replayed,true);assert.equal(resetSnapshot(f),before);assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_POINTS?_BUSY/);assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_POINTS?_BUSY/);assert.equal(resetSnapshot(f),before);
 });
 test('RED owner authorizes/confirms unchanged Upload; completion frees GREEN and preserves Secure Approach Ghost',()=>{
  const f=secureApproachFixture(),other=f.other(),activation=f.activate();f.uploadPreview();f.uploadAuthorize(['NC-006']);assert.equal(f.terminal().state,'RED');other.parameter.upload=f.uploadE.parameter.upload;other.parameter.cores='["NC-006"]';for(const action of ['authorize','confirm'])assert.throws(()=>f.ctx.normalHqUpload(other,action),/UPLOAD_SESSION_MISMATCH/);const r=f.uploadConfirm();assert.equal(r.status,'UPLOAD_COMPLETE');assert.equal(r.totalEnergy,300);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),300);assert.equal(f.terminal().state,'GREEN');assert.equal(new Date(f.ctx.findIdentityById('P003').ghostUntil).getTime(),activation.expiresAt);assert.equal(f.ctx.readCoreState('NC-006').ownerId,'HQ');const before=resetSnapshot(f);assert.equal(f.uploadConfirm().replayed,true);assert.equal(resetSnapshot(f),before);
 });
 test('RED expiration releases terminal and rejects old order without a permanent blocker',()=>{
- const f=secureApproachFixture(),other=f.other();f.uploadPreview();f.uploadAuthorize(['NC-006']);f.advance(300000);assert.equal(f.terminal().state,'GREEN');assert.throws(f.uploadConfirm,/UPLOAD_EXPIRED/);assert.equal(f.ctx.getHqUploadPreview(other).selectable,true);assert.equal(f.ctx.getUploadTerminalState(other).ownReservation,true);assert.throws(f.uploadPreview,/UPLOAD_TERMINAL_BUSY/);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);
+ const f=secureApproachFixture(),other=f.other();f.uploadPreview();f.uploadAuthorize(['NC-006']);f.advance(300000);assert.equal(f.terminal().state,'GREEN');assert.throws(f.uploadConfirm,/UPLOAD_EXPIRED/);assert.equal(f.ctx.getHqUploadPreview(other).selectable,true);assert.equal(f.ctx.getUploadTerminalState(other).ownReservation,true);assert.throws(f.uploadPreview,/UPLOAD_POINTS?_BUSY/);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);
 });
 test('YELLOW expiry exactly at 5 minutes frees GREEN without refund; original activation retry cannot renew Ghost or debit',()=>{
  const f=secureApproachFixture(300),first=f.activate();f.advance(299999);assert.equal(f.terminal().state,'YELLOW');f.advance(1);assert.equal(f.terminal().state,'GREEN');const before=resetSnapshot(f),retry=f.activate();assert.equal(retry.replayed,true);assert.equal(retry.reservation,first.reservation);assert.equal(retry.expiresAt,first.expiresAt);assert.equal(retry.state,'GREEN');assert.equal(resetSnapshot(f),before);assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);
@@ -1122,7 +1134,7 @@ test('Secure Approach staging/batch failure never partially debits, protects or 
  for(const kind of ['ghost','ledger','receipt','batch']){const f=secureApproachFixture(),before=resetSnapshot(f);if(kind==='ghost')f.ctx.setAccessCardGhostUntilByUid=()=>{throw Error('STAGE_FAILED');};if(kind==='ledger')f.ctx.bookPlayerEnergy=()=>{throw Error('STAGE_FAILED');};if(kind==='receipt')f.ctx.appendTransactionLog=()=>{throw Error('STAGE_FAILED');};if(kind==='batch')f.fail();assert.throws(f.activate,/STAGE_FAILED|BATCH_FAILED/);assert.equal(resetSnapshot(f),before);assert.equal(f.terminal().state,'GREEN');assert.equal(f.ctx.readPlayerEnergyBalance('P003'),150);assert.equal(f.ctx.findIdentityById('P003').ghostUntil,null);}
 });
 test('ScriptLock serialized competing Secure Approach/normal Upload claims allow exactly one winner',()=>{
- for(const mode of ['secure','upload']){const f=secureApproachFixture(),other=f.other();f.ctx.bookPlayerEnergy({identity:'P004',role:'PIONEER',type:'CREDIT',amount:150});let held=false,locks=0;f.ctx.LockService.getScriptLock=()=>({waitLock(){assert.equal(held,false);held=true;locks++;},releaseLock(){held=false;}});const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{assert.equal(held,true);return batch(...args);};if(mode==='secure'){f.activate();assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_TERMINAL_BUSY/);}else{f.uploadPreview();assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_TERMINAL_BUSY/);}assert.equal(f.batches(),1);assert.equal(locks,2);assert.equal(f.ctx.readPlayerEnergyBalance('P004'),150);}
+ for(const mode of ['secure','upload']){const f=secureApproachFixture(),other=f.other();f.ctx.bookPlayerEnergy({identity:'P004',role:'PIONEER',type:'CREDIT',amount:150});let held=false,locks=0;f.ctx.LockService.getScriptLock=()=>({waitLock(){assert.equal(held,false);held=true;locks++;},releaseLock(){held=false;}});const batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{assert.equal(held,true);return batch(...args);};if(mode==='secure'){f.activate();assert.throws(()=>f.ctx.activateSecureApproach(other),/UPLOAD_POINTS?_BUSY/);}else{f.uploadPreview();assert.throws(()=>f.ctx.getHqUploadPreview(other),/UPLOAD_POINTS?_BUSY/);}assert.equal(f.batches(),1);assert.equal(locks,2);assert.equal(f.ctx.readPlayerEnergyBalance('P004'),150);}
 });
 test('Catch preview AND previously authorized confirm reject Secure Approach Ghost without changing Ownership',()=>{
  const f=catchFixture(1,{ledger:true}),Sheet=f.sheets['N-Core Register'].constructor;f.sheets['Player Energy Ledger']=new Sheet(9,[[]]);f.sheets['Upload Terminal Register'].rows.push(['HQ','UPLOAD_HQ','uploaduid','ACTIVE']);f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:150});const catchOrder=f.catchPreview(),beforeCores=JSON.stringify(f.sheets['N-Core Register'].rows);f.ctx.activateSecureApproach({parameter:{token:f.e.parameter.token,request:'catch-shield-1'}});assert.throws(f.catchPreview,/TARGET_PROTECTED/);assert.throws(()=>f.catchConfirm(catchOrder.catchId),/TARGET_PROTECTED/);assert.equal(JSON.stringify(f.sheets['N-Core Register'].rows),beforeCores);
@@ -1131,7 +1143,7 @@ test('Upload claim batch failure stays GREEN; lost claim response recovers same 
  for(const lost of [false,true]){const f=secureApproachFixture(),before=resetSnapshot(f),batch=f.ctx.Sheets.Spreadsheets.batchUpdate;f.ctx.Sheets.Spreadsheets.batchUpdate=(...args)=>{if(lost)batch(...args);throw Error(lost?'LOST_RESPONSE':'BATCH_FAILED');};assert.throws(f.uploadPreview,/LOST_RESPONSE|BATCH_FAILED/);f.ctx.Sheets.Spreadsheets.batchUpdate=batch;if(!lost){assert.equal(resetSnapshot(f),before);assert.equal(f.terminal().state,'GREEN');}else{assert.equal(f.terminal().state,'RED');const r=f.uploadPreview();assert.equal(r.replayed,true);assert.equal(f.batches(),1);f.uploadAuthorize(['NC-006']);assert.equal(f.uploadConfirm().status,'UPLOAD_COMPLETE');assert.equal(f.terminal().state,'GREEN');assert.equal(f.ctx.readPlayerEnergyBalance('P003'),450);}}
 });
 test('Legacy pre-deployment upload order remains RED/exclusive and can complete with existing TTL',()=>{
- const f=secureApproachFixture(),player=f.ctx.findIdentityById('P003'),context=f.ctx.hqUploadContext(player,'uploaduid'),order={id:'LEGACY',identity:player.identity,cardId:player.cardId,bayUid:f.ctx.normalizeUid('uploaduid'),bay:context.bay,cores:context.cores,authorized:false,expiresAt:f.now()+300000};f.properties.set('NODIV_HQ_UPLOAD_LEGACY',JSON.stringify(order));assert.equal(f.terminal().state,'RED');assert.throws(()=>f.ctx.getHqUploadPreview(f.other()),/UPLOAD_TERMINAL_BUSY/);const r=f.uploadPreview();assert.equal(r.upload,'LEGACY');assert.equal(f.batches(),0);f.uploadAuthorize(['NC-006']);assert.equal(f.uploadConfirm().status,'UPLOAD_COMPLETE');assert.equal(f.terminal().state,'GREEN');
+ const f=secureApproachFixture(),player=f.ctx.findIdentityById('P003'),context=f.ctx.hqUploadContext(player,'uploaduid'),order={id:'LEGACY',identity:player.identity,cardId:player.cardId,bayUid:f.ctx.normalizeUid('uploaduid'),bay:context.bay,cores:context.cores,authorized:false,expiresAt:f.now()+300000};f.properties.set('NODIV_HQ_UPLOAD_LEGACY',JSON.stringify(order));assert.equal(f.terminal().state,'RED');assert.throws(()=>f.ctx.getHqUploadPreview(f.other()),/UPLOAD_POINTS?_BUSY/);const r=f.uploadPreview();assert.equal(r.upload,'LEGACY');assert.equal(f.batches(),0);f.uploadAuthorize(['NC-006']);assert.equal(f.uploadConfirm().status,'UPLOAD_COMPLETE');assert.equal(f.terminal().state,'GREEN');
 });
 test('Pre-Event Reset diagnoses and neutralizes Secure Approach reservation without refund or erasing historical debit',()=>{
  const f=resetFixture();f.sheets['Player Energy Ledger']=new f.sheets['N-Core Register'].constructor(9,[[]]);f.sheets['Upload Terminal Register'].rows.push(['HQ','UPLOAD_HQ','uploaduid','ACTIVE']);f.sheets['Event Register'].rows[1][1]='FIELD_ACTIVE';const token='3'.repeat(72);f.cache.set('NODIV_SESSION_'+token,JSON.stringify({identity:'P003',role:'PIONEER',cardId:'P3'}));f.ctx.bookPlayerEnergy({identity:'P003',role:'PIONEER',type:'CREDIT',amount:150});f.ctx.activateSecureApproach({parameter:{token,request:'reset-shield-1'}});assert.equal(f.reset('preview').uploadTerminal.state,'YELLOW');assert.equal(f.reset('confirm').classification,'BLOCKER');
@@ -1172,7 +1184,7 @@ test('START_CORE grants ACTIVE 0/1 Pioneer one registered HQ RESERVE Core under 
  const log=f.sheets['Transaction Log'].rows.filter(row=>row[2]==='START_CORE');assert.equal(log.length,1);assert.equal(log[0][3],'P003');assert.equal(log[0][5],'NC-001');assert.match(log[0][15],/^EVT-1 \/\/ /);
 });
 test('START_CORE requires current FIELD_ACTIVE Event; missing, STANDBY, INITIALIZED, COMPLETED and ABORTED reject without mutation',()=>{
- for(const state of [null,'STANDBY','INITIALIZED','COMPLETED','ABORTED']){const f=startCoreFixture();if(state===null)f.sheets['Event Register'].rows=[[]];else f.sheets['Event Register'].rows[1][1]=state;const before=resetSnapshot(f);assert.throws(f.issue,/FIELD_ACTIVE_REQUIRED/);assert.equal(resetSnapshot(f),before);}
+ for(const state of [null,'STANDBY','INITIALIZED','COMPLETED','ABORTED']){const f=startCoreFixture();if(state===null)f.sheets['Event Register'].rows=[eventHeaders.slice()];else f.sheets['Event Register'].rows[1][1]=state;const before=resetSnapshot(f);assert.throws(f.issue,/FIELD_ACTIVE_REQUIRED/);assert.equal(resetSnapshot(f),before);}
 });
 test('START_CORE rejects non-ACTIVE/unknown Access Card and every non-Pioneer role without mutation',()=>{
  for(const role of ['FOUNDER','FOP','LOCAL','UNBOUND','INACTIVE','UNKNOWN']){const f=startCoreFixture();if(role==='INACTIVE')f.sheets['Access Card Register'].rows[2][4]='INACTIVE';else if(role==='UNKNOWN')f.startE.parameter.pioneerUid='B999';else f.sheets['Access Card Register'].rows[2][2]=role;const before=resetSnapshot(f);assert.throws(f.issue,/nicht ACTIVE|nicht registriert|kein PIONEER/);assert.equal(resetSnapshot(f),before);}
