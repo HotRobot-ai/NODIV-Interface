@@ -4485,6 +4485,12 @@ function shutdownFieldEvent(e) {
     Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
     if(strandedCores.length)blockers.push('NON-HQ CORE INVENTORY: '+strandedCores.length+' CORE(S)');
     readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
+    // Record outstanding event-scoped operations before closing. Their stale records
+    // remain for audit; normal live-readers reject them once this event is COMPLETED.
+    const pendingRestores=liveRestores().filter(order=>order.eventId===event.eventId);
+    const pendingReSupplies=liveReSupplies().filter(order=>order.eventId===event.eventId);
+    pendingRestores.forEach(order=>blockers.push('OPEN RESTORE: '+order.id+' // '+order.nodeId));
+    pendingReSupplies.forEach(order=>blockers.push('OPEN RESUPPLY: '+order.id+' // '+order.nodeId));
     if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS // Story closure is outside EVAC-1');
     // EVENT-SHUTDOWN-02: exceptional closure never pretends missing assets were returned.
     // Only the Founder can explicitly confirm the exact event and acknowledge exceptions.
@@ -4498,7 +4504,7 @@ function shutdownFieldEvent(e) {
       sheetCellsRequest(eventSheet,event.row,2,[['COMPLETED']]),sheetCellsRequest(eventSheet,event.row,8,[[0]]),sheetCellsRequest(eventSheet,event.row,10,[[now,now]])];
     const exceptional=force&&blockers.length>0;
     const auditDetails=exceptional
-      ?event.eventId+' // CLOSED WITH EXCEPTIONS // '+JSON.stringify({blockers,nodes:nodes.map(row=>({id:String(row[1]),slot:String(row[7]||''),pending:String(row[8]||''),status:String(row[9]||'')})),nodeOwnedCoreCounts:owned,strandedCores})
+      ?event.eventId+' // CLOSED WITH EXCEPTIONS // '+JSON.stringify({blockers,nodes:nodes.map(row=>({id:String(row[1]),slot:String(row[7]||''),pending:String(row[8]||''),status:String(row[9]||'')})),nodeOwnedCoreCounts:owned,strandedCores,pendingRestores:pendingRestores.map(order=>order.id),pendingReSupplies:pendingReSupplies.map(order=>order.id)})
       :event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered';
     appendTransactionLog({eventType:exceptional?'FIELD_EVENT_SHUTDOWN_EXCEPTIONS':'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:auditDetails},requests);
     SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
