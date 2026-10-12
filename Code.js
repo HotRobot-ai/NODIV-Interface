@@ -8094,16 +8094,18 @@ function evacuationFinalAction(e,action,actor,event){
 /* Founder-authorized hardware baseline reset and account-owned card recovery. */
 function hardwareBindingResetPlan(){
  const ss=SpreadsheetApp.getActiveSpreadsheet(),names=[SHEET_NAME,NODE_SHEET_NAME,ACCESS_CARD_SHEET_NAME,EVENT_NODE_CODE_SHEET_NAME,DEPLOYMENT_SHEET_NAME,EVENT_PREFLIGHT_SHEET_NAME,UPLOAD_TERMINAL_SHEET_NAME,PLAYER_ENERGY_SHEET_NAME,'N-Core Upload','Live Ranking'];
- const tables=names.map(name=>{const sheet=ss.getSheetByName(name);if(!sheet)throw Error('HARDWARE_RESET_REGISTER_MISSING // '+name);const width=sheet.getMaxColumns?sheet.getMaxColumns():name===SHEET_NAME?18:name===ACCESS_CARD_SHEET_NAME?12:16;return {name,sheet,rows:sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),width).getValues(),width};});
+ const tables=names.map(name=>{const sheet=ss.getSheetByName(name);if(!sheet)throw Error('HARDWARE_RESET_REGISTER_MISSING // '+name);const width=sheet.getMaxColumns?sheet.getMaxColumns():name===SHEET_NAME?18:name===ACCESS_CARD_SHEET_NAME?12:16;const range=sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),width),rows=range.getValues(),formulas=range.getFormulas?range.getFormulas():rows.map(row=>row.map(()=>''));return {name,sheet,rows,fingerprintRows:rows.map((row,i)=>row.map((value,j)=>formulas[i]?.[j]?{formula:formulas[i][j]}:value)),width};});
  const events=ss.getSheetByName(EVENT_SHEET_NAME);if(!events)throw Error('EVENT_REGISTER_MISSING');
  const eventRows=eventRegisterRangeValues(events,1,Math.max(1,events.getLastRow()));
  if(eventRows.slice(1).some(r=>['FIELD_ACTIVE','INITIALIZED','STANDBY'].includes(String(r[1]))))throw Error('HARDWARE_RESET_EVENT_NOT_CLOSED');
  const cards=tables.find(t=>t.name===ACCESS_CARD_SHEET_NAME),founders=cards.rows.slice(1).map((values,i)=>({values,row:i+2})).filter(r=>String(r.values[2]).toUpperCase()==='FOUNDER');
  if(founders.length!==1||String(founders[0].values[4])!=='ACTIVE'||!normalizeUid(founders[0].values[3]))throw Error('HARDWARE_RESET_FOUNDER_INVALID');
- const properties=PropertiesService.getScriptProperties().getProperties(),cleanupProperties=Object.fromEntries(Object.entries(properties).filter(([key])=>preEventResetProperty(key)||key==='NODIV_EVENT_UPLOAD_POINTS_DRAFT'));
- const data={spreadsheetId:ss.getId(),tables:tables.map(t=>({name:t.name,rows:t.rows})),events:eventRows,cleanupProperties};
+ const properties=PropertiesService.getScriptProperties().getProperties(),cleanupProperties=Object.fromEntries(Object.entries(properties).filter(([key])=>preEventResetProperty(key)||key==='NODIV_EVENT_UPLOAD_POINTS_DRAFT').sort(([a],[b])=>a.localeCompare(b)));
+ const data={spreadsheetId:ss.getId(),tables:tables.map(t=>({name:t.name,rows:t.fingerprintRows})),events:eventRows,cleanupProperties};
  const hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(data),Utilities.Charset.UTF_8).map(byte=>('0'+(byte&255).toString(16)).slice(-2)).join('');
- return {ss,tables,founder:founders[0],cleanupProperties,hash};
+ const digest=value=>Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(value),Utilities.Charset.UTF_8).map(byte=>('0'+(byte&255).toString(16)).slice(-2)).join('');
+ const fingerprints=Object.fromEntries(tables.map(t=>[t.name,digest(t.fingerprintRows)]).concat([['events',digest(eventRows)],['properties',digest(cleanupProperties)]]));
+ return {ss,tables,founder:founders[0],cleanupProperties,hash,fingerprints};
 }
 function resetHardwareBindings(e){
  const lock=LockService.getScriptLock();lock.waitLock(10000);
@@ -8111,7 +8113,7 @@ function resetHardwareBindings(e){
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   if(session.player.role!=='FOUNDER')return gameplayActionDenied(session.player,'ROLE_DENIED','Nur Founder kann Hardwarezuordnungen löschen.');
   const plan=hardwareBindingResetPlan(),mode=String(e.parameter.mode||'preview');
-  if(mode==='preview')return {ok:true,session:true,action:false,status:'HARDWARE_RESET_PREVIEW',hash:plan.hash,founder:plan.founder.values[1],registers:plan.tables.map(t=>({name:t.name,rows:Math.max(0,t.rows.length-1)}))};
+  if(mode==='preview')return {ok:true,session:true,action:false,status:'HARDWARE_RESET_PREVIEW',hash:plan.hash,fingerprints:plan.fingerprints,founder:plan.founder.values[1],registers:plan.tables.map(t=>({name:t.name,rows:Math.max(0,t.rows.length-1)}))};
   if(mode!=='confirm'||e.parameter.confirm!=='CLEAR_ALL_EXCEPT_FOUNDER:'+plan.founder.values[1])throw Error('HARDWARE_RESET_CONFIRMATION_REQUIRED');
   if(e.parameter.hash!==plan.hash)throw Error('HARDWARE_RESET_STALE');
   if(!e.parameter.backup)throw Error('HARDWARE_RESET_BACKUP_REQUIRED');
