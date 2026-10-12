@@ -7013,11 +7013,23 @@ function transactionHistoryRows(){
  const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
  return sheet&&sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,16).getValues():[];
 }
-function readPreEventResetEpoch(){
- const rows=transactionHistoryRows();for(let i=rows.length-1;i>=0;i--)if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS')return String(rows[i][0]);return '';
+// Optional request-local snapshot: callers must create it after taking any required
+// write lock and discard it after the transaction. Never share it across requests.
+function transactionHistorySnapshot(){
+ const rows=transactionHistoryRows();
+ let resetIndex=-1;
+ for(let i=rows.length-1;i>=0;i--){
+  if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS'){resetIndex=i;break;}
+ }
+ return {rows,resetIndex};
 }
-function exchangeLogRows(){
- const rows=transactionHistoryRows();let start=0;for(let i=rows.length-1;i>=0;i--)if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS'){start=i+1;break;}return rows.slice(start);
+function readPreEventResetEpoch(snapshot){
+ const view=snapshot||transactionHistorySnapshot();
+ return view.resetIndex>=0?String(view.rows[view.resetIndex][0]):'';
+}
+function exchangeLogRows(snapshot){
+ const view=snapshot||transactionHistorySnapshot();
+ return view.rows.slice(view.resetIndex+1);
 }
 function exchangeCompleted(order){return exchangeLogRows().some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
 function exchangeIsLive(order){
