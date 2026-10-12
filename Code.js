@@ -7031,9 +7031,9 @@ function exchangeLogRows(snapshot){
  const view=snapshot||transactionHistorySnapshot();
  return view.rows.slice(view.resetIndex+1);
 }
-function exchangeCompleted(order){return exchangeLogRows().some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
-function exchangeIsLive(order){
- if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt||exchangeCompleted(order))return false;
+function exchangeCompleted(order,snapshot){return exchangeLogRows(snapshot).some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
+function exchangeIsLive(order,snapshot){
+ if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt||exchangeCompleted(order,snapshot))return false;
  // Reservations belong to the authenticated Identity, not to the lifetime of a browser session.
  // Scan/Cancel/Confirm still require the currently bound token; only recovery can rebind it.
  const player=findIdentityById(order.identity),event=readCurrentEvent();
@@ -7041,8 +7041,11 @@ function exchangeIsLive(order){
 }
 function liveExchanges(){
  const props=PropertiesService.getScriptProperties().getProperties();
- return Object.keys(props).filter(key=>key.startsWith(EXCHANGE_PREFIX)&&!key.startsWith(EXCHANGE_PREVIEW_PREFIX)).flatMap(key=>{
-  try{const order=JSON.parse(props[key]);return exchangeIsLive(order)?[order]:[];}catch(error){return [];}
+ const keys=Object.keys(props).filter(key=>key.startsWith(EXCHANGE_PREFIX)&&!key.startsWith(EXCHANGE_PREVIEW_PREFIX));
+ // Reuse one audit read across reservations; no snapshot survives this function.
+ const snapshot=keys.length?transactionHistorySnapshot():null;
+ return keys.flatMap(key=>{
+  try{const order=JSON.parse(props[key]);return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
  });
 }
 function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders,resupplyId){
