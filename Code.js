@@ -3470,10 +3470,28 @@ function getEventRegisterSheet() {
   let sheet=ss.getSheetByName(EVENT_SHEET_NAME);
   if(!sheet){
     sheet=ss.insertSheet(EVENT_SHEET_NAME);
-    sheet.getRange(1,1,1,11).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','HQ UPLOAD POINTS']]);
+    sheet.getRange(1,1,1,12).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','COMPLETED AT','HQ UPLOAD POINTS']]);
     sheet.setFrozenRows(1);
-  }else if(!sheet.getRange(1,11).getDisplayValue())sheet.getRange(1,11).setValue('HQ UPLOAD POINTS');
-  return sheet;
+    return sheet;
+  }
+  const headers=sheet.getRange(1,11,1,2).getDisplayValues()[0].map(value=>String(value||'').trim().toUpperCase());
+  if(headers[0]==='COMPLETED AT'){
+    if(headers[1]&&headers[1]!=='HQ UPLOAD POINTS')throw Error('EVENT_REGISTER_COLUMN_L_CONFLICT');
+    if(!headers[1])sheet.getRange(1,12).setValue('HQ UPLOAD POINTS');
+    return sheet;
+  }
+  // Never overwrite historical completion timestamps or a populated L column.
+  if(headers[0]==='HQ UPLOAD POINTS'&&!headers[1]){
+    const last=sheet.getLastRow();
+    if(last>1){
+      const oldValues=sheet.getRange(2,11,last-1,1).getValues();
+      if(oldValues.some(row=>row[0]!==''&&row[0]!==null&&!Number.isInteger(Number(row[0]))))throw Error('EVENT_REGISTER_LEGACY_DATA_CONFLICT');
+      sheet.getRange(2,12,last-1,1).setValues(oldValues);
+    }
+    sheet.getRange(1,11,1,2).setValues([['COMPLETED AT','HQ UPLOAD POINTS']]);
+    return sheet;
+  }
+  throw Error('EVENT_REGISTER_SCHEMA_CONFLICT');
 }
 
 function getEventNodeCodeSheet() {
@@ -3490,11 +3508,11 @@ function getEventNodeCodeSheet() {
 function readCurrentEvent() {
   const sheet=getEventRegisterSheet();
   if(sheet.getLastRow()<2)return null;
-  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues();
+  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues();
   for(let i=rows.length-1;i>=0;i--){
     const state=String(rows[i][1]||'').trim().toUpperCase();
     if(['STANDBY','INITIALIZED','FIELD_ACTIVE'].includes(state)){
-      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||''),uploadPoints:Math.max(1,Math.min(4,Number(rows[i][10]||1)))};
+      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||''),uploadPoints:Math.max(1,Math.min(4,Number(rows[i][11]||2)))};
     }
   }
   return null;
@@ -3873,7 +3891,7 @@ function initializeEvent(e) {
     const eventSheet=getEventRegisterSheet();
     const uploadPoints=configuredEventUploadPoints();
     if(activeHqUploadPointList().length<uploadPoints)throw new Error('EVENT_UPLOAD_POINTS_NOT_READY');
-    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now,uploadPoints]]).updateCells.rows,fields:'userEnteredValue'}});
+    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now,'',uploadPoints]]).updateCells.rows,fields:'userEnteredValue'}});
     appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'},requests);
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected,uploadPoints:uploadPoints}};
