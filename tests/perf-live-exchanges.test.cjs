@@ -30,3 +30,10 @@ test('caller-provided snapshot avoids a second history read',()=>{
 test('a new call uses a new snapshot rather than cross-request caching',()=>{
  const h=harness(3);h.check();h.check();assert.equal(h.reads(),2);
 });
+
+test('30 reservations reuse caller snapshot without additional audit reads',()=>{
+ const h=harness(30);
+ const supplied={rows:[],resetIndex:-1};
+ assert.equal(h.check(supplied).length,30);
+ assert.equal(h.reads(),0);
+});
