@@ -87,12 +87,24 @@ export async function startIdentity(){
 }
 window.addEventListener('pagehide',()=>{if(identityAttempt)finishIdentityAttempt(identityAttempt,new Error('NFC-ANMELDUNG ABGEBROCHEN // Erneut starten.'));});
 
+// Read-only requests share only their in-flight promise; never cache a settled result.
+// A completed write always gets a new authoritative read on the next refresh.
+const nodivStatusInFlight=new Map();
+function nodivSingleFlightStatus(action,token){
+ const key=action+'|'+token;
+ if(nodivStatusInFlight.has(key))return nodivStatusInFlight.get(key);
+ const pending=Promise.resolve().then(()=>apiRequest({action,token}));
+ nodivStatusInFlight.set(key,pending);
+ pending.finally(()=>{if(nodivStatusInFlight.get(key)===pending)nodivStatusInFlight.delete(key);}).catch(()=>{});
+ return pending;
+}
+
 window.addEventListener('nodiv-pioneer-live',async()=>{
  if(!sessionToken)return;
  window.dispatchEvent(new CustomEvent('nodiv-upload-terminal-refresh'));
  const inv=document.querySelector('#pioneerInventory'),total=document.querySelector('#pioneerCarriedEnergy'),capacityView=document.querySelector('#pioneerCapacity'),hqTotal=document.querySelector('#hqCarriedEnergy'),secured=document.querySelector('#pioneerSecuredEnergy'),eventStatus=document.querySelector('#pioneerEventStatus'),statusStrip=document.querySelector('#pioneerStatusStrip');
  try{
-  const state=await apiRequest({action:'playerstate',token:sessionToken});
+  const state=await nodivSingleFlightStatus('playerstate',sessionToken);
   if(!state?.ok||!state?.session)throw new Error(state?.status||'PLAYER STATE UNAVAILABLE');
   const capacity=Math.max(0,Number(state.player?.coreCapacity||0)),cores=Array.isArray(state.cores)?state.cores:[];
   renderPioneerGhost(state.player,state.serverNow);
@@ -957,7 +969,7 @@ window.addEventListener('nodiv-catch-live',async()=>{
  if(!sessionToken)return;const inventory=document.querySelector('#catchInventory');if(!inventory)return;
  const slots=document.querySelector('#catcherPersonalSlots'),secured=document.querySelector('#catcherSecuredEnergy'),slotCount=document.querySelector('#catcherSlotCount'),eventStatus=document.querySelector('#localEventStatus'),count=document.querySelector('#catcherCatchCount');
  try{
-  const r=await apiRequest({action:'playerstate',token:sessionToken});
+  const r=await nodivSingleFlightStatus('playerstate',sessionToken);
   if(!r?.ok||!r.session||!r.player||!Array.isArray(r.cores)||!Number.isFinite(r.securedEnergy))throw Error(r?.error||r?.status||'PLAYER STATE UNAVAILABLE');
   inventory.textContent=r.cores.map(c=>c.energy+' E').join(' // ')||'SLOT FREI';
   if(slots)slots.textContent=slotCount?(r.cores[0]?r.cores[0].energy+' E':'— E'):inventory.textContent+' // '+r.cores.length+'/'+r.player.coreCapacity;
@@ -1188,7 +1200,7 @@ function renderUploadTerminal(result){
 }
 async function refreshUploadTerminal(){
  if(!sessionToken||!document.querySelector('#uploadTerminalState')||secureApproachBusy)return;
- try{const r=await apiRequest({action:'uploadterminalstate',token:sessionToken});if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
+ try{const r=await nodivSingleFlightStatus('uploadterminalstate',sessionToken);if(!r?.ok||!r?.session||!r?.state)throw Error(r?.error||r?.status||'TERMINAL UNAVAILABLE');renderUploadTerminal(r);}
  catch(error){const status=document.querySelector('#uploadTerminalState'),availability=document.querySelector('#hqUploadAvailability'),availabilityValue=document.querySelector('#hqUploadAvailabilityValue'),availabilityDetail=document.querySelector('#hqUploadAvailabilityDetail');if(status){status.hidden=true;status.dataset.state='';}if(availability)availability.dataset.state='';if(availabilityValue)availabilityValue.textContent='—';if(availabilityDetail)availabilityDetail.textContent='STATUS NICHT VERFÜGBAR';const button=document.querySelector('#secureApproach');if(button)button.disabled=true;}
 }
 window.addEventListener('nodiv-upload-terminal-refresh',refreshUploadTerminal);
