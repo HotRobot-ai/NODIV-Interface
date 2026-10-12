@@ -3482,8 +3482,8 @@ function migrateEventRegisterSchema(sheet) {
       requests.push(sheetCellsRequest(sheet,index+2,11,[['']]));
     });
   }
-  requests.push(sheetCellsRequest(sheet,1,11,[['COMPLETED AT','HQ UPLOAD POINTS']]));
-  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  if(completedHeader!=='COMPLETED AT'||uploadHeader!=='HQ UPLOAD POINTS')requests.push(sheetCellsRequest(sheet,1,11,[['COMPLETED AT','HQ UPLOAD POINTS']]));
+  if(requests.length)Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
 }
 
 function getEventRegisterSheet() {
