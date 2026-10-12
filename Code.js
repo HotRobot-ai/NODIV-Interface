@@ -362,6 +362,8 @@ function doGet(e) {
     } else if (action === 'preeventreset') {
 
       result = preEventReset(e);
+    } else if (action === 'hardwarebindingsreset') {
+      result = resetHardwareBindings(e);
 
     } else if (action === 'eventinitialize') {
 
@@ -8087,4 +8089,70 @@ function evacuationFinalAction(e,action,actor,event){
  if(team.pioneers.filter(p=>p.identity!==actor.identity).every(p=>evacuationFinalReceipt(team,p.identity)))appendTransactionLog({eventType:'EVACUATION_TEAM_WITHDRAWAL',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:JSON.stringify({eventId:event.eventId,teamId:team.id,completedAt:Date.now(),command:'RETURN TO HQ'})},requests);
  const blockers=stageEvacuationCompletion(event,actor,requests);
  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());return {ok:true,session:true,action:true,replayed:false,status:'EVACUATION_FINAL_UPLOAD_COMPLETE',eventId:event.eventId,eventState:evacuationReadEvent().state,completionPending:blockers.length>0,evacuation:evacuationPlayerState(actor)};
+}
+
+/* Founder-authorized hardware baseline reset and account-owned card recovery. */
+function hardwareBindingResetPlan(){
+ const ss=SpreadsheetApp.getActiveSpreadsheet(),names=[SHEET_NAME,NODE_SHEET_NAME,ACCESS_CARD_SHEET_NAME,EVENT_NODE_CODE_SHEET_NAME,DEPLOYMENT_SHEET_NAME,EVENT_PREFLIGHT_SHEET_NAME,UPLOAD_TERMINAL_SHEET_NAME,PLAYER_ENERGY_SHEET_NAME,'N-Core Upload','Live Ranking'];
+ const tables=names.map(name=>{const sheet=ss.getSheetByName(name);if(!sheet)throw Error('HARDWARE_RESET_REGISTER_MISSING // '+name);const width=sheet.getMaxColumns?sheet.getMaxColumns():name===SHEET_NAME?18:name===ACCESS_CARD_SHEET_NAME?12:16;return {name,sheet,rows:sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),width).getValues(),width};});
+ const events=ss.getSheetByName(EVENT_SHEET_NAME);if(!events)throw Error('EVENT_REGISTER_MISSING');
+ const eventRows=eventRegisterRangeValues(events,1,Math.max(1,events.getLastRow()));
+ if(eventRows.slice(1).some(r=>['FIELD_ACTIVE','INITIALIZED','STANDBY'].includes(String(r[1]))))throw Error('HARDWARE_RESET_EVENT_NOT_CLOSED');
+ const cards=tables.find(t=>t.name===ACCESS_CARD_SHEET_NAME),founders=cards.rows.slice(1).map((values,i)=>({values,row:i+2})).filter(r=>String(r.values[2]).toUpperCase()==='FOUNDER');
+ if(founders.length!==1||String(founders[0].values[4])!=='ACTIVE'||!normalizeUid(founders[0].values[3]))throw Error('HARDWARE_RESET_FOUNDER_INVALID');
+ const properties=PropertiesService.getScriptProperties().getProperties(),cleanupProperties=Object.fromEntries(Object.entries(properties).filter(([key])=>preEventResetProperty(key)||key==='NODIV_EVENT_UPLOAD_POINTS_DRAFT'));
+ const data={spreadsheetId:ss.getId(),tables:tables.map(t=>({name:t.name,rows:t.rows})),events:eventRows,cleanupProperties};
+ const hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(data),Utilities.Charset.UTF_8).map(byte=>('0'+(byte&255).toString(16)).slice(-2)).join('');
+ return {ss,tables,founder:founders[0],cleanupProperties,hash};
+}
+function resetHardwareBindings(e){
+ const lock=LockService.getScriptLock();lock.waitLock(10000);
+ try{
+  const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')return gameplayActionDenied(session.player,'ROLE_DENIED','Nur Founder kann Hardwarezuordnungen löschen.');
+  const plan=hardwareBindingResetPlan(),mode=String(e.parameter.mode||'preview');
+  if(mode==='preview')return {ok:true,session:true,action:false,status:'HARDWARE_RESET_PREVIEW',hash:plan.hash,founder:plan.founder.values[1],registers:plan.tables.map(t=>({name:t.name,rows:Math.max(0,t.rows.length-1)}))};
+  if(mode!=='confirm'||e.parameter.confirm!=='CLEAR_ALL_EXCEPT_FOUNDER:'+plan.founder.values[1])throw Error('HARDWARE_RESET_CONFIRMATION_REQUIRED');
+  if(e.parameter.hash!==plan.hash)throw Error('HARDWARE_RESET_STALE');
+  if(!e.parameter.backup)throw Error('HARDWARE_RESET_BACKUP_REQUIRED');
+  const requests=[];
+  const clear=(table,row,col,width)=>{if(width>0)requests.push(sheetCellsRequest(table.sheet,row,col,[Array(width).fill('')]));};
+  plan.tables.forEach(table=>{table.rows.slice(1).forEach((values,i)=>{
+   const row=i+2;if(table.name===ACCESS_CARD_SHEET_NAME&&row===plan.founder.row)return;
+   if(table.name===SHEET_NAME){clear(table,row,3,10);clear(table,row,15,Math.max(0,table.width-14));}
+   else clear(table,row,1,table.width);
+  });});
+  const summary={scope:'ALL_ACTIVE_HARDWARE_BINDINGS_EXCEPT_FOUNDER',founder:plan.founder.values[1],sourceHash:plan.hash,backupReference:String(e.parameter.backup),cleanupProperties:plan.cleanupProperties};
+  appendTransactionLog({eventType:'HARDWARE_BINDINGS_CLEARED',actorId:session.player.identity,actorRole:'FOUNDER',result:'SUCCESS',details:JSON.stringify(summary)},requests);
+  appendTransactionLog({eventType:'PRE_EVENT_RESET_COMPLETE',actorId:session.player.identity,actorRole:'FOUNDER',result:'SUCCESS',details:JSON.stringify(summary)},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},plan.ss.getId());
+  let cleanupPending=false;try{const props=PropertiesService.getScriptProperties();Object.entries(plan.cleanupProperties).forEach(([key,value])=>{if(props.getProperty(key)===value)props.deleteProperty(key);});}catch(error){cleanupPending=true;}
+  return {ok:true,action:true,session:false,reauthenticate:true,status:'HARDWARE_BINDINGS_CLEARED',founder:plan.founder.values[1],cleanupPending};
+ }finally{lock.releaseLock();}
+}
+// Intentionally NOT routed through doGet or the gameplay API. Execute from the
+// Apps Script editor under the spreadsheet owner's Google account, without a card.
+function recoverFounderAccessFromEditor(){
+ const ss=SpreadsheetApp.getActiveSpreadsheet();
+ const active=String(Session.getActiveUser().getEmail()||'').toLowerCase(),effective=String(Session.getEffectiveUser().getEmail()||'').toLowerCase();
+ const owner=ss.getOwner();
+ if(!owner||!active||active!==effective||active!==String(owner.getEmail()).toLowerCase())throw Error('FOUNDER_RECOVERY_GOOGLE_OWNER_REQUIRED');
+ const props=PropertiesService.getScriptProperties(),uid=normalizeUid(props.getProperty('NODIV_FOUNDER_RECOVERY_UID')||'');
+ const lock=LockService.getScriptLock();lock.waitLock(10000);
+ try{
+  const sheet=getAccessCardRegisterSheet(),rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues():[];
+  const founders=rows.map((values,i)=>({values,row:i+2})).filter(r=>String(r.values[2]).toUpperCase()==='FOUNDER');
+  if(founders.length!==1)throw Error('FOUNDER_RECOVERY_IDENTITY_AMBIGUOUS');
+  const f=founders[0];if(props.getProperty('NODIV_FOUNDER_RECOVERY_CONFIRM')!=='REPLACE_FOUNDER_CARD:'+f.values[1])throw Error('FOUNDER_RECOVERY_CONFIRMATION_REQUIRED');
+  if(!/^[0-9A-F]{4,32}$/.test(uid.replace(/:/g,''))||uid.replace(/:/g,'').length%2)throw Error('FOUNDER_RECOVERY_UID_INVALID');
+  if(uid===normalizeUid(f.values[3]))throw Error('FOUNDER_RECOVERY_SAME_UID');
+  assertUidAvailable(uid);
+  const newCardId=findNextAccessCardId(rows),requests=[];
+  requests.push(sheetCellsRequest(sheet,f.row,1,[[newCardId]]),sheetCellsRequest(sheet,f.row,4,[[uid,'ACTIVE']]));
+  appendTransactionLog({eventType:'FOUNDER_ACCESS_CARD_RECOVERED',actorId:f.values[1],actorRole:'FOUNDER',result:'SUCCESS',details:JSON.stringify({oldCardId:f.values[0],newCardId,method:'GOOGLE_OWNER_EDITOR',oldSessionsRevokedBy:'cardId'})},requests);
+  Sheets.Spreadsheets.batchUpdate({requests},ss.getId());
+  props.deleteProperty('NODIV_FOUNDER_RECOVERY_UID');props.deleteProperty('NODIV_FOUNDER_RECOVERY_CONFIRM');
+  console.log('Founder '+f.values[1]+' wiederhergestellt. Alte Karte und Sessions ungültig.');
+  return {ok:true,status:'FOUNDER_RECOVERED',identity:f.values[1]};
+ }finally{lock.releaseLock();}
 }
