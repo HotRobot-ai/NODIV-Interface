@@ -3470,10 +3470,28 @@ function getEventRegisterSheet() {
   let sheet=ss.getSheetByName(EVENT_SHEET_NAME);
   if(!sheet){
     sheet=ss.insertSheet(EVENT_SHEET_NAME);
-    sheet.getRange(1,1,1,11).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','HQ UPLOAD POINTS']]);
+    sheet.getRange(1,1,1,12).setValues([['EVENT ID','STATE','CREATED AT','INITIALIZED AT','ACTIVATED AT','FOUNDER','PLANNED NODES','ACTIVE NODES','READINESS','UPDATED AT','COMPLETED AT','HQ UPLOAD POINTS']]);
     sheet.setFrozenRows(1);
-  }else if(!sheet.getRange(1,11).getDisplayValue())sheet.getRange(1,11).setValue('HQ UPLOAD POINTS');
-  return sheet;
+    return sheet;
+  }
+  const headers=sheet.getRange(1,11,1,2).getDisplayValues()[0].map(value=>String(value||'').trim().toUpperCase());
+  if(headers[0]==='COMPLETED AT'){
+    if(headers[1]&&headers[1]!=='HQ UPLOAD POINTS')throw Error('EVENT_REGISTER_COLUMN_L_CONFLICT');
+    if(!headers[1])sheet.getRange(1,12).setValue('HQ UPLOAD POINTS');
+    return sheet;
+  }
+  // Never overwrite historical completion timestamps or a populated L column.
+  if(headers[0]==='HQ UPLOAD POINTS'&&!headers[1]){
+    const last=sheet.getLastRow();
+    if(last>1){
+      const oldValues=sheet.getRange(2,11,last-1,1).getValues();
+      if(oldValues.some(row=>row[0]!==''&&row[0]!==null&&(!Number.isInteger(Number(row[0]))||Number(row[0])<1||Number(row[0])>4)))throw Error('EVENT_REGISTER_LEGACY_DATA_CONFLICT');
+      sheet.getRange(2,12,last-1,1).setValues(oldValues);
+    }
+    sheet.getRange(1,11,1,2).setValues([['COMPLETED AT','HQ UPLOAD POINTS']]);
+    return sheet;
+  }
+  throw Error('EVENT_REGISTER_SCHEMA_CONFLICT');
 }
 
 function getEventNodeCodeSheet() {
@@ -3490,11 +3508,11 @@ function getEventNodeCodeSheet() {
 function readCurrentEvent() {
   const sheet=getEventRegisterSheet();
   if(sheet.getLastRow()<2)return null;
-  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,11).getValues();
+  const rows=sheet.getRange(2,1,sheet.getLastRow()-1,12).getValues();
   for(let i=rows.length-1;i>=0;i--){
     const state=String(rows[i][1]||'').trim().toUpperCase();
     if(['STANDBY','INITIALIZED','FIELD_ACTIVE'].includes(state)){
-      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||''),uploadPoints:Math.max(1,Math.min(4,Number(rows[i][10]||1)))};
+      return {row:i+2,eventId:String(rows[i][0]||''),state:state,createdAt:rows[i][2],initializedAt:rows[i][3],activatedAt:rows[i][4],founder:String(rows[i][5]||''),plannedNodes:Number(rows[i][6]||0),activeNodes:Number(rows[i][7]||0),readiness:String(rows[i][8]||''),uploadPoints:Math.max(1,Math.min(4,Number(rows[i][11]||2)))};
     }
   }
   return null;
@@ -3873,7 +3891,7 @@ function initializeEvent(e) {
     const eventSheet=getEventRegisterSheet();
     const uploadPoints=configuredEventUploadPoints();
     if(activeHqUploadPointList().length<uploadPoints)throw new Error('EVENT_UPLOAD_POINTS_NOT_READY');
-    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now,uploadPoints]]).updateCells.rows,fields:'userEnteredValue'}});
+    requests.push({appendCells:{sheetId:eventSheet.getSheetId(),rows:sheetCellsRequest(eventSheet,1,1,[[eventId,'INITIALIZED',now,now,'',actor.identity,10,0,'INITIALIZED_BASELINE',now,'',uploadPoints]]).updateCells.rows,fields:'userEnteredValue'}});
     appendTransactionLog({eventType:'EVENT_INITIALIZED',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:eventId+' // '+selected.length+' Nodes // mechanical code sets generated'},requests);
     Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
     return {ok:true,authenticated:true,action:true,status:'EVENT_INITIALIZED',event:{eventId:eventId,state:'INITIALIZED',plannedNodes:selected.length,nodes:selected,uploadPoints:uploadPoints}};
@@ -4481,17 +4499,34 @@ function shutdownFieldEvent(e) {
     });
     const cores=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues(),owned={};
     cores.forEach(row=>{if(String(row[CORE_COL.OWNER_TYPE-1]).trim().toUpperCase()==='NODE'){const id=String(row[CORE_COL.OWNER_ID-1]).trim().toUpperCase()||'UNKNOWN NODE';owned[id]=(owned[id]||0)+1;}});
+    const strandedCores=cores.filter(row=>{const owner=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();return owner&&owner!=='HQ'&&owner!=='NODIV_RESERVE';}).map(row=>({id:String(row[CORE_COL.ID-1]||''),ownerType:String(row[CORE_COL.OWNER_TYPE-1]||''),ownerId:String(row[CORE_COL.OWNER_ID-1]||'')}));
     Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
+    if(strandedCores.length)blockers.push('NON-RESERVE CORE INVENTORY: '+strandedCores.length+' CORE(S)');
     readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
+    // Record outstanding event-scoped operations before closing. Their stale records
+    // remain for audit; normal live-readers reject them once this event is COMPLETED.
+    const pendingRestores=liveRestores().filter(order=>order.eventId===event.eventId);
+    const pendingReSupplies=liveReSupplies().filter(order=>order.eventId===event.eventId);
+    pendingRestores.forEach(order=>blockers.push('OPEN RESTORE: '+order.id+' // '+order.nodeId));
+    pendingReSupplies.forEach(order=>blockers.push('OPEN RESUPPLY: '+order.id+' // '+order.nodeId));
     if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS // Story closure is outside EVAC-1');
-    if(blockers.length)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
+    // EVENT-SHUTDOWN-02: exceptional closure never pretends missing assets were returned.
+    // Only the Founder can explicitly confirm the exact event and acknowledge exceptions.
+    const force=String(e.parameter.mode||'').trim().toUpperCase()==='WITH_EXCEPTIONS';
+    const confirmed=String(e.parameter.confirm||'')==='CLOSE_WITH_EXCEPTIONS:'+event.eventId;
+    if(force&&!confirmed)return gameplayActionDenied(actor,'SHUTDOWN_CONFIRMATION_REQUIRED','Abweichungsabschluss muss mit der aktuellen Event-ID bestätigt werden.');
+    if(blockers.length&&!force)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
     const eventSheet=getEventRegisterSheet(),header=String(eventSheet.getRange(1,11).getDisplayValue()||'');
     if(header&&header!=='COMPLETED AT')throw new Error('EVENT_COMPLETION_COLUMN_CONFLICT');
     const now=new Date(),requests=[sheetCellsRequest(eventSheet,1,11,[['COMPLETED AT']]),
       sheetCellsRequest(eventSheet,event.row,2,[['COMPLETED']]),sheetCellsRequest(eventSheet,event.row,8,[[0]]),sheetCellsRequest(eventSheet,event.row,10,[[now,now]])];
-    appendTransactionLog({eventType:'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered'},requests);
+    const exceptional=force&&blockers.length>0;
+    const auditDetails=exceptional
+      ?event.eventId+' // CLOSED WITH EXCEPTIONS // '+JSON.stringify({blockers,nodes:nodes.map(row=>({id:String(row[1]),slot:String(row[7]||''),pending:String(row[8]||''),status:String(row[9]||'')})),nodeOwnedCoreCounts:owned,strandedCores,pendingRestores:pendingRestores.map(order=>order.id),pendingReSupplies:pendingReSupplies.map(order=>order.id)})
+      :event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered';
+    appendTransactionLog({eventType:exceptional?'FIELD_EVENT_SHUTDOWN_EXCEPTIONS':'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:auditDetails},requests);
     SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-    return {ok:true,authenticated:true,session:true,action:true,status:'FIELD_EVENT_COMPLETED',eventId:event.eventId,eventState:'COMPLETED',completedAt:now.toISOString()};
+    return {ok:true,authenticated:true,session:true,action:true,status:exceptional?'FIELD_EVENT_COMPLETED_WITH_EXCEPTIONS':'FIELD_EVENT_COMPLETED',eventId:event.eventId,eventState:'COMPLETED',completedAt:now.toISOString(),exceptions:exceptional?blockers:[]};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
