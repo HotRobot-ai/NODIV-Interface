@@ -1,0 +1,25 @@
+name: NODIV shutdown isolated checks
+on:
+  pull_request:
+    paths:
+      - 'Code.js'
+      - 'app/js/identity.js'
+      - 'tests/event-shutdown-02.test.cjs'
+      - '.github/workflows/shutdown-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shutdown-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check Code.js
+          node --check app/js/identity.js
+      - name: Shutdown regression checks
+        run: node --test tests/event-shutdown-02.test.cjs
