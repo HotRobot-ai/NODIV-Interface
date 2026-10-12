@@ -21,6 +21,12 @@ test('no active reservations avoids audit history read',()=>{
 test('multiple live reservations use one audit snapshot',()=>{
  const h=harness(5);assert.equal(h.check().length,5);assert.equal(h.reads(),1);
 });
+test('caller-provided snapshot avoids a second history read',()=>{
+ const h=harness(4);
+ const supplied={rows:[],resetIndex:-1};
+ assert.equal(h.check(supplied).length,4);
+ assert.equal(h.reads(),0);
+});
 test('a new call uses a new snapshot rather than cross-request caching',()=>{
  const h=harness(3);h.check();h.check();assert.equal(h.reads(),2);
 });
