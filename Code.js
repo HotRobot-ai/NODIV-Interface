@@ -7039,11 +7039,11 @@ function exchangeIsLive(order,snapshot){
  const player=findIdentityById(order.identity),event=readCurrentEvent();
  return Boolean(player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&player.nodeAccess&&event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId);
 }
-function liveExchanges(){
+function liveExchanges(snapshot){
  const props=PropertiesService.getScriptProperties().getProperties();
  const keys=Object.keys(props).filter(key=>key.startsWith(EXCHANGE_PREFIX)&&!key.startsWith(EXCHANGE_PREVIEW_PREFIX));
- // Reuse one audit read across reservations; no snapshot survives this function.
- const snapshot=keys.length?transactionHistorySnapshot():null;
+ // Reuse the caller's lock-scoped audit snapshot, or read once locally.
+ snapshot=snapshot||(keys.length?transactionHistorySnapshot():null);
  return keys.flatMap(key=>{
   try{const order=JSON.parse(props[key]);return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
  });
@@ -7072,7 +7072,9 @@ function exchangeContext(player,nodeId,exchangeId){
  if(eventNode.pendingSlot)throw new Error('NODE_CODE_CHANGE_PENDING');
  const restoreOrders=liveRestores();
  assertRestoreUnreserved(nodeId,player.identity,'',undefined,restoreOrders);
- const exchangeOrders=liveExchanges();
+ // Under the exchange lock: share one current audit view for reservations and cooldown.
+ const historySnapshot=transactionHistorySnapshot();
+ const exchangeOrders=liveExchanges(historySnapshot);
  assertExchangeUnreserved(nodeId,player.identity,'',exchangeId,exchangeOrders);
  const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
  const nodeCores=exchangeOwnedCores('NODE',nodeId,coreRows),inventory=exchangeOwnedCores('PIONEER',player.identity,coreRows);
@@ -7087,7 +7089,7 @@ function exchangeContext(player,nodeId,exchangeId){
  all.forEach(core=>{assertExchangeUnreserved('','',core.coreId,exchangeId,exchangeOrders);assertRestoreUnreserved('','',core.coreId,undefined,restoreOrders);});
  if(new Set(all.map(core=>core.coreId)).size!==all.length||new Set(all.filter(core=>core.uid).map(core=>core.uid)).size!==all.filter(core=>core.uid).length)throw new Error('EXCHANGE_DUPLICATE_CORE_UID');
  const personal=inventory.filter(eligible);
- const transactionRows=exchangeLogRows(),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
+ const transactionRows=exchangeLogRows(historySnapshot),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
  const cooldownUntil=logs.reduce((until,row)=>Math.max(until,new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS||0),0);
  if(cooldownUntil>Date.now())throw new Error('NODE_EXCHANGE_COOLDOWN // '+new Date(cooldownUntil).toISOString());
  return {event,eventNode,nodeCores,inventory,personal,capacity,transactionRows,coreRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
