@@ -5,6 +5,7 @@ on:
       - 'Code.js'
       - 'app/js/identity.js'
       - 'tests/event-shutdown-02.test.cjs'
+      - 'tests/event-register-01.test.cjs'
       - '.github/workflows/shutdown-checks.yml'
   workflow_dispatch:
 permissions:
@@ -22,4 +23,4 @@ jobs:
           node --check Code.js
           node --check app/js/identity.js
       - name: Shutdown regression checks
-        run: node --test tests/event-shutdown-02.test.cjs
+        run: node --test tests/event-shutdown-02.test.cjs tests/event-register-01.test.cjs
