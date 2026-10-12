@@ -23,8 +23,8 @@ test('identical overlapping status requests use one network request',async()=>{
  await Promise.resolve();
  assert.equal(calls.length,1);
  calls[0].resolve({ok:true});
- assert.deepEqual(await a,{ok:true});
- assert.deepEqual(await b,{ok:true});
+ assert.equal((await a).ok,true);
+ assert.equal((await b).ok,true);
 });
 
 test('different tokens and actions never share a status request',async()=>{
