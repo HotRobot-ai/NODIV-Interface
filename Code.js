@@ -3485,7 +3485,7 @@ function getEventRegisterSheet() {
     const last=sheet.getLastRow();
     if(last>1){
       const oldValues=sheet.getRange(2,11,last-1,1).getValues();
-      if(oldValues.some(row=>row[0]!==''&&row[0]!==null&&!Number.isInteger(Number(row[0]))))throw Error('EVENT_REGISTER_LEGACY_DATA_CONFLICT');
+      if(oldValues.some(row=>row[0]!==''&&row[0]!==null&&(!Number.isInteger(Number(row[0]))||Number(row[0])<1||Number(row[0])>4)))throw Error('EVENT_REGISTER_LEGACY_DATA_CONFLICT');
       sheet.getRange(2,12,last-1,1).setValues(oldValues);
     }
     sheet.getRange(1,11,1,2).setValues([['COMPLETED AT','HQ UPLOAD POINTS']]);
