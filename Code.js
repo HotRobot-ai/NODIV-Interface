@@ -4484,14 +4484,23 @@ function shutdownFieldEvent(e) {
     Object.keys(owned).sort().forEach(id=>blockers.push(id+': '+owned[id]+' NODE-OWNED CORE(S)'));
     readInstallationOrders().filter(order=>order.eventId===event.eventId&&installationOrderIsLive(order)).forEach(order=>blockers.push(nodeOperationType(order)+' // '+order.nodeId+': OPEN OPERATION'));
     if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS // Story closure is outside EVAC-1');
-    if(blockers.length)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
+    // EVENT-SHUTDOWN-02: exceptional closure never pretends missing assets were returned.
+    // Only the Founder can explicitly confirm the exact event and acknowledge exceptions.
+    const force=String(e.parameter.mode||'').trim().toUpperCase()==='WITH_EXCEPTIONS';
+    const confirmed=String(e.parameter.confirm||'')==='CLOSE_WITH_EXCEPTIONS:'+event.eventId;
+    if(force&&!confirmed)return gameplayActionDenied(actor,'SHUTDOWN_CONFIRMATION_REQUIRED','Abweichungsabschluss muss mit der aktuellen Event-ID bestätigt werden.');
+    if(blockers.length&&!force)return {...gameplayActionDenied(actor,'FIELD_SHUTDOWN_BLOCKED',blockers.join(' // ')),blockers};
     const eventSheet=getEventRegisterSheet(),header=String(eventSheet.getRange(1,11).getDisplayValue()||'');
     if(header&&header!=='COMPLETED AT')throw new Error('EVENT_COMPLETION_COLUMN_CONFLICT');
     const now=new Date(),requests=[sheetCellsRequest(eventSheet,1,11,[['COMPLETED AT']]),
       sheetCellsRequest(eventSheet,event.row,2,[['COMPLETED']]),sheetCellsRequest(eventSheet,event.row,8,[[0]]),sheetCellsRequest(eventSheet,event.row,10,[[now,now]])];
-    appendTransactionLog({eventType:'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered'},requests);
+    const exceptional=force&&blockers.length>0;
+    const auditDetails=exceptional
+      ?event.eventId+' // CLOSED WITH EXCEPTIONS // '+JSON.stringify({blockers,nodes:nodes.map(row=>({id:String(row[1]),slot:String(row[7]||''),pending:String(row[8]||''),status:String(row[9]||'')})),nodeOwnedCoreCounts:owned})
+      :event.eventId+' // ALPHA TECHNICAL SHUTDOWN // all Event Nodes recovered';
+    appendTransactionLog({eventType:exceptional?'FIELD_EVENT_SHUTDOWN_EXCEPTIONS':'FIELD_EVENT_SHUTDOWN',actorId:actor.identity,actorRole:actor.role,result:'SUCCESS',details:auditDetails},requests);
     SpreadsheetApp.flush();Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
-    return {ok:true,authenticated:true,session:true,action:true,status:'FIELD_EVENT_COMPLETED',eventId:event.eventId,eventState:'COMPLETED',completedAt:now.toISOString()};
+    return {ok:true,authenticated:true,session:true,action:true,status:exceptional?'FIELD_EVENT_COMPLETED_WITH_EXCEPTIONS':'FIELD_EVENT_COMPLETED',eventId:event.eventId,eventState:'COMPLETED',completedAt:now.toISOString(),exceptions:exceptional?blockers:[]};
   }finally{try{lock.releaseLock();}catch(error){}}
 }
 
