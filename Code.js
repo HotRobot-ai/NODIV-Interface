@@ -7035,11 +7035,13 @@ function exchangeCompleted(order,snapshot){
  const view=snapshot||transactionHistorySnapshot();
  return view.completedExchangeIds.has(order.id);
 }
-function exchangeIsLive(order,snapshot){
+function exchangeIsLive(order,snapshot,requestCache){
  if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt||exchangeCompleted(order,snapshot))return false;
- // Reservations belong to the authenticated Identity, not to the lifetime of a browser session.
- // Scan/Cancel/Confirm still require the currently bound token; only recovery can rebind it.
- const player=findIdentityById(order.identity),event=readCurrentEvent();
+ // Request-local reuse only; never cache identity/event state across requests.
+ const cache=requestCache||{players:new Map(),event:null,eventRead:false};
+ if(!cache.players.has(order.identity))cache.players.set(order.identity,findIdentityById(order.identity));
+ if(!cache.eventRead){cache.event=readCurrentEvent();cache.eventRead=true;}
+ const player=cache.players.get(order.identity),event=cache.event;
  return Boolean(player&&player.status==='ACTIVE'&&player.role==='PIONEER'&&player.nodeAccess&&event&&event.state==='FIELD_ACTIVE'&&event.eventId===order.eventId);
 }
 function liveExchanges(snapshot){
@@ -7055,8 +7057,9 @@ function liveExchanges(snapshot){
  if(!candidates.length)return [];
  // Fail closed: an unavailable audit must never make active reservations appear free.
  snapshot=snapshot||transactionHistorySnapshot();
+ const requestCache={players:new Map(),event:null,eventRead:false};
  return candidates.flatMap(order=>{
-  try{return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
+  try{return exchangeIsLive(order,snapshot,requestCache)?[order]:[];}catch(error){return [];}
  });
 }
 function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders,resupplyId){
