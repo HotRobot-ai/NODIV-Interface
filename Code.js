@@ -7072,7 +7072,7 @@ function exchangeNodeFingerprint(nodeId,eventNode){
  const row=rows.find((row,index)=>(/^NODE-\d{3}$/.test(String(row[0]))?String(row[0]):formatNodeId(index+1))===nodeId);
  return JSON.stringify([row?.[1],row?.[2],eventNode.activeSlot,eventNode.pendingSlot,eventNode.codes]);
 }
-function exchangeContext(player,nodeId,exchangeId){
+function exchangeContext(player,nodeId,exchangeId,historySnapshot){
  if(player.role!=='PIONEER'||!player.nodeAccess)throw new Error('PIONEER_NODE_ACCESS_REQUIRED');
  const auth=getNodeAccessAuthorization(player,nodeId,getNodeGameplayStatus(nodeId));
  if(!auth.allowed)throw new Error(auth.reason);
@@ -7081,7 +7081,7 @@ function exchangeContext(player,nodeId,exchangeId){
  const restoreOrders=liveRestores();
  assertRestoreUnreserved(nodeId,player.identity,'',undefined,restoreOrders);
  // Under the exchange lock: share one current audit view for reservations and cooldown.
- const historySnapshot=transactionHistorySnapshot();
+ historySnapshot=historySnapshot||transactionHistorySnapshot();
  const exchangeOrders=liveExchanges(historySnapshot);
  assertExchangeUnreserved(nodeId,player.identity,'',exchangeId,exchangeOrders);
  const coreRows=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
@@ -7109,9 +7109,11 @@ function exchangePreview(e,player,nodeId){
 }
 function exchangeResponse(order,status){return {ok:true,session:true,action:true,status,exchange:order.id,nodeId:order.nodeId,size:order.size,inCount:order.incoming.length,outCount:order.outgoing.length,canConfirm:order.incoming.length===order.size&&order.outgoing.length===order.size};}
 function validateLiveExchange(order,player){
- if(!exchangeIsLive(order))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
+ // Reuse the same audit snapshot for completion validation, reservations and cooldown.
+ const historySnapshot=transactionHistorySnapshot();
+ if(!exchangeIsLive(order,historySnapshot))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
  const nodeId=order.nodeId;
-  const context=exchangeContext(player,nodeId,order.id);
+  const context=exchangeContext(player,nodeId,order.id,historySnapshot);
   if(exchangeNodeFingerprint(nodeId,context.eventNode)!==order.nodeFingerprint)throw new Error('EXCHANGE_NODE_CHANGED');
   if(context.event.eventId!==order.eventId||context.capacity!==order.capacity)throw new Error('EXCHANGE_EVENT_SLOT_CHANGED');
   const snapshot=cores=>JSON.stringify(cores.map(core=>[core.coreId,core.uid,core.ownerType,core.ownerId,core.status,core.visibleEnergy,core.hiddenEnergy,core.actualEnergy,core.lastTransaction]).sort());
