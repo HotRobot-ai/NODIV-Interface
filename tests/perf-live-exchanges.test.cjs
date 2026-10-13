@@ -37,3 +37,15 @@ test('30 reservations reuse caller snapshot without additional audit reads',()=>
  assert.equal(h.check(supplied).length,30);
  assert.equal(h.reads(),0);
 });
+
+test('expired reservations do not read audit history',()=>{
+ let reads=0;
+ const context={EXCHANGE_PREFIX:'EX_',EXCHANGE_PREVIEW_PREFIX:'EX_PREVIEW_',PropertiesService:{getScriptProperties:()=>({getProperties:()=>({'EX_expired':JSON.stringify({id:'expired',expiresAt:Date.now()-1000})})})},transactionHistorySnapshot:()=>{reads++;return {rows:[],resetIndex:-1}},exchangeLogRows:()=>[],Date,JSON,Object};
+ vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
+ assert.equal(context.check().length,0);assert.equal(reads,0);
+});
+test('history read failure isolates reservations rather than throwing',()=>{
+ const context={EXCHANGE_PREFIX:'EX_',EXCHANGE_PREVIEW_PREFIX:'EX_PREVIEW_',PropertiesService:{getScriptProperties:()=>({getProperties:()=>({'EX_active':JSON.stringify({id:'active',expiresAt:Date.now()+60000})})})},transactionHistorySnapshot:()=>{throw Error('temporary read failure')},exchangeLogRows:()=>[],Date,JSON,Object};
+ vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
+ assert.equal(context.check().length,0);
+});
