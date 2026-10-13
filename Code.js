@@ -7158,7 +7158,7 @@ function normalExchange(e,action){
   if(!order)throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
   if(order.token!==token||order.identity!==player.identity||order.nodeId!==nodeId)throw new Error('EXCHANGE_SESSION_NODE_MISMATCH');
   if(action==='cancel'){props.deleteProperty(EXCHANGE_PREFIX+order.id);return {...exchangeResponse(order,'EXCHANGE_CANCELLED'),canConfirm:false};}
-  if(!exchangeIsLive(order))throw new Error('EXCHANGE_EXPIRED_OR_COMPLETED');
+  // validateLiveExchange performs liveness validation under the held ScriptLock.
   const context=validateLiveExchange(order,player);
   if(action==='scan'){
    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
