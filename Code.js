@@ -7156,6 +7156,10 @@ function recoverNormalExchange(e,nodeId){
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function normalExchange(e,action){
+ // Authenticate before contending for the global write lock. No exchange state is
+ // read or changed until the lock is held; the session is rechecked inside.
+ const initialSession=resolvePlayerSession(e.parameter.token||'');
+ if(!initialSession.ok)return initialSession.response;
  const lock=LockService.getScriptLock();
  try{
   lock.waitLock(10000);
