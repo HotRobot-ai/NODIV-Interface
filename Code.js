@@ -7021,7 +7021,7 @@ function transactionHistorySnapshot(){
  for(let i=rows.length-1;i>=0;i--){
   if(rows[i][2]==='PRE_EVENT_RESET_COMPLETE'&&rows[i][14]==='SUCCESS'){resetIndex=i;break;}
  }
- return {rows,resetIndex};
+ return {rows,resetIndex,completedExchangeIds:new Set(rows.slice(resetIndex+1).filter(row=>row[2]==='NORMAL_EXCHANGE').map(row=>row[15]))};
 }
 function readPreEventResetEpoch(snapshot){
  const view=snapshot||transactionHistorySnapshot();
@@ -7031,7 +7031,10 @@ function exchangeLogRows(snapshot){
  const view=snapshot||transactionHistorySnapshot();
  return view.rows.slice(view.resetIndex+1);
 }
-function exchangeCompleted(order,snapshot){return exchangeLogRows(snapshot).some(row=>row[2]==='NORMAL_EXCHANGE'&&row[15]===order.id);}
+function exchangeCompleted(order,snapshot){
+ const view=snapshot||transactionHistorySnapshot();
+ return view.completedExchangeIds.has(order.id);
+}
 function exchangeIsLive(order,snapshot){
  if(!order||!Number.isFinite(order.expiresAt)||Date.now()>=order.expiresAt||exchangeCompleted(order,snapshot))return false;
  // Reservations belong to the authenticated Identity, not to the lifetime of a browser session.
