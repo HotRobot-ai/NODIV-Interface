@@ -7100,8 +7100,15 @@ function exchangeContext(player,nodeId,exchangeId,historySnapshot){
  all.forEach(core=>{assertExchangeUnreserved('','',core.coreId,exchangeId,exchangeOrders);assertRestoreUnreserved('','',core.coreId,undefined,restoreOrders);});
  if(new Set(all.map(core=>core.coreId)).size!==all.length||new Set(all.filter(core=>core.uid).map(core=>core.uid)).size!==all.filter(core=>core.uid).length)throw new Error('EXCHANGE_DUPLICATE_CORE_UID');
  const personal=inventory.filter(eligible);
- const transactionRows=exchangeLogRows(historySnapshot),logs=transactionRows.filter(row=>row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId);
- const cooldownUntil=logs.reduce((until,row)=>Math.max(until,new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS||0),0);
+ const transactionRows=exchangeLogRows(historySnapshot);
+ let cooldownUntil=0;
+ for(let i=transactionRows.length-1;i>=0;i--){
+  const row=transactionRows[i];
+  if(row[2]==='NORMAL_EXCHANGE'&&row[13]===nodeId){
+   const until=new Date(row[1]).getTime()+EXCHANGE_COOLDOWN_MS;
+   if(Number.isFinite(until)&&until>cooldownUntil)cooldownUntil=until;
+  }
+ }
  if(cooldownUntil>Date.now())throw new Error('NODE_EXCHANGE_COOLDOWN // '+new Date(cooldownUntil).toISOString());
  return {event,eventNode,nodeCores,inventory,personal,capacity,transactionRows,coreRows,totalEnergy:nodeCores.reduce((sum,core)=>sum+core.visibleEnergy,0)};
 }
