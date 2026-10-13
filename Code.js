@@ -7042,10 +7042,17 @@ function exchangeIsLive(order,snapshot){
 function liveExchanges(snapshot){
  const props=PropertiesService.getScriptProperties().getProperties();
  const keys=Object.keys(props).filter(key=>key.startsWith(EXCHANGE_PREFIX)&&!key.startsWith(EXCHANGE_PREVIEW_PREFIX));
- // Reuse the caller's lock-scoped audit snapshot, or read once locally.
- snapshot=snapshot||(keys.length?transactionHistorySnapshot():null);
- return keys.flatMap(key=>{
-  try{const order=JSON.parse(props[key]);return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
+ // Expired/malformed reservations need no audit read; preserve per-order error isolation.
+ const candidates=keys.flatMap(key=>{
+  try{
+   const order=JSON.parse(props[key]);
+   return order&&Number.isFinite(order.expiresAt)&&Date.now()<order.expiresAt?[order]:[];
+  }catch(error){return [];}
+ });
+ if(!candidates.length)return [];
+ try{snapshot=snapshot||transactionHistorySnapshot();}catch(error){return [];}
+ return candidates.flatMap(order=>{
+  try{return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
  });
 }
 function assertExchangeUnreserved(nodeId,identity,coreId,exchangeId,orders,resupplyId){
