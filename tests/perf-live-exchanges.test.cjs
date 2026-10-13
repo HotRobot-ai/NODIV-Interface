@@ -44,8 +44,8 @@ test('expired reservations do not read audit history',()=>{
  vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
  assert.equal(context.check().length,0);assert.equal(reads,0);
 });
-test('history read failure isolates reservations rather than throwing',()=>{
+test('history read failure blocks reservation validation (fail closed)',()=>{
  const context={EXCHANGE_PREFIX:'EX_',EXCHANGE_PREVIEW_PREFIX:'EX_PREVIEW_',PropertiesService:{getScriptProperties:()=>({getProperties:()=>({'EX_active':JSON.stringify({id:'active',expiresAt:Date.now()+60000})})})},transactionHistorySnapshot:()=>{throw Error('temporary read failure')},exchangeLogRows:()=>[],Date,JSON,Object};
  vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
- assert.equal(context.check().length,0);
+ assert.throws(()=>context.check(),/temporary read failure/);
 });
