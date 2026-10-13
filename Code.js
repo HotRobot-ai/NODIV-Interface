@@ -7176,7 +7176,8 @@ function normalExchange(e,action){
   if(action==='scan'){
    const uid=normalizeUid(e.parameter.uid||''),hit=lookupUidGlobally(uid);
    if(!uid||!hit.found||hit.type!=='N_CORE')throw new Error('CORE_NOT_FOUND');
-   const core=readCoreState(hit.id);
+   const core=context.personal.concat(context.nodeCores).find(c=>c.coreId===hit.id&&c.uid===uid);
+   if(!core)throw new Error('EXCHANGE_CORE_INVALID');
    const acceptedIn=order.incoming.includes(core.coreId),acceptedOut=order.outgoing.includes(core.coreId);
    // Older callers omit phase; an accepted Core retains its original phase.
    // Explicit phase binds retries and rejects attempts to reuse IN as OUT (or vice versa).
