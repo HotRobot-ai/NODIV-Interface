@@ -49,3 +49,12 @@ test('history read failure blocks reservation validation (fail closed)',()=>{
  vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
  assert.throws(()=>context.check(),/temporary read failure/);
 });
+
+test('completed reservation remains excluded when audit marks its exchange complete',()=>{
+ let reads=0;
+ const order={id:'completed-order',identity:'P003',eventId:'EVENT',expiresAt:Date.now()+60000};
+ const row=Array(16).fill('');row[2]='NORMAL_EXCHANGE';row[15]=order.id;
+ const context={EXCHANGE_PREFIX:'EX_',EXCHANGE_PREVIEW_PREFIX:'EX_PREVIEW_',PropertiesService:{getScriptProperties:()=>({getProperties:()=>({'EX_completed':JSON.stringify(order)})})},transactionHistorySnapshot:()=>{reads++;return {rows:[row],resetIndex:-1}},exchangeLogRows:s=>s.rows.slice(s.resetIndex+1),findIdentityById:()=>({status:'ACTIVE',role:'PIONEER',nodeAccess:true}),readCurrentEvent:()=>({state:'FIELD_ACTIVE',eventId:'EVENT'}),Date,JSON,Object};
+ vm.createContext(context);vm.runInContext(code+';globalThis.check=liveExchanges;',context);
+ assert.equal(context.check().length,0);assert.equal(reads,1);
+});
