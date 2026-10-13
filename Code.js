@@ -7050,7 +7050,8 @@ function liveExchanges(snapshot){
   }catch(error){return [];}
  });
  if(!candidates.length)return [];
- try{snapshot=snapshot||transactionHistorySnapshot();}catch(error){return [];}
+ // Fail closed: an unavailable audit must never make active reservations appear free.
+ snapshot=snapshot||transactionHistorySnapshot();
  return candidates.flatMap(order=>{
   try{return exchangeIsLive(order,snapshot)?[order]:[];}catch(error){return [];}
  });
