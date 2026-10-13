@@ -3325,7 +3325,7 @@ function deliverCoreDeployment(e) {
     const uid=normalizeUid(e.parameter.uid||'');
     if(!uid)throw new Error('Node NFC UID fehlt.');
 
-    const hit=lookupUidGlobally(uid);
+    const hit=lookupUidGlobally(uid,context.coreRows);
     if(!hit.found||hit.type!=='NODE'||!hit.id)
       return gameplayActionDenied(player,'NODE_NOT_FOUND','Gescannter NFC Tag ist kein registrierter Node.');
 
@@ -6178,7 +6178,7 @@ function getPublicScanDisplay(hit) {
   return { label:'NODIV OBJECT', status:'VERIFIED' };
 }
 
-function lookupUidGlobally(uid) {
+function lookupUidGlobally(uid, existingCoreRows) {
 
   const normalizedUid = normalizeUid(uid);
 
@@ -6223,14 +6223,7 @@ function lookupUidGlobally(uid) {
     }
 
   }
-
-
-
-  const coreSheet = getRegisterSheet();
-
-  const coreRows =
-
-    coreSheet.getRange(2, 1, 200, 4).getValues();
+  const coreRows = existingCoreRows || getRegisterSheet().getRange(2, 1, 200, 4).getValues();
 
 
 
