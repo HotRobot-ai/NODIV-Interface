@@ -128,7 +128,9 @@ function doGet(e) {
 
 
 
-    if (action === 'forcerecallstart') {
+    if (action === 'forcerecallfinish') {
+      result = finishForceRecall(e);
+    } else if (action === 'forcerecallstart') {
       result = startForceRecall(e);
     } else if (action === 'forcerecallstatus') {
       result = forceRecallStatus(e);
@@ -8197,7 +8199,7 @@ function forceRecallRecord(){
 function forceRecallBlocksAction(action){
  const record=forceRecallRecord();
  if(!record||record.status!=='EMERGENCY_SHUTDOWN')return false;
- return !['forcerecallstatus','fopoperations','nodedeinstallorder','nodedeinstallscan',
+ return !['forcerecallstatus','forcerecallfinish','fopoperations','nodedeinstallorder','nodedeinstallscan',
  'nodedeinstallcancel','nodedeinstallconfirm','sessioncheck','sessionstart',
  'sessionend','gameplayroute','playerstate','eventstatus','corestate'].includes(action);
 }
@@ -8218,6 +8220,51 @@ function startForceRecall(e){
   const record={eventId:event.eventId,status:'EMERGENCY_SHUTDOWN',createdAt:new Date().toISOString(),founder:session.player.identity};
   PropertiesService.getScriptProperties().setProperty(FORCE_RECALL_PROPERTY,JSON.stringify(record));
   return {ok:true,status:record.status,eventId:event.eventId,action:true,message:'MISSION ABGEBROCHEN // TECHNISCHER RUECKBAU'};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function finishForceRecall(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw Error('ROLE_DENIED');
+  const record=forceRecallRecord();
+  if(!record||record.status!=='EMERGENCY_SHUTDOWN')throw Error('FORCE_RECALL_NOT_ACTIVE');
+  if(String(e.parameter.event||'')!==record.eventId)throw Error('EVENT_MISMATCH');
+  if(String(e.parameter.confirm||'')!=='FINISH_RECALL:'+record.eventId)throw Error('CONFIRMATION_REQUIRED');
+  const event=readCurrentEvent();
+  if(!event||event.eventId!==record.eventId||event.state!=='FIELD_ACTIVE')throw Error('EVENT_NOT_FIELD_ACTIVE');
+  const blockers=[],sheet=getEventNodeCodeSheet();
+  const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
+  const nodes=rows.filter(row=>String(row[0])===event.eventId);
+  if(!nodes.length||nodes.length!==event.plannedNodes||new Set(nodes.map(row=>String(row[1]).trim().toUpperCase())).size!==event.plannedNodes)blockers.push('EVENT_NODE_COUNT_MISMATCH');
+  nodes.forEach(row=>{
+   const id=String(row[1]||'').trim().toUpperCase();
+   if(String(row[9]||'').trim().toUpperCase()!=='DEINSTALLED'||row[7]||row[8]||getNodeGameplayStatus(id)!=='AVAILABLE')blockers.push(id+':DEINSTALLATION_NOT_CONFIRMED');
+  });
+  if(event.activeNodes!==0)blockers.push('ACTIVE_NODES:'+event.activeNodes);
+  const cores=getRegisterSheet().getRange(2,1,200,CORE_COL.UPDATED_AT).getValues();
+  if(new Set(cores.map(row=>String(row[CORE_COL.ID-1]||'').trim())).size!==200)blockers.push('CORE_REGISTER_INCOMPLETE');
+  cores.forEach(row=>{
+   const id=String(row[CORE_COL.ID-1]||'').trim();
+   const owner=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();
+   const status=String(row[CORE_COL.STATUS-1]||'').trim().toUpperCase();
+   if(!['HQ','NODIV_RESERVE'].includes(owner))blockers.push('CORE_NOT_AT_HQ:'+id);
+   if(status!=='RESERVE')blockers.push('CORE_NOT_RESERVE:'+id);
+  });
+  readInstallationOrders().filter(o=>o.eventId===event.eventId&&installationOrderIsLive(o)).forEach(o=>blockers.push('OPEN_NODE_ORDER:'+o.id));
+  liveRestores().filter(o=>o.eventId===event.eventId).forEach(o=>blockers.push('OPEN_RESTORE:'+o.id));
+  liveReSupplies().filter(o=>o.eventId===event.eventId).forEach(o=>blockers.push('OPEN_RESUPPLY:'+o.id));
+  if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS');
+  if(blockers.length)return {ok:false,error:'FORCE_RECALL_FINISH_BLOCKED',eventId:event.eventId,blockers};
+  const now=new Date(),requests=[];
+  stageEventRegisterCompletion(getEventRegisterSheet(),event.row,now,requests);
+  appendTransactionLog({eventType:'FORCE_RECALL_COMPLETED',actorId:session.player.identity,actorRole:'FOUNDER',result:'SUCCESS',details:event.eventId+' // RECOVERY VERIFIED'},requests);
+  SpreadsheetApp.flush();
+  Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
+  PropertiesService.getScriptProperties().setProperty(FORCE_RECALL_PROPERTY,JSON.stringify({...record,status:'COMPLETED',completedAt:now.toISOString(),completedBy:session.player.identity}));
+  return {ok:true,eventId:event.eventId,status:'COMPLETED',completedAt:now.toISOString()};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
 function forceRecallStatus(e){
