@@ -8256,6 +8256,7 @@ function finishForceRecall(e){
   });
   readInstallationOrders().filter(o=>o.eventId===event.eventId&&installationOrderIsLive(o)).forEach(o=>blockers.push('OPEN_NODE_ORDER:'+o.id));
   liveRestores().filter(o=>o.eventId===event.eventId).forEach(o=>blockers.push('OPEN_RESTORE:'+o.id));
+  liveExchanges().filter(o=>o.eventId===event.eventId).forEach(o=>blockers.push('OPEN_EXCHANGE:'+o.id));
   liveReSupplies().filter(o=>o.eventId===event.eventId).forEach(o=>blockers.push('OPEN_RESUPPLY:'+o.id));
   if(evacuationStarted(event.eventId))blockers.push('EVACUATION_IN_PROGRESS');
   if(blockers.length)return {ok:false,error:'FORCE_RECALL_FINISH_BLOCKED',eventId:event.eventId,blockers};
