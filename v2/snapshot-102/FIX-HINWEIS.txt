@@ -1,0 +1,5 @@
+NODIV V2 – korrigiertes lokales Testpaket
+Exchange-Auftrag: 15 statt 2 Minuten gültig.
+Klare Fehlermeldung bei Ablauf.
+WICHTIG: Altes schwarzes Serverfenster mit STRG+C beenden, dann dieses Paket entpacken und START-LOKAL.cmd starten.
+Neue Testsitzung/Token verwenden. Nur simulierte Daten; kein produktives NODIV.
