@@ -8249,8 +8249,9 @@ function finishForceRecall(e){
   cores.forEach(row=>{
    const id=String(row[CORE_COL.ID-1]||'').trim();
    const owner=String(row[CORE_COL.OWNER_TYPE-1]||'').trim().toUpperCase();
+   const ownerId=String(row[CORE_COL.OWNER_ID-1]||'').trim().toUpperCase();
    const status=String(row[CORE_COL.STATUS-1]||'').trim().toUpperCase();
-   if(!['HQ','NODIV_RESERVE'].includes(owner))blockers.push('CORE_NOT_AT_HQ:'+id);
+   if(!['HQ','NODIV_RESERVE'].includes(owner)||ownerId!=='HQ')blockers.push('CORE_NOT_AT_HQ:'+id);
    if(status!=='RESERVE')blockers.push('CORE_NOT_RESERVE:'+id);
   });
   readInstallationOrders().filter(o=>o.eventId===event.eventId&&installationOrderIsLive(o)).forEach(o=>blockers.push('OPEN_NODE_ORDER:'+o.id));
