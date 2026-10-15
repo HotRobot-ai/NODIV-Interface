@@ -31,3 +31,24 @@ test('read-only handler does not consume grant',async()=>{
  assert.deepEqual(await execute({session,command:'player.state'}),{ready:true});
  assert.equal(f.db.prepare('SELECT consumed_at FROM v2_nfc_grants').get().consumed_at,null);
 });
+
+test('failed domain command rolls back both ownership and NFC consumption',async()=>{
+ const f=fixture();
+ const execute=createTrustedV2Executor({db:f.db,resolveScope:async()=>f.scope,handlers:{
+  'exchange.confirm':({db})=>{
+   db.prepare("UPDATE cores SET owner='P003' WHERE id='NC001'").run();
+   throw Error('CORE_GUARD_REJECTED');
+  }
+ }});
+ await assert.rejects(execute({session,command:'exchange.confirm'}),/CORE_GUARD_REJECTED/);
+ assert.equal(f.db.prepare('SELECT owner FROM cores').get().owner,'NODE');
+ assert.equal(f.db.prepare('SELECT consumed_at FROM v2_nfc_grants').get().consumed_at,null);
+ await f.execute({session,command:'exchange.confirm'});
+ assert.equal(f.db.prepare('SELECT owner FROM cores').get().owner,'P003');
+});
+test('missing server-side order and unsupported handler fail closed',async()=>{
+ const f=fixture();
+ const execute=createTrustedV2Executor({db:f.db,resolveScope:async()=>null,handlers:{'exchange.confirm':()=>true}});
+ await assert.rejects(execute({session,command:'exchange.confirm'}),{code:'AUTHORITATIVE_ORDER_REQUIRED'});
+ assert.equal(f.db.prepare('SELECT consumed_at FROM v2_nfc_grants').get().consumed_at,null);
+});
