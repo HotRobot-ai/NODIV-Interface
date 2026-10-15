@@ -50,17 +50,8 @@ export class SqliteGameCore {
       const permitted = {EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
       if(!permitted[kind]?.includes(actor.role)) throw new GameError('ROLE_DENIED');
       if(new Set(moves.map(m=>m.id)).size!==moves.length) throw new GameError('DUPLICATE_CORE');
-      // Prevent other ownership operations from invalidating an active Catch preview.
-      // The preview is a five-minute encounter snapshot, not merely a UI hint.
-      if(['EXCHANGE','RESTORE_1','RESTORE_2','RESUPPLY','HQ_UPLOAD'].includes(kind)) {
-        const now=this.clock();
-        const exists=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catch_previews'").get();
-        const previews=exists?this.db.prepare('SELECT catcher_id,target_id,core_id FROM catch_previews WHERE event_id=? AND expires_at>?').all(eventId,now):[];
-        for(const preview of previews) {
-          if(preview.catcher_id===actorId || preview.target_id===actorId || moves.some(m=>m.id===preview.core_id))
-            throw new GameError('CATCH_PREVIEW_CONFLICT');
-        }
-      }
+       // Catch previews are optimistic snapshots, not five-minute ownership locks.
+       // CatchTransaction.confirm validates both inventories inside its transaction.
       // Domain checks run inside the same transaction as the ownership updates.
       // Never accept a caller-supplied energy amount or arbitrary transfer graph.
       if(kind==='HQ_UPLOAD') {
