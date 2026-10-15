@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const code=fs.readFileSync(path.join(__dirname,'../../Code.js'),'utf8');
+const start=code.indexOf('function finishForceRecall(e){');
+const end=code.indexOf('function forceRecallStatus(e){',start);
+assert(start>=0&&end>start,'actual completion routine must exist');
+const body=code.slice(start,end);
+assert.match(body,/lock\.waitLock\(/,'closure requires lock');
+assert.match(body,/role!=='FOUNDER'/,'founder only');
+assert.match(body,/ownerId!=='HQ'/,'core owner ID required');
+assert.match(body,/status!=='RESERVE'/,'reserve status required');
+assert.match(body,/liveExchanges\(\)/,'open exchanges must block closure');
+assert.match(body,/OPEN_EXCHANGE/,'open exchange blocker must be visible');
+assert.match(body,/OPEN_NODE_ORDER/);
+assert.match(body,/OPEN_RESTORE/);
+assert.match(body,/OPEN_RESUPPLY/);
+assert.match(body,/FORCE_RECALL_FINISH_BLOCKED/);
+assert.match(body,/batchUpdate/);
+assert.match(body,/setProperty\(FORCE_RECALL_PROPERTY/);
+// Recovery after a successful Sheets write but failed property write must be explicit.
+assert.match(body,/FORCE_RECALL_COMPLETION_RECOVERY|reconcileForceRecallCompletion/,'interrupted completion needs reconciliation');
+console.log('FORCE RECALL completion source guards: PASS');
