@@ -2927,6 +2927,42 @@ function recordUnboundDiscovery(player,nodeId,event){
   return true;
 }
 
+/*
+ * UNBOUND network activity: completed normal exchanges only, in a rolling
+ * 60-minute window. Read only the bounded recent tail of the transaction log.
+ * Never expose actor, core or energy data to UNBOUND.
+ */
+function readUnboundExchangeActivity(nodeIds,nowMs){
+ const ids=[...new Set((nodeIds||[]).filter(id=>/^NODE-\d{3}$/.test(id)))];
+ const result=Object.fromEntries(ids.map(id=>[id,{count:0,lastBookingAt:null}]));
+ if(!ids.length)return result;
+ const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
+ if(!sheet)throw new Error('UNBOUND_ACTIVITY_LOG_MISSING');
+ const last=sheet.getLastRow();
+ if(last<2)return result;
+ const start=Math.max(2,last-999);
+ const rows=sheet.getRange(start,1,last-start+1,16).getValues();
+ const seen=new Set();
+ for(let i=rows.length-1;i>=0;i--){
+  const row=rows[i],type=String(row[2]||''),node=String(row[13]||'').trim().toUpperCase();
+  if(type!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!Object.prototype.hasOwnProperty.call(result,node))continue;
+  const timestamp=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
+  if(!Number.isFinite(timestamp)||timestamp>nowMs||timestamp<nowMs-3600000)continue;
+  const unique=String(row[0]||'');
+  if(!unique||seen.has(unique))continue;
+  seen.add(unique);
+  const item=result[node];item.count++;
+  if(item.lastBookingAt===null||timestamp>item.lastBookingAt)item.lastBookingAt=timestamp;
+ }
+ return result;
+}
+function unboundActivityTier(count){
+ if(count>=4)return 'HOCH';
+ if(count>=2)return 'MITTEL';
+ if(count>=1)return 'NIEDRIG';
+ return 'KEINE';
+}
+
 function getPlayerState(e) {
   const session = resolvePlayerSession(e.parameter.token || '');
   if (!session.ok) return session.response;
@@ -2955,11 +2991,16 @@ function getPlayerState(e) {
   const discoveredNodes=eventActive&&player.role==='PIONEER'?readPioneerDiscoveries(event.eventId,player.identity):[];
   const unboundEntries=eventActive&&player.role==='UNBOUND'?readUnboundDiscoveries(event.eventId,player.identity):null;
   const unboundKnown=unboundEntries?Object.keys(unboundEntries).filter(id=>unboundNodeInstalled(event,id)&&unboundEntries[id]===readNodeSiteGeneration(event.eventId,id)).sort():[];
+  const unboundActivity=unboundEntries?readUnboundExchangeActivity(unboundKnown,Date.now()):null;
+  const unboundNodeActivity=unboundActivity?unboundKnown.map(id=>({
+    nodeId:id,activity:unboundActivityTier(unboundActivity[id].count),
+    ...(unboundKnown.length===Number(event.activeNodes)&&event.activeNodes>0?{lastBookingAt:unboundActivity[id].lastBookingAt}:{})
+  })):null;
   return {
     ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
     evacuation:evacuationPlayerState(player),
-    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length,...(unboundEntries?{unboundDiscoveredNodeIds:unboundKnown}:{})},
+    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length,...(unboundEntries?{unboundDiscoveredNodeIds:unboundKnown,unboundNodeActivity}:{})},
     ...(player.catchAccess===true?{catchCount:readCompletedCatchCount(player.identity)}:{}),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
