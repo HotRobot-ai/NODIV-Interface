@@ -4242,7 +4242,7 @@ function getNodeOperationOrder(e,operation) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
-  assertForceRecallGameplayAllowed();
+  if(operation!=='DEINSTALL')assertForceRecallGameplayAllowed();
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
