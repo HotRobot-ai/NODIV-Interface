@@ -2952,14 +2952,19 @@ function recordUnboundDiscovery(player,nodeId,event){
  * This is a short-lived read-through cache, NOT a second source of truth.
  * Never update it before the durable transaction commit.
  */
+/*
+ * Read-through projection from durable successful exchange completion rows.
+ * The event ID is stored in the completion details, not inferred from time.
+ * Historical rows without an explicit event ID are deliberately excluded.
+ */
 function readUnboundExchangeActivity(event,nodeIds,nowMs){
  const ids=[...new Set((nodeIds||[]).filter(id=>/^NODE-\d{3}$/.test(id)))];
  const result=Object.fromEntries(ids.map(id=>[id,{count:0,lastBookingAt:null}]));
- if(!ids.length||!event||!event.eventId)return result;
+ if(!ids.length||!event?.eventId)return result;
  const activated=event.activatedAt instanceof Date?event.activatedAt.getTime():Date.parse(String(event.activatedAt||''));
  if(!Number.isFinite(activated))throw new Error('UNBOUND_EVENT_START_UNVERIFIED');
  const cache=CacheService.getScriptCache();
- const cacheKey='UB_EXCHANGE_V2_'+Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(event.eventId))).slice(0,32);
+ const cacheKey='UB_EXCHANGE_V3_'+Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(event.eventId))).slice(0,32);
  let events;
  try{const cached=cache.get(cacheKey);if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed))events=parsed;}}catch(error){}
  if(!events){
@@ -2972,16 +2977,19 @@ function readUnboundExchangeActivity(event,nodeIds,nowMs){
   for(let i=rows.length-1;i>=0;i--){
    const row=rows[i],node=String(row[13]||'').trim().toUpperCase();
    if(row[2]!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!/^NODE-\d{3}$/.test(node))continue;
+   const details=String(row[15]||'');
+   if(!details.startsWith(String(event.eventId)+' // '))continue;
    const ts=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
-   if(!Number.isFinite(ts)||ts<activated||ts>nowMs||ts<nowMs-3600000)continue;
+   if(!Number.isFinite(ts)||ts<activated||ts>nowMs)continue;
    const tx=String(row[0]||'');if(!tx||seen.has(tx))continue;
    seen.add(tx);events.push({node,ts});
   }
   try{cache.put(cacheKey,JSON.stringify(events),20);}catch(error){}
  }
  for(const item of events){
-  if(!Object.prototype.hasOwnProperty.call(result,item.node)||item.ts>nowMs||item.ts<Math.max(activated,nowMs-3600000))continue;
-  const node=result[item.node];node.count++;
+  if(!Object.prototype.hasOwnProperty.call(result,item.node)||item.ts>nowMs||item.ts<activated)continue;
+  const node=result[item.node];
+  if(item.ts>=nowMs-3600000)node.count++;
   if(node.lastBookingAt===null||item.ts>node.lastBookingAt)node.lastBookingAt=item.ts;
  }
  return result;
@@ -7298,7 +7306,7 @@ function normalExchange(e,action){
   const first=order.capacity===1&&!context.transactionRows.some(row=>row[2]==='RESTORE_1_ELIGIBLE'&&row[3]===player.identity);
   if(first)appendTransactionLog({eventType:'RESTORE_1_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:'First normal exchange completed; eligibility marker only'},requests);
   if(order.capacity===2&&order.size===2&&context.transactionRows.some(row=>row[2]==='RESTORE_1_COMPLETE'&&row[3]===player.identity&&row[14]==='SUCCESS')&&!context.transactionRows.some(row=>['RESTORE_2_ELIGIBLE','RESTORE_2_COMPLETE'].includes(row[2])&&row[3]===player.identity))appendTransactionLog({eventType:'RESTORE_2_ELIGIBLE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
-  appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.id},requests);
+  appendTransactionLog({eventType:'NORMAL_EXCHANGE',actorId:player.identity,actorRole:player.role,nodeId,result:'SUCCESS',details:order.eventId+' // '+order.id},requests);
   assertPersonalCoreCapacity(requests,context.coreRows);
   Sheets.Spreadsheets.batchUpdate({requests},SpreadsheetApp.getActiveSpreadsheet().getId());
   // Completion is durable in the same batch; stale property cannot reserve or replay.
