@@ -13,7 +13,9 @@ function fixture() {
   core.seedNode('E',n,'INSTALLED');
   for(let i=0;i<3;i++)core.seedCore('E',{id:n+'C'+i,uid:n+'U'+i,energy:100+i,ownerType:'NODE',ownerId:n});
  }
- const service=createEvacTeamReservations(core);\n core.db.prepare("INSERT INTO evac_control(event_id,state) VALUES ('E','STARTED')").run();\n return {core,service};
+ const service=createEvacTeamReservations(core);
+ core.db.prepare("INSERT INTO evac_control(event_id,state) VALUES ('E','STARTED')").run();
+ return {core,service};
 }
 const req={eventId:'E',teamId:'T1',fopId:'F1',pioneerA:'P1',pioneerB:'P2',nodeIds:['N1','N2']};
 test('reserves two three-core snapshots atomically',()=>{
