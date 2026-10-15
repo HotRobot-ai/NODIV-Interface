@@ -2,30 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SqliteGameCore} from './sqlite-core.mjs';
 import {CatchTransaction} from './catch-transaction.mjs';
-test('Exchange cannot invalidate an active Catch preview, expiry releases it',()=>{
- let now=1000;const c=new SqliteGameCore(':memory:',()=>now);new CatchTransaction(c);
- try{
-  c.seedEvent('E');c.seedActor('E','P','PIONEER',1);c.seedActor('E','L','LOCAL',1);c.seedNode('E','N','INSTALLED');
-  c.seedCore('E',{id:'P1',uid:'p1',energy:300,ownerType:'PIONEER',ownerId:'P'});
-  for(let i=1;i<=3;i++)c.seedCore('E',{id:'N'+i,uid:'n'+i,energy:200+i,ownerType:'NODE',ownerId:'N'});
-  const catchService=new CatchTransaction(c);catchService.preview({eventId:'E',catcherId:'L',targetId:'P'});
-  const exchange={eventId:'E',operationId:'EX1',actorId:'P',kind:'EXCHANGE',moves:[{id:'P1',fromType:'PIONEER',fromId:'P',toType:'NODE',toId:'N'},{id:'N1',fromType:'NODE',fromId:'N',toType:'PIONEER',toId:'P'}]};
-  assert.throws(()=>c.run(exchange),/CATCH_PREVIEW_CONFLICT/);
-  assert.equal(c.core('E','P1').owner_id,'P');
-  now=1301;assert.equal(c.run(exchange).kind,'EXCHANGE');
- }finally{c.close()}
-});
-
-test('RESTORE cannot invalidate a Catch preview, but an unrelated Pioneer is not blocked',()=>{
- let now=1000;const c=new SqliteGameCore(':memory:',()=>now);const catchService=new CatchTransaction(c);
- try{
-  c.seedEvent('E');c.seedActor('E','P','PIONEER',1);c.seedActor('E','Q','PIONEER',1);c.seedActor('E','L','LOCAL',1);
-  c.seedCore('E',{id:'P1',uid:'p1',energy:300,ownerType:'PIONEER',ownerId:'P'});
-  catchService.preview({eventId:'E',catcherId:'L',targetId:'P'});
-  const restore={eventId:'E',operationId:'R1',actorId:'P',kind:'RESTORE_1',moves:[],capacityChange:1};
-  assert.throws(()=>c.run(restore),/CATCH_PREVIEW_CONFLICT/);
-  assert.throws(()=>c.run({...restore,actorId:'Q',operationId:'R2'}),/RESTORE_1_INVALID_SHAPE/);
-  now=1301;
-  assert.throws(()=>c.run(restore),/RESTORE_1_INVALID_SHAPE/);
- }finally{c.close()}
-});
+const move=(id,fromType,fromId,toType,toId)=>({id,fromType,fromId,toType,toId});
+function setup(){const c=new SqliteGameCore(':memory:',()=>1000);c.seedEvent('E');c.seedActor('E','P','PIONEER',1);c.seedActor('E','Q','PIONEER',1);c.seedActor('E','L','LOCAL',1);c.seedNode('E','N','INSTALLED');c.seedNode('E','M','INSTALLED');c.seedCore('E',{id:'P1',uid:'p1',energy:300,ownerType:'PIONEER',ownerId:'P'});c.seedCore('E',{id:'Q1',uid:'q1',energy:300,ownerType:'PIONEER',ownerId:'Q'});for(let i=1;i<=3;i++){c.seedCore('E',{id:'N'+i,uid:'n'+i,energy:200+i,ownerType:'NODE',ownerId:'N'});c.seedCore('E',{id:'M'+i,uid:'m'+i,energy:200+i,ownerType:'NODE',ownerId:'M'})}return {c,s:new CatchTransaction(c)}}
+test('Catch preview does not block target Exchange; stale Catch cannot transfer or ghost',()=>{const {c,s}=setup();try{const p=s.preview({eventId:'E',catcherId:'L',targetId:'P'});assert.equal(c.run({eventId:'E',operationId:'EX1',actorId:'P',kind:'EXCHANGE',moves:[move('P1','PIONEER','P','NODE','N'),move('N1','NODE','N','PIONEER','P')]}).ok,true);assert.throws(()=>s.confirm({eventId:'E',previewId:p.previewId,catcherId:'L'}),/CATCH_SNAPSHOT_CHANGED/);assert.equal(c.core('E','N1').owner_id,'P');assert.equal(c.db.prepare('SELECT COUNT(*) n FROM catch_ghost').get().n,0);assert.equal(c.db.prepare("SELECT COUNT(*) n FROM operations WHERE kind='CATCH'").get().n,0)}finally{c.close()}});
+test('Unrelated Pioneer Exchange does not invalidate Catch preview',()=>{const {c,s}=setup();try{const p=s.preview({eventId:'E',catcherId:'L',targetId:'P'});c.run({eventId:'E',operationId:'EX2',actorId:'Q',kind:'EXCHANGE',moves:[move('Q1','PIONEER','Q','NODE','M'),move('M1','NODE','M','PIONEER','Q')]});const receipt=s.confirm({eventId:'E',previewId:p.previewId,catcherId:'L'});assert.equal(receipt.core.id,'P1');assert.equal(c.core('E','P1').owner_id,'L')}finally{c.close()}});
