@@ -20,3 +20,13 @@ test('reject inactive, unknown and coreless target',()=>{
  assert.throws(()=>resolveCatchCandidate(c.db,{eventId:'E',targetPioneerId:'unknown'}),/CATCH_TARGET_INVALID/);
  }finally{c.close();}
 });
+
+test('catch candidate uses deterministic tie-break and ignores non-FIELD personal cores',()=>{
+ const c=new SqliteGameCore();try{
+ c.seedEvent('E');c.seedActor('E','P','PIONEER',3);
+ c.seedCore('E',{id:'NC002',uid:'U2',energy:410,ownerType:'PIONEER',ownerId:'P'});
+ c.seedCore('E',{id:'NC001',uid:'U1',energy:410,ownerType:'PIONEER',ownerId:'P'});
+ c.seedCore('E',{id:'NC003',uid:'U3',energy:497,ownerType:'PIONEER',ownerId:'P',status:'IN_TRANSIT'});
+ assert.equal(resolveCatchCandidate(c.db,{eventId:'E',targetPioneerId:'P'}).coreId,'NC001');
+ }finally{c.close();}
+});
