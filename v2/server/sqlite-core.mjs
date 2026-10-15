@@ -45,6 +45,8 @@ export class SqliteGameCore {
       }
       const event = this.db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
       if(!event || event.state!=='FIELD_ACTIVE') throw new GameError('EVENT_NOT_FIELD_ACTIVE');
+      const ec=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evac_control'").get();
+      if(ec && this.db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state==='STARTED') throw new GameError('EVAC_NORMAL_ACTION_FROZEN');
       const actor = this.db.prepare('SELECT * FROM actors WHERE event_id=? AND actor_id=?').get(eventId,actorId);
       if(!actor||!actor.active) throw new GameError('ACTOR_DENIED');
       const permitted = {EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
@@ -119,6 +121,7 @@ export class SqliteGameCore {
         const core = this.core(eventId,move.id);
         if(!core) throw new GameError('CORE_UNKNOWN');
         if(core.owner_type!==move.fromType||core.owner_id!==move.fromId) throw new GameError('OWNERSHIP_CHANGED');
+        if(core.status==='EVAC_CARGO') throw new GameError('EVAC_CARGO_PROTECTED');
         if(!['HQ','PIONEER','NODE','TRANSIT'].includes(move.toType)||!move.toId) throw new GameError('INVALID_DESTINATION');
         if(move.toType==='PIONEER'&&!this.db.prepare("SELECT 1 FROM actors WHERE event_id=? AND actor_id=? AND role='PIONEER'").get(eventId,move.toId)) throw new GameError('PIONEER_UNKNOWN');
         if(move.toType==='NODE'&&!this.db.prepare('SELECT 1 FROM nodes WHERE event_id=? AND node_id=?').get(eventId,move.toId)) throw new GameError('NODE_UNKNOWN');
