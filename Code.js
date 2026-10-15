@@ -4437,6 +4437,7 @@ function getNodeRemovalLoadout(nodeId) {
 }
 function validateNodeDeinstallation(actor,nodeId) {
   assertReSupplyUnreserved(nodeId,'','');
+  if(forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'&&actor.role!=='FOP')throw new Error('FOP_ONLY_EMERGENCY_RECOVERY');
   if(!['FOUNDER','FOP'].includes(actor.role))throw new Error('ROLE_DENIED');
   if(!/^NODE-\d{3}$/.test(nodeId)||!listProvisionedNodeIds().includes(nodeId))throw new Error('NODE_NOT_REGISTERED');
   const event=readCurrentEvent();
@@ -4508,6 +4509,8 @@ function confirmNodeDeinstallation(e) {
     if(!session.ok)return session.response;
     const actor=session.player,replay=forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'?null:evacuationRecoveryReplay(e,actor);if(replay)return replay;
     const {key,order,context}=readNodeInstallation(e,actor,'DEINSTALL');
+    const emergency=forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN';
+    if(emergency&&order.evacuationTeam)throw new Error('EVAC_ORDER_REISSUE_REQUIRED');
     const evacuation=order.evacuationTeam?evacuationOperationContext(actor,order.nodeId,'DEINSTALL',order.evacuationTeam):null;
     if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('REMOVAL_REQUIRES_EXACTLY_3_CORES');
     // Validate current Node inventory and every reserved scanned Core before any write.
