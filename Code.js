@@ -8222,6 +8222,26 @@ function startForceRecall(e){
   return {ok:true,status:record.status,eventId:event.eventId,action:true,message:'MISSION ABGEBROCHEN // TECHNISCHER RUECKBAU'};
  }finally{try{lock.releaseLock();}catch(error){}}
 }
+/* Recovery after Sheets committed the event and audit but the script property write failed.
+ * Never manufacture completion: both durable records must agree. */
+function reconcileForceRecallCompletion(record,founder){
+ const eventSheet=getEventRegisterSheet();
+ if(eventSheet.getLastRow()<2)return null;
+ const events=eventRegisterRangeValues(eventSheet,2,eventSheet.getLastRow()-1);
+ const matching=events.filter(row=>String(row[0]||'')===record.eventId);
+ if(matching.length!==1||String(matching[0][1]||'').trim().toUpperCase()!=='COMPLETED')return null;
+ const log=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
+ if(!log||log.getLastRow()<2)return null;
+ const rows=log.getRange(2,1,log.getLastRow()-1,16).getValues();
+ const audited=rows.some(row=>String(row[2])==='FORCE_RECALL_COMPLETED'&&
+  String(row[3])===String(founder)&&String(row[14])==='SUCCESS'&&
+  String(row[15])===record.eventId+' // RECOVERY VERIFIED');
+ if(!audited)throw Error('FORCE_RECALL_COMPLETION_RECOVERY_AUDIT_MISSING');
+ const completedAt=matching[0][10] instanceof Date?matching[0][10].toISOString():new Date().toISOString();
+ PropertiesService.getScriptProperties().setProperty(FORCE_RECALL_PROPERTY,
+  JSON.stringify({...record,status:'COMPLETED',completedAt,completedBy:founder}));
+ return {ok:true,eventId:record.eventId,status:'COMPLETED',completedAt,recovered:true};
+}
 function finishForceRecall(e){
  const lock=LockService.getScriptLock();
  try{
@@ -8233,6 +8253,8 @@ function finishForceRecall(e){
   if(!record||record.status!=='EMERGENCY_SHUTDOWN')throw Error('FORCE_RECALL_NOT_ACTIVE');
   if(String(e.parameter.event||'')!==record.eventId)throw Error('EVENT_MISMATCH');
   if(String(e.parameter.confirm||'')!=='FINISH_RECALL:'+record.eventId)throw Error('CONFIRMATION_REQUIRED');
+  const recovered=reconcileForceRecallCompletion(record,session.player.identity);
+  if(recovered)return recovered;
   const event=readCurrentEvent();
   if(!event||event.eventId!==record.eventId||event.state!=='FIELD_ACTIVE')throw Error('EVENT_NOT_FIELD_ACTIVE');
   const blockers=[],sheet=getEventNodeCodeSheet();
