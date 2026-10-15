@@ -44,3 +44,16 @@ test('replay with another NFC grant is rejected',()=>{
   assert.throws(()=>runCoreWithNfcGrant(f.core,f.operation,{...f.scope,id:'other'}),/NFC_REPLAY_SCOPE_DENIED/);
  }finally{f.core.close();}
 });
+
+test('RESTORE grant rejects unrelated operation before consuming NFC',()=>{
+ const f=setup();try{
+  assert.throws(()=>runCoreWithNfcGrant(f.core,{...f.operation,kind:'EXCHANGE'}, {...f.scope,command:'restore.confirm'}),/COMMAND_KIND_MISMATCH/);
+  assert.equal(f.core.db.prepare('SELECT consumed_at FROM v2_nfc_grants').get().consumed_at,null);
+ }finally{f.core.close();}
+});
+test('exchange grant rejects different target node before mutation',()=>{
+ const f=setup();try{
+  assert.throws(()=>runCoreWithNfcGrant(f.core,f.operation,{...f.scope,targetId:'N2'}),/NFC_TARGET_MISMATCH/);
+  assert.equal(f.core.core('E','A').owner_type,'NODE');
+ }finally{f.core.close();}
+});
