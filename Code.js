@@ -2709,6 +2709,12 @@ function getGameplayRoute(e) {
     const status=getNodeGameplayStatus(hit.id);
     const currentEvent=readCurrentEvent();
     if(player.role==='PIONEER')recordPioneerDiscovery(player,hit.id,currentEvent);
+    if(player.role==='UNBOUND'){
+      const discovered=recordUnboundDiscovery(player,hit.id,currentEvent);
+      return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},'NO_ACTION',false,
+        discovered?'UNBOUND_NODE_DISCOVERED':'UNBOUND_NODE_UNAVAILABLE',
+        discovered?'NODE ERFASST // Netzwerkdaten aktualisiert.':'Node derzeit nicht für Netzwerkerfassung verfügbar.');
+    }
     const resupply=player.role==='PIONEER'?getReSupplyRoute(e,hit.id):null;
     if(resupply)return gameplayDecision(player,{found:true,type:'NODE',id:hit.id,status},resupply.action?'RESUPPLY_MISSION':'NO_ACTION',resupply.action,resupply.status,resupply.message||'RE-SUPPLY // Ziel-Node erkannt.',resupply.action?{resupplyMission:resupply}:null);
     const restore=player.role==='PIONEER'?getRestoreRoute(e,hit.id):null;
@@ -2886,6 +2892,41 @@ function recordPioneerDiscovery(player,nodeId,event){
   return found;
 }
 
+/*
+ * UNBOUND discovery V1: per event, player and physical site generation.
+ * Only an authenticated UNBOUND scanning an installed event node can record
+ * a discovery. Never grants node access, energy or core ownership.
+ */
+const UNBOUND_DISCOVERY_PREFIX='NODIV_UNBOUND_DISCOVERY_V1_';
+function unboundDiscoveryKey(eventId,identity){
+  return UNBOUND_DISCOVERY_PREFIX+String(eventId||'').replace(/[^A-Za-z0-9_-]/g,'_')+'_'+String(identity||'').replace(/[^A-Za-z0-9_-]/g,'_');
+}
+function readUnboundDiscoveries(eventId,identity){
+  if(!eventId||!identity)return {};
+  try{
+    const raw=PropertiesService.getScriptProperties().getProperty(unboundDiscoveryKey(eventId,identity));
+    const data=raw?JSON.parse(raw):{};
+    if(!data||Array.isArray(data)||typeof data!=='object')return {};
+    return Object.fromEntries(Object.entries(data).filter(([id,gen])=>/^NODE-\d{3}$/.test(id)&&Number.isSafeInteger(gen)&&gen>0));
+  }catch(error){return {};}
+}
+function unboundNodeInstalled(event,nodeId){
+  if(!event||event.state!=='FIELD_ACTIVE')return false;
+  const entry=findEventNodeCode(event.eventId,nodeId);
+  return Boolean(entry&&entry.changeStatus==='ACTIVE'&&entry.activeSlot&&!entry.pendingSlot&&
+    !['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(getNodeGameplayStatus(nodeId)));
+}
+function recordUnboundDiscovery(player,nodeId,event){
+  if(!player||player.role!=='UNBOUND'||!unboundNodeInstalled(event,nodeId))return false;
+  const key=unboundDiscoveryKey(event.eventId,player.identity);
+  const entries=readUnboundDiscoveries(event.eventId,player.identity);
+  const generation=readNodeSiteGeneration(event.eventId,nodeId);
+  if(entries[nodeId]===generation)return true;
+  entries[nodeId]=generation;
+  PropertiesService.getScriptProperties().setProperty(key,JSON.stringify(entries));
+  return true;
+}
+
 function getPlayerState(e) {
   const session = resolvePlayerSession(e.parameter.token || '');
   if (!session.ok) return session.response;
@@ -2912,11 +2953,13 @@ function getPlayerState(e) {
   const event=readCurrentEvent();
   const eventActive=Boolean(event&&event.state==='FIELD_ACTIVE');
   const discoveredNodes=eventActive&&player.role==='PIONEER'?readPioneerDiscoveries(event.eventId,player.identity):[];
+  const unboundEntries=eventActive&&player.role==='UNBOUND'?readUnboundDiscoveries(event.eventId,player.identity):null;
+  const unboundKnown=unboundEntries?Object.keys(unboundEntries).filter(id=>unboundNodeInstalled(event,id)&&unboundEntries[id]===readNodeSiteGeneration(event.eventId,id)).sort():[];
   return {
     ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
     evacuation:evacuationPlayerState(player),
-    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length},
+    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length,...(unboundEntries?{unboundDiscoveredNodeIds:unboundKnown}:{})},
     ...(player.catchAccess===true?{catchCount:readCompletedCatchCount(player.identity)}:{}),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
