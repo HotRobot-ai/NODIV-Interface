@@ -1347,3 +1347,33 @@ window.addEventListener('nodiv-evacuation-finalconfirm',async()=>{
 });
 
 window.addEventListener('nodiv-evacuation-finalchoice',()=>{const select=document.querySelector('#evacuationFinalCore'),confirm=document.querySelector('#evacuationFinalConfirm');if(confirm)confirm.disabled=evacuationBusy||!evacuationView?.finalUpload?.scan||select?.value!==evacuationView.finalUpload.scan.coreId;});
+
+let unboundScanAttempt=null;
+window.addEventListener('nodiv-unbound-scan',async()=>{
+ const button=document.querySelector('#unboundNodeScan'),feedback=document.querySelector('#unboundScanFeedback');
+ if(!button||!feedback||unboundScanAttempt)return;
+ if(!sessionToken){feedback.textContent='SESSION FEHLT // Neu anmelden.';return;}
+ if(!('NDEFReader' in window)){feedback.textContent='WEB NFC NICHT VERFÜGBAR';return;}
+ const attempt={controller:new AbortController(),reader:null,handling:false};
+ unboundScanAttempt=attempt;button.disabled=true;button.textContent='NFC BEREIT // NODE SCANNEN';feedback.textContent='Halte das Handy an die Node-Antenne.';
+ const finish=()=>{if(unboundScanAttempt!==attempt)return;unboundScanAttempt=null;try{attempt.controller.abort();}catch(error){}if(attempt.reader){attempt.reader.onreading=null;attempt.reader.onreadingerror=null;}button.disabled=false;button.textContent='NODE SCANNEN';};
+ try{
+  const reader=new NDEFReader();attempt.reader=reader;
+  reader.onreadingerror=()=>{feedback.textContent='NFC LESEFEHLER // Erneut versuchen.';finish();};
+  reader.onreading=async event=>{
+   if(unboundScanAttempt!==attempt||attempt.handling)return;attempt.handling=true;
+   try{
+    const uid=nfcUidFromEvent(event);
+    reader.onreading=null;attempt.controller.abort();
+    feedback.textContent='NODE WIRD VERIFIZIERT';
+    const route=await apiRequest({action:'gameplayroute',token:sessionToken,uid});
+    if(unboundScanAttempt!==attempt)return;
+    if(!route?.ok||!route.session)throw Error(route?.error||route?.status||'SCAN FEHLGESCHLAGEN');
+    feedback.textContent=String(route.decision?.message||'Scan verarbeitet.');
+    if(route.decision?.reason==='UNBOUND_NODE_DISCOVERED')window.dispatchEvent(new CustomEvent('nodiv-catch-live'));
+   }catch(error){feedback.textContent=String(error.message||error);}
+   finally{finish();}
+  };
+  await reader.scan({signal:attempt.controller.signal});
+ }catch(error){if(unboundScanAttempt===attempt){feedback.textContent=String(error.message||error);finish();}}
+});
