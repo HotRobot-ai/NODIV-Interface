@@ -1,0 +1,19 @@
+NODIV V2 - ISOLIERTES TESTPAKET (14.10.2026)
+
+1. ZIP in einen eigenen Ordner entpacken (z.B. C:\NODIV-V2-Test).
+2. START-LOKAL.cmd per Doppelklick starten.
+3. Im schwarzen Fenster stehen Testtoken und Test-UIDs.
+4. Auf DEMSELBEN PC http://127.0.0.1:8787/lab im Browser oeffnen.
+5. Testtoken aus dem Fenster in die Testoberflaeche kopieren.
+6. Node-UID NODE-UID eingeben; Tauschmenge 1 oder 2 oder 3 waehlen.
+7. Eigene Core-UIDs UID-P-101 / UID-P-102 / UID-P-103 eingeben.
+8. Node-Core-UIDs UID-N-201 / UID-N-202 / UID-N-203 eingeben.
+9. Bestaetigen. Der Node wird danach 5 Minuten gesperrt. Fuer erneuten frischen Test Server beenden und neu starten.
+10. Server durch STRG+C im schwarzen Fenster stoppen.
+
+WICHTIG:
+- Nur simulierte Daten im RAM; nach Neustart sind sie weg.
+- Keine echten Access Cards, keine NFC-Hardware, keine Verbindung zum produktiven NODIV.
+- Standardmaessig nur lokal erreichbar. Fuer Smartphone/Mobilfunk sind zusaetzliche Sicherheits- und Verbindungsarbeiten erforderlich.
+- Dies ist ein technischer Prototyp, keine freigegebene produktive Spielsoftware.
+- Kein npm install und keine Zusatzsoftware notwendig.
