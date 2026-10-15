@@ -4250,7 +4250,7 @@ function getNodeOperationOrder(e,operation) {
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
     const evacuation=forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'?null:evacuationOperationContext(actor,nodeId,operation,e.parameter.evacuation,e.parameter.uid||'');
     const withdrawal=readPreEvacuationRecord(context.event.eventId);
-    if(e.parameter.withdrawal)assertPreEvacuationTarget(withdrawal,String(e.parameter.withdrawal),nodeId,operation);
+    if(e.parameter.withdrawal&&forceRecallRecord()?.status!=='EMERGENCY_SHUTDOWN')assertPreEvacuationTarget(withdrawal,String(e.parameter.withdrawal),nodeId,operation);
     assertExchangeUnreserved(nodeId,'','');
     assertRestoreUnreserved(nodeId,'','');
     const token=normalizeSessionToken(e.parameter.token),orders=readInstallationOrders();
@@ -5765,7 +5765,13 @@ function extractCoreTransfer(e) {
 
 function transferCoreOwnership(data) {
   const recall=forceRecallRecord();
-  if(recall&&recall.status==='EMERGENCY_SHUTDOWN'&&String(data.eventType||'')!=='NODE_RECOVERY_CORE')throw new Error('EMERGENCY_SHUTDOWN');
+  if(recall&&recall.status==='EMERGENCY_SHUTDOWN'&&!(
+    String(data.eventType||'')==='NODE_RECOVERY_CORE'&&
+    String(data.expectedFromType||'').toUpperCase()==='NODE'&&
+    String(data.toType||'').toUpperCase()==='NODIV_RESERVE'&&
+    String(data.toId||'').toUpperCase()==='HQ'&&
+    String(data.actorRole||'').toUpperCase()==='FOP'
+  ))throw new Error('EMERGENCY_SHUTDOWN');
 
   const coreId = normalizeCoreId(data.coreId || '');
 
