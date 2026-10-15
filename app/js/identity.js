@@ -1004,7 +1004,7 @@ function catchRejected(){
  setTimeout(()=>{if(catchFeedback!==feedback||document.querySelector('#catchStart')!==button||catchBusy)return;catchPrimary(feedback.action,feedback.action==='confirm'?'FANG ERNEUT PRÜFEN':'PIONEER-KARTE SCANNEN');const hint=document.querySelector('#catchHint');if(hint&&feedback.action==='scan')hint.textContent='Scan bereit. Pioneer-Karte erneut scannen.';},3000);
 }
 window.addEventListener('nodiv-catch',async e=>{
- if(!sessionToken||catchBusy||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
+ if(!sessionToken||catchBusy||unboundScanAttempt||pioneerExchangeBusy||pioneerRestoreBusy||document.querySelector('#pioneerScan')?.dataset.scanActive==='1')return;
  const hint=document.querySelector('#catchHint'),start=document.querySelector('#catchStart'),result=document.querySelector('#catchResult');if(!hint||!start)return;
  if(e.detail?.action==='scan'){
   // An unresolved confirmation must retain its receipt ID instead of starting a new Catch.
@@ -1352,7 +1352,7 @@ window.addEventListener('nodiv-evacuation-finalchoice',()=>{const select=documen
 let unboundScanAttempt=null;
 window.addEventListener('nodiv-unbound-scan',async()=>{
  const button=document.querySelector('#unboundNodeScan'),feedback=document.querySelector('#unboundScanFeedback');
- if(!button||!feedback||unboundScanAttempt)return;
+ if(!button||!feedback||unboundScanAttempt||catchBusy||catchOrder)return;
  if(!sessionToken){feedback.textContent='SESSION FEHLT // Neu anmelden.';return;}
  if(!('NDEFReader' in window)){feedback.textContent='WEB NFC NICHT VERFÜGBAR';return;}
  const attempt={controller:new AbortController(),reader:null,handling:false};
