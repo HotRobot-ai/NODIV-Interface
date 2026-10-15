@@ -1,0 +1,30 @@
+name: FORCE RECALL isolated tests
+on:
+  push:
+    branches:
+      - feature/force-recall-emergency-shutdown
+    paths:
+      - 'Code.js'
+      - 'experimental/force-recall/**'
+      - '.github/workflows/force-recall-tests.yml'
+  pull_request:
+    paths:
+      - 'Code.js'
+      - 'experimental/force-recall/**'
+      - '.github/workflows/force-recall-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run isolated FORCE RECALL tests
+        run: |
+          node --test experimental/force-recall/completion-linked.test.cjs experimental/force-recall/recovery-linked.test.cjs
+          node --test experimental/force-recall/completion-integrity.test.js
