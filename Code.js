@@ -2916,6 +2916,21 @@ function unboundNodeInstalled(event,nodeId){
   return Boolean(entry&&entry.changeStatus==='ACTIVE'&&entry.activeSlot&&!entry.pendingSlot&&
     !['UNDEFINED','AVAILABLE','OFFLINE','INACTIVE','RESERVE'].includes(getNodeGameplayStatus(nodeId)));
 }
+function readUnboundActiveNodeIds(event){
+ if(!event||event.state!=='FIELD_ACTIVE')return [];
+ const codeSheet=getEventNodeCodeSheet(),nodeSheet=getNodeRegisterSheet();
+ const codeRows=codeSheet.getLastRow()>1?codeSheet.getRange(2,1,codeSheet.getLastRow()-1,10).getValues():[];
+ const nodeRows=nodeSheet.getRange(2,1,15,3).getValues();
+ const installed=new Set(nodeRows.flatMap((row,index)=>{
+  const id=String(row[0]||'').trim().toUpperCase();
+  const canonical=/^NODE-\d{3}$/.test(id)?id:formatNodeId(index+1);
+  return String(row[2]||'').trim().toUpperCase()==='INSTALLED'?[canonical]:[];
+ }));
+ return [...new Set(codeRows.filter(row=>String(row[0])===String(event.eventId)&&
+  String(row[9]||'').trim().toUpperCase()==='ACTIVE'&&
+  String(row[7]||'').trim()!==''&&String(row[8]||'').trim()==='')
+  .map(row=>String(row[1]||'').trim().toUpperCase()).filter(id=>installed.has(id)))].sort();
+}
 function recordUnboundDiscovery(player,nodeId,event){
   if(!player||player.role!=='UNBOUND'||!unboundNodeInstalled(event,nodeId))return false;
   const key=unboundDiscoveryKey(event.eventId,player.identity);
@@ -2990,17 +3005,19 @@ function getPlayerState(e) {
   const eventActive=Boolean(event&&event.state==='FIELD_ACTIVE');
   const discoveredNodes=eventActive&&player.role==='PIONEER'?readPioneerDiscoveries(event.eventId,player.identity):[];
   const unboundEntries=eventActive&&player.role==='UNBOUND'?readUnboundDiscoveries(event.eventId,player.identity):null;
-  const unboundKnown=unboundEntries?Object.keys(unboundEntries).filter(id=>unboundNodeInstalled(event,id)&&unboundEntries[id]===readNodeSiteGeneration(event.eventId,id)).sort():[];
+  const unboundActiveIds=unboundEntries?readUnboundActiveNodeIds(event):[];
+  const unboundRosterVerified=Boolean(unboundEntries&&unboundActiveIds.length>0&&unboundActiveIds.length===Number(event.activeNodes));
+  const unboundKnown=unboundEntries?unboundActiveIds.filter(id=>unboundEntries[id]===readNodeSiteGeneration(event.eventId,id)):[];
   const unboundActivity=unboundEntries?readUnboundExchangeActivity(unboundKnown,Date.now()):null;
   const unboundNodeActivity=unboundActivity?unboundKnown.map(id=>({
     nodeId:id,activity:unboundActivityTier(unboundActivity[id].count),
-    ...(unboundKnown.length===Number(event.activeNodes)&&event.activeNodes>0?{lastBookingAt:unboundActivity[id].lastBookingAt}:{})
+    ...(unboundRosterVerified&&unboundKnown.length===unboundActiveIds.length?{lastBookingAt:unboundActivity[id].lastBookingAt}:{})
   })):null;
   return {
     ok:true, authenticated:true, session:true, status:'PLAYER_STATE',serverNow:Date.now(),
     player:getSessionPlayerDisplay(player),
     evacuation:evacuationPlayerState(player),
-    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length,...(unboundEntries?{unboundDiscoveredNodeIds:unboundKnown,unboundNodeActivity}:{})},
+    event:{active:eventActive,state:event?.state||'STANDBY',eventId:event?.eventId||'',activeNodes:eventActive?Number(event.activeNodes||0):0,discoveredNodes:discoveredNodes.length,...(unboundEntries?{unboundDiscoveredNodeIds:unboundKnown,unboundRosterVerified,unboundNodeActivity}:{})},
     ...(player.catchAccess===true?{catchCount:readCompletedCatchCount(player.identity)}:{}),
     securedEnergy:readPlayerEnergyBalance(player.identity),
     carriedEnergy:carriedEnergy,
