@@ -128,7 +128,13 @@ function doGet(e) {
 
 
 
-    if (action === 'register') {
+    if (action === 'forcerecallstart') {
+      result = startForceRecall(e);
+    } else if (action === 'forcerecallstatus') {
+      result = forceRecallStatus(e);
+    } else if (forceRecallBlocksAction(action)) {
+      result = {ok:false,error:'EMERGENCY_SHUTDOWN',message:'MISSION ABGEBROCHEN // Nur technischer Rueckbau erlaubt.'};
+    } else if (action === 'register') {
 
 
 
@@ -8157,4 +8163,44 @@ function recoverFounderAccessFromEditor(){
   console.log('Founder '+f.values[1]+' wiederhergestellt. Alte Karte und Sessions ungültig.');
   return {ok:true,status:'FOUNDER_RECOVERED',identity:f.values[1]};
  }finally{lock.releaseLock();}
+}
+
+/* FORCE RECALL experimental integration. Handler-local lock guards still required
+ * for full race safety before release. No event inventory is auto-reconciled. */
+const FORCE_RECALL_PROPERTY='NODIV_FORCE_RECALL_V1';
+function forceRecallRecord(){
+ const raw=PropertiesService.getScriptProperties().getProperty(FORCE_RECALL_PROPERTY);
+ return raw?JSON.parse(raw):null;
+}
+function forceRecallBlocksAction(action){
+ const record=forceRecallRecord();
+ if(!record||record.status!=='EMERGENCY_SHUTDOWN')return false;
+ return !['forcerecallstatus','fopoperations','nodedeinstallorder','nodedeinstallscan',
+ 'nodedeinstallcancel','nodedeinstallconfirm','sessioncheck','sessionstart',
+ 'sessionend','gameplayroute','playerstate','eventstatus','corestate'].includes(action);
+}
+function startForceRecall(e){
+ const lock=LockService.getScriptLock();
+ try{
+  lock.waitLock(10000);
+  const session=resolvePlayerSession(e.parameter.token||'');
+  if(!session.ok)return session.response;
+  if(session.player.role!=='FOUNDER')throw Error('ROLE_DENIED');
+  const event=readCurrentEvent();
+  if(!event||event.state!=='FIELD_ACTIVE')throw Error('EVENT_NOT_FIELD_ACTIVE');
+  if(String(e.parameter.event||'')!==event.eventId)throw Error('EVENT_MISMATCH');
+  if(String(e.parameter.confirm||'')!=='ABBRECHEN')throw Error('CONFIRMATION_REQUIRED');
+  const previous=forceRecallRecord();
+  if(previous&&previous.eventId===event.eventId)return {ok:true,status:previous.status,replayed:true,eventId:event.eventId};
+  if(previous&&previous.status==='EMERGENCY_SHUTDOWN')throw Error('PREVIOUS_RECALL_NOT_CLOSED');
+  const record={eventId:event.eventId,status:'EMERGENCY_SHUTDOWN',createdAt:new Date().toISOString(),founder:session.player.identity};
+  PropertiesService.getScriptProperties().setProperty(FORCE_RECALL_PROPERTY,JSON.stringify(record));
+  return {ok:true,status:record.status,eventId:event.eventId,action:true,message:'MISSION ABGEBROCHEN // TECHNISCHER RUECKBAU'};
+ }finally{try{lock.releaseLock();}catch(error){}}
+}
+function forceRecallStatus(e){
+ const session=resolvePlayerSession(e.parameter.token||'');
+ if(!session.ok)return session.response;
+ const record=forceRecallRecord();
+ return {ok:true,status:record?.status||'NOT_ACTIVE',eventId:record?.eventId||'',action:false};
 }
