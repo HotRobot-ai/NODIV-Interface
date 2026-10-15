@@ -8183,6 +8183,26 @@ function readNodeSiteGeneration(eventId,nodeId){
   if(!Number.isSafeInteger(n)||n<1)throw new Error('UNBOUND_SITE_GENERATION_CORRUPT');
   return n;
 }
+
+/*
+ * Pure relocation eligibility decision.
+ * This deliberately does NOT trigger from install/deinstall, code rotation,
+ * or NODE_AVAILABLE transitions. A future explicit FOP relocation confirmation
+ * can use this guard before advancing a generation.
+ */
+function unboundRelocationEligibility(input){
+  const eventId=String(input&&input.eventId||'').trim();
+  const nodeId=String(input&&input.nodeId||'').trim().toUpperCase();
+  const actorRole=String(input&&input.actorRole||'').trim().toUpperCase();
+  if(!eventId||!/^NODE-\d{3}$/.test(nodeId))return {ok:false,reason:'NODE_OR_EVENT_INVALID'};
+  if(!['FOP','FOUNDER'].includes(actorRole))return {ok:false,reason:'ROLE_DENIED'};
+  if(input.confirmed!==true)return {ok:false,reason:'EXPLICIT_CONFIRMATION_REQUIRED'};
+  if(input.physicalRelocationVerified!==true)return {ok:false,reason:'RELOCATION_NOT_VERIFIED'};
+  if(input.eventState!=='FIELD_ACTIVE')return {ok:false,reason:'FIELD_NOT_ACTIVE'};
+  if(input.nodeInstalled===true)return {ok:false,reason:'NODE_STILL_INSTALLED'};
+  return {ok:true,eventId,nodeId};
+}
+
 function advanceNodeSiteGeneration(eventId,nodeId){
   // Internal only. Caller must hold the operation lock and must have
   // verified a completed physical relocation, not just a deinstallation.
