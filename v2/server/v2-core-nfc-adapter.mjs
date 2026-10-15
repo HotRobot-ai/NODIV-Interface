@@ -3,7 +3,7 @@ import {consumeNfcGrant} from './nfc-grants.mjs';
 
 const kindForCommand=Object.freeze({
   'exchange.confirm':'EXCHANGE','catch.confirm':'CATCH',
-  'restore.confirm':null,'resupply.confirm':'RESUPPLY',
+  'restore.confirm':['RESTORE_1','RESTORE_2'],'resupply.confirm':'RESUPPLY',
   'upload.confirm':'HQ_UPLOAD','fop.install':'INSTALL',
   'fop.deinstall':'DEINSTALL','evac.final':'EVAC'
 });
@@ -15,7 +15,7 @@ export function runCoreWithNfcGrant(core, operation, scope) {
       !scope.targetType || !scope.targetId)
     throw Error('AUTHORITATIVE_ORDER_REQUIRED');
   if (!Object.hasOwn(kindForCommand,scope.command) ||
-      (kindForCommand[scope.command] && kindForCommand[scope.command]!==operation.kind))
+      !(Array.isArray(kindForCommand[scope.command]) ? kindForCommand[scope.command].includes(operation.kind) : kindForCommand[scope.command]===operation.kind))
     throw Error('COMMAND_KIND_MISMATCH');
   if (operation.kind==='EXCHANGE') {
     const ids=new Set(operation.moves.flatMap(m=>[m.fromType==='NODE'?m.fromId:null,m.toType==='NODE'?m.toId:null]).filter(Boolean));
