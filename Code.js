@@ -8158,3 +8158,37 @@ function recoverFounderAccessFromEditor(){
   return {ok:true,status:'FOUNDER_RECOVERED',identity:f.values[1]};
  }finally{lock.releaseLock();}
 }
+
+
+/*
+ * UNBOUND // NODE SITE GENERATION (isolated foundation)
+ * Discovery is valid for a physical node at one confirmed deployment site.
+ * No scan, access-code rotation, install, restart, or temporary offline state
+ * may advance the generation. A future FOP-confirmed relocation workflow
+ * must call advanceNodeSiteGeneration() under its existing operation lock,
+ * AFTER a successful relocation confirmation.
+ * These helpers are intentionally not wired into gameplay routes yet.
+ */
+const UNBOUND_SITE_GENERATION_PREFIX='NODIV_UNBOUND_SITE_GEN_V1_';
+function unboundSiteGenerationKey(eventId,nodeId){
+  const event=String(eventId||'').trim();
+  const node=String(nodeId||'').trim().toUpperCase();
+  if(!event||!/^[A-Za-z0-9_-]{1,100}$/.test(event)||!/^NODE-\d{3}$/.test(node))throw new Error('UNBOUND_SITE_ID_INVALID');
+  return UNBOUND_SITE_GENERATION_PREFIX+event+'_'+node;
+}
+function readNodeSiteGeneration(eventId,nodeId){
+  const raw=PropertiesService.getScriptProperties().getProperty(unboundSiteGenerationKey(eventId,nodeId));
+  if(raw===null)return 1; // existing installations start at generation 1
+  const n=Number(raw);
+  if(!Number.isSafeInteger(n)||n<1)throw new Error('UNBOUND_SITE_GENERATION_CORRUPT');
+  return n;
+}
+function advanceNodeSiteGeneration(eventId,nodeId){
+  // Internal only. Caller must hold the operation lock and must have
+  // verified a completed physical relocation, not just a deinstallation.
+  const key=unboundSiteGenerationKey(eventId,nodeId);
+  const next=readNodeSiteGeneration(eventId,nodeId)+1;
+  if(!Number.isSafeInteger(next))throw new Error('UNBOUND_SITE_GENERATION_OVERFLOW');
+  PropertiesService.getScriptProperties().setProperty(key,String(next));
+  return next;
+}
