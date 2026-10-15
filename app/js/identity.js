@@ -953,6 +953,32 @@ window.addEventListener('nodiv-local-release-ack',()=>{
  localReleaseAcknowledged.add(localReleaseKey);try{window.sessionStorage?.setItem(localReleaseKey,'1');}catch(error){}
  const overlay=document.querySelector('#localReleaseOverlay');if(overlay)overlay.hidden=true;document.querySelector('#catchStart')?.focus?.();
 });
+function renderUnboundNetwork(event,ids,error){
+ const count=document.querySelector('#unboundDiscoveryCount'),grid=document.querySelector('#unboundNodeGrid'),state=document.querySelector('#unboundNetworkState'),fill=document.querySelector('#unboundProgressFill'),progress=document.querySelector('.unbound-progress');
+ if(!count||!grid||!state||!fill||!progress)return;
+ const active=event?.active===true,total=active?Number(event.activeNodes):NaN;
+ const validTotal=Number.isSafeInteger(total)&&total>0;
+ const known=active&&Array.isArray(ids)?[...new Set(ids.filter(id=>/^NODE-\d{3}$/.test(id)))].sort():[];
+ const safeCount=validTotal?Math.min(known.length,total):known.length;
+ count.textContent=validTotal?safeCount+' / '+total:'— / —';
+ const percent=validTotal?Math.round(safeCount/total*100):0;
+ fill.style.width=percent+'%';progress.setAttribute('aria-valuenow',String(percent));progress.setAttribute('aria-label','Entdeckungsfortschritt '+percent+' Prozent');
+ state.textContent=error?'Netzwerkdaten nicht verfügbar':!active?'Kein aktives Event':!validTotal?'Aktive Node-Anzahl nicht verfügbar':safeCount===total?'NETZWERK VOLLSTÄNDIG // Zeitdaten noch nicht verbunden':'NETZWERK UNVOLLSTÄNDIG // Weitere Nodes entdecken';
+ grid.replaceChildren();
+ if(error||!active||!validTotal||known.length===0){
+  const card=document.createElement('div');card.className='unbound-node-placeholder';
+  const label=document.createElement('strong');label.textContent=error?'VERBINDUNG FEHLGESCHLAGEN':!active?'NETZWERK INAKTIV':!validTotal?'NODE-BESTAND UNBEKANNT':'NOCH KEIN NODE ENTDECKT';
+  const info=document.createElement('p');info.textContent=error?'Bitte später erneut versuchen.':active?'Finde einen aktiven Node und scanne seine NFC-Antenne.':'Warte auf den Eventstart.';
+  card.append(label,info);grid.append(card);return;
+ }
+ known.forEach(id=>{
+  const card=document.createElement('div');card.className='unbound-node-placeholder';
+  const label=document.createElement('strong');label.textContent=id;
+  const info=document.createElement('p');info.textContent='AKTIVITÄT // NOCH NICHT VERFÜGBAR';
+  card.append(label,info);grid.append(card);
+ });
+}
+
 window.addEventListener('nodiv-catch-live',async()=>{
  if(!sessionToken)return;const inventory=document.querySelector('#catchInventory');if(!inventory)return;
  const slots=document.querySelector('#catcherPersonalSlots'),secured=document.querySelector('#catcherSecuredEnergy'),slotCount=document.querySelector('#catcherSlotCount'),eventStatus=document.querySelector('#localEventStatus'),count=document.querySelector('#catcherCatchCount');
@@ -964,9 +990,10 @@ window.addEventListener('nodiv-catch-live',async()=>{
   if(slotCount)slotCount.textContent='Slot '+r.cores.length+'/'+r.player.coreCapacity;
   if(secured)secured.textContent=r.securedEnergy+' E';
   renderLocalCatchRelease(r.event,r.player);
+  if(document.querySelector('#unboundNodeGrid'))renderUnboundNetwork(r.event,r.event?.unboundDiscoveredNodeIds);
   if(count)count.textContent=Number.isInteger(r.catchCount)&&r.catchCount>=0?String(r.catchCount):'—';
   if(eventStatus){const active=r.event?.active;eventStatus.dataset.state=active===true?'active':active===false?'inactive':'unknown';eventStatus.textContent=active===true?'EVENT AKTIV':active===false?'KEIN EVENT':'EVENT —';}
- }catch(error){renderLocalCatchRelease(null,null);inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';if(slotCount)slotCount.textContent='Slot —/—';if(count)count.textContent='—';if(eventStatus){eventStatus.dataset.state='unknown';eventStatus.textContent='EVENT —';}}
+ }catch(error){if(document.querySelector('#unboundNodeGrid'))renderUnboundNetwork(null,null,error);renderLocalCatchRelease(null,null);inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';if(slotCount)slotCount.textContent='Slot —/—';if(count)count.textContent='—';if(eventStatus){eventStatus.dataset.state='unknown';eventStatus.textContent='EVENT —';}}
 });
 let catchFeedback=null;
 function catchPrimary(action,label){catchFeedback=null;const button=document.querySelector('#catchStart');if(button){button.dataset.state='ready';button.dataset.action=action;button.textContent=label;}syncLocalCatchGate();}
