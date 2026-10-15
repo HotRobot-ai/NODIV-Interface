@@ -9,7 +9,7 @@ export function createEvacTeamReservations(core) {
  const db=core?.db;
  if(!db?.prepare) throw Error('EVAC_CORE_REQUIRED');
  db.exec(`
- CREATE TABLE IF NOT EXISTS evac_teams (
+ CREATE TABLE IF NOT EXISTS evac_control (\n  event_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK(state IN ('PRE_EVAC_READY','STARTED')),\n  FOREIGN KEY(event_id) REFERENCES events(event_id));\n CREATE TABLE IF NOT EXISTS evac_teams (
   event_id TEXT NOT NULL, team_id TEXT NOT NULL, fop_id TEXT NOT NULL,
   pioneer_a TEXT NOT NULL, pioneer_b TEXT NOT NULL,
   PRIMARY KEY(event_id,team_id), UNIQUE(event_id,fop_id),
@@ -28,7 +28,7 @@ export function createEvacTeamReservations(core) {
    db.exec('BEGIN IMMEDIATE');
    try {
     if(db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId)?.state!=='FIELD_ACTIVE') throw Error('EVAC_EVENT_INVALID');
-    for(const [id,role] of [[fopId,'FOP'],[pioneerA,'PIONEER'],[pioneerB,'PIONEER']])
+    if(db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state!=='STARTED') throw Error('EVAC_NOT_STARTED');\n    for(const [id,role] of [[fopId,'FOP'],[pioneerA,'PIONEER'],[pioneerB,'PIONEER']])
      if(!db.prepare('SELECT 1 FROM actors WHERE event_id=? AND actor_id=? AND role=? AND active=1').get(eventId,id,role)) throw Error('EVAC_MEMBER_DENIED');
     if(db.prepare('SELECT 1 FROM evac_teams WHERE event_id=? AND (fop_id IN (?,?,?) OR pioneer_a IN (?,?,?) OR pioneer_b IN (?,?,?))').get(eventId,...Array(3).fill([fopId,pioneerA,pioneerB]).flat())) throw Error('EVAC_MEMBER_ALREADY_ASSIGNED');
     const assignments=[];
