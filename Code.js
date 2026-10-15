@@ -2998,6 +2998,7 @@ function getHqUploadPreview(e){
 function normalHqUpload(e,action){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player;if(player.role!=='PIONEER')throw new Error('ROLE_DENIED');
   const id=String(e.parameter.upload||''),props=PropertiesService.getScriptProperties();
@@ -4241,6 +4242,7 @@ function getNodeOperationOrder(e,operation) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
@@ -4386,6 +4388,7 @@ function confirmNodeInstallation(e) {
   const lock=LockService.getScriptLock();
   try{
     lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const actor=session.player,{key,order,context}=readNodeInstallation(e,actor);
@@ -5621,6 +5624,7 @@ function catchContext(catcher,target){
 function catchCoreTransfer(e){
  const lock=LockService.getScriptLock();try{
   lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const catcher=session.player,action=String(e.parameter.mode||'preview'),props=PropertiesService.getScriptProperties();
   if(catcher.status!=='ACTIVE'||catcher.catchAccess!==true)throw new Error('CATCH_ACCESS_DENIED');
@@ -7136,6 +7140,7 @@ function normalExchange(e,action){
  const lock=LockService.getScriptLock();
  try{
   lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();
   const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player,token=normalizeSessionToken(e.parameter.token),nodeId=String(e.parameter.node||'').trim().toUpperCase(),props=PropertiesService.getScriptProperties();
   if(action==='authorize'){
@@ -7417,7 +7422,8 @@ function getPioneerRestoreState(e){
 function normalRestoreOne(e,action){
  const lock=LockService.getScriptLock();
  try{
-  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player,props=PropertiesService.getScriptProperties(),order=JSON.parse(props.getProperty(RESTORE_PREFIX+String(e.parameter.restore||''))||props.getProperty(RESTORE_TWO_PREFIX+String(e.parameter.restore||''))||'null'),token=normalizeSessionToken(e.parameter.token);
   if(!order)throw new Error('RESTORE_EXPIRED_OR_COMPLETED');
   if(order.identity!==player.identity||order.token!==token||order.nodeId!==String(e.parameter.node||'').trim().toUpperCase()||order.nodeScannedToken!==token)throw new Error('RESTORE_SESSION_NODE_MISMATCH');
@@ -7566,7 +7572,8 @@ function getReSupplyRoute(e,nodeId){
 }
 function normalReSupply(e,action){
  const lock=LockService.getScriptLock();try{
-  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player;if(player.role!=='PIONEER')throw new Error('PIONEER_REQUIRED');
   const props=PropertiesService.getScriptProperties(),id=String(e.parameter.resupply||e.parameter.deployment||''),token=normalizeSessionToken(e.parameter.token);
   if(action==='confirm'){
@@ -7778,7 +7785,8 @@ function getUploadTerminalState(e){
 }
 function activateSecureApproach(e){
  const lock=LockService.getScriptLock();try{
-  lock.waitLock(10000);const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
+  lock.waitLock(10000);
+  assertForceRecallGameplayAllowed();const session=resolvePlayerSession(e.parameter.token||'');if(!session.ok)return session.response;
   const player=session.player;if(player.role!=='PIONEER'||player.status!=='ACTIVE')throw new Error('PIONEER_REQUIRED');
   const event=readCurrentEvent();if(!event||event.state!=='FIELD_ACTIVE')throw new Error('FIELD_ACTIVE_REQUIRED');
   const request=String(e.parameter.request||'');
@@ -8233,4 +8241,9 @@ function forceRecallFopOperations(actor,record){
  }
  return {ok:true,authenticated:true,session:true,eventId:record.eventId,
   status:'EMERGENCY_SHUTDOWN',operations};
+}
+
+/* Same-lock guard: checked after acquiring the shared script lock. */
+function assertForceRecallGameplayAllowed(){
+ if(forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN')throw new Error('EMERGENCY_SHUTDOWN');
 }
