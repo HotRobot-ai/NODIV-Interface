@@ -7,15 +7,15 @@ export const V2_COMMANDS = Object.freeze({
   'player.state': 'read',
   'unbound.network': 'read',
   'unbound.discover': 'node-scan',
-  'catch.begin': 'catch',
+  'catch.begin': 'read',
   'catch.confirm': 'catch',
-  'exchange.begin': 'exchange',
+  'exchange.begin': 'read',
   'exchange.confirm': 'exchange',
-  'restore.begin': 'restore',
+  'restore.begin': 'read',
   'restore.confirm': 'restore',
-  'resupply.begin': 'resupply',
+  'resupply.begin': 'read',
   'resupply.confirm': 'resupply',
-  'upload.begin': 'upload',
+  'upload.begin': 'read',
   'upload.confirm': 'upload',
   'fop.install': 'fop',
   'fop.deinstall': 'fop',
@@ -44,7 +44,7 @@ export function createV2CommandBoundary({resolveSession,authorize,execute,valida
       throw new V2BoundaryError('SESSION_INVALID',401);
     const permitted=await authorize({session,command,payload});
     if (permitted!==true) throw new V2BoundaryError('ROLE_OR_EVENT_DENIED',403);
-    // A scan receipt is never a client assertion: it must be consumed by the
+    // Begin/read commands do not mutate. A scan receipt is never a client assertion: it must be consumed by the
     // authoritative command transaction, not merely checked in this boundary.
     const scope=V2_COMMANDS[command];
     if (scope!=='read') {
