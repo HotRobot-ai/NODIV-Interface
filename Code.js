@@ -4244,6 +4244,7 @@ function getNodeOperationOrder(e,operation) {
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
+    if(forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'&&operation!=='DEINSTALL')throw new Error('EMERGENCY_SHUTDOWN');
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
     const evacuation=evacuationOperationContext(actor,nodeId,operation,e.parameter.evacuation,e.parameter.uid||'');
     const withdrawal=readPreEvacuationRecord(context.event.eventId);
@@ -4456,6 +4457,8 @@ function getFopOperations(e) {
     if(!session.ok)return session.response;
     const actor=session.player;
     if(!['FOUNDER','FOP'].includes(actor.role))return gameplayActionDenied(actor,'ROLE_DENIED','Nur FOP/FOUNDER können Operations abrufen.');
+    const recall=forceRecallRecord();
+    if(recall&&recall.status==='EMERGENCY_SHUTDOWN')return forceRecallFopOperations(actor,recall);
     const evac=evacuationPlayerState(actor);if(evac)return evacuationFopOperations(actor,evac);
     const current=readCurrentEvent();if(current&&evacuationStarted(current.eventId))return {ok:true,session:true,eventId:current.eventId,operations:[],status:'NO OPERATIONS AVAILABLE'};
     const event=readCurrentEvent(),operations=[],withdrawal=event?readPreEvacuationRecord(event.eventId):null;
@@ -4503,7 +4506,7 @@ function confirmNodeDeinstallation(e) {
     lock.waitLock(10000);
     const session=resolvePlayerSession(e.parameter.token||'');
     if(!session.ok)return session.response;
-    const actor=session.player,replay=evacuationRecoveryReplay(e,actor);if(replay)return replay;
+    const actor=session.player,replay=forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'?null:evacuationRecoveryReplay(e,actor);if(replay)return replay;
     const {key,order,context}=readNodeInstallation(e,actor,'DEINSTALL');
     const evacuation=order.evacuationTeam?evacuationOperationContext(actor,order.nodeId,'DEINSTALL',order.evacuationTeam):null;
     if(order.cores.length!==3||new Set(order.cores.map(core=>core.id)).size!==3||new Set(order.cores.map(core=>core.uid)).size!==3)throw new Error('REMOVAL_REQUIRES_EXACTLY_3_CORES');
@@ -5754,6 +5757,8 @@ function extractCoreTransfer(e) {
 
 
 function transferCoreOwnership(data) {
+  const recall=forceRecallRecord();
+  if(recall&&recall.status==='EMERGENCY_SHUTDOWN'&&String(data.eventType||'')!=='NODE_RECOVERY_CORE')throw new Error('EMERGENCY_SHUTDOWN');
 
   const coreId = normalizeCoreId(data.coreId || '');
 
@@ -8203,4 +8208,26 @@ function forceRecallStatus(e){
  if(!session.ok)return session.response;
  const record=forceRecallRecord();
  return {ok:true,status:record?.status||'NOT_ACTIVE',eventId:record?.eventId||'',action:false};
+}
+
+/* Emergency FOP view deliberately ignores EVAC team routing. Only already
+ * installed Nodes are offered; reservations remain enforced by order endpoint. */
+function forceRecallFopOperations(actor,record){
+ if(!['FOP','FOUNDER'].includes(actor.role))throw Error('ROLE_DENIED');
+ const event=readCurrentEvent();
+ if(!event||event.eventId!==record.eventId)throw Error('EVENT_MISMATCH');
+ const sheet=getEventNodeCodeSheet();
+ const rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,13).getValues():[];
+ const operations=[];
+ for(const row of rows){
+  if(String(row[0])!==record.eventId)continue;
+  const nodeId=String(row[1]||'').trim().toUpperCase();
+  try{
+   validateNodeDeinstallation(actor,nodeId);
+   operations.push({id:'DEINSTALL:'+nodeId,type:'DEINSTALL',nodeId,
+    label:'FORCE RECALL // RUECKBAU // '+nodeId});
+  }catch(error){/* Do not expose invalid or already recovered nodes. */}
+ }
+ return {ok:true,authenticated:true,session:true,eventId:record.eventId,
+  status:'EMERGENCY_SHUTDOWN',operations};
 }
