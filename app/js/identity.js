@@ -953,7 +953,7 @@ window.addEventListener('nodiv-local-release-ack',()=>{
  localReleaseAcknowledged.add(localReleaseKey);try{window.sessionStorage?.setItem(localReleaseKey,'1');}catch(error){}
  const overlay=document.querySelector('#localReleaseOverlay');if(overlay)overlay.hidden=true;document.querySelector('#catchStart')?.focus?.();
 });
-function renderUnboundNetwork(event,ids,error){
+function renderUnboundNetwork(event,ids,error,activity){
  const count=document.querySelector('#unboundDiscoveryCount'),grid=document.querySelector('#unboundNodeGrid'),state=document.querySelector('#unboundNetworkState'),fill=document.querySelector('#unboundProgressFill'),progress=document.querySelector('.unbound-progress');
  if(!count||!grid||!state||!fill||!progress)return;
  const active=event?.active===true,total=active?Number(event.activeNodes):NaN;
@@ -974,7 +974,8 @@ function renderUnboundNetwork(event,ids,error){
  known.forEach(id=>{
   const card=document.createElement('div');card.className='unbound-node-placeholder';
   const label=document.createElement('strong');label.textContent=id;
-  const info=document.createElement('p');info.textContent='AKTIVITÄT // NOCH NICHT VERFÜGBAR';
+  const info=document.createElement('p');const item=Array.isArray(activity)?activity.find(x=>x.nodeId===id):null;
+  info.textContent='AKTIVITÄT // '+(item?.activity||'NICHT VERFÜGBAR')+(safeCount===total&&item&&Object.prototype.hasOwnProperty.call(item,'lastBookingAt')?' // LETZTER EXCHANGE: '+(item.lastBookingAt?new Date(item.lastBookingAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'KEIN EXCHANGE IN 60 MIN'):'');
   card.append(label,info);grid.append(card);
  });
 }
@@ -990,7 +991,7 @@ window.addEventListener('nodiv-catch-live',async()=>{
   if(slotCount)slotCount.textContent='Slot '+r.cores.length+'/'+r.player.coreCapacity;
   if(secured)secured.textContent=r.securedEnergy+' E';
   renderLocalCatchRelease(r.event,r.player);
-  if(document.querySelector('#unboundNodeGrid'))renderUnboundNetwork(r.event,r.event?.unboundDiscoveredNodeIds);
+  if(document.querySelector('#unboundNodeGrid'))renderUnboundNetwork(r.event,r.event?.unboundDiscoveredNodeIds,null,r.event?.unboundNodeActivity);
   if(count)count.textContent=Number.isInteger(r.catchCount)&&r.catchCount>=0?String(r.catchCount):'—';
   if(eventStatus){const active=r.event?.active;eventStatus.dataset.state=active===true?'active':active===false?'inactive':'unknown';eventStatus.textContent=active===true?'EVENT AKTIV':active===false?'KEIN EVENT':'EVENT —';}
  }catch(error){if(document.querySelector('#unboundNodeGrid'))renderUnboundNetwork(null,null,error);renderLocalCatchRelease(null,null);inventory.textContent=String(error.message||error);if(slots)slots.textContent='INVENTAR NICHT VERFÜGBAR';if(secured)secured.textContent='— E';if(slotCount)slotCount.textContent='Slot —/—';if(count)count.textContent='—';if(eventStatus){eventStatus.dataset.state='unknown';eventStatus.textContent='EVENT —';}}
