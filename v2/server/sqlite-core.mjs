@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS reservations (event_id TEXT NOT NULL, reservation_id 
 `;
 
 export class SqliteGameCore {
-  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path); this.db.exec(SCHEMA); this.clock = clock; }
+  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path, { timeout: 5000 }); if (path !== ':memory:') this.db.exec('PRAGMA journal_mode=WAL'); this.db.exec(SCHEMA); this.clock = clock; }
   close() { this.db.close(); }
   seedEvent(eventId, state = 'FIELD_ACTIVE') { this.db.prepare('INSERT INTO events(event_id,state) VALUES (?,?)').run(eventId,state); }
   seedActor(eventId, actorId, role, capacity = 0) { this.db.prepare('INSERT INTO actors(event_id,actor_id,role,capacity) VALUES (?,?,?,?)').run(eventId,actorId,role,capacity); this.db.prepare('INSERT INTO balances(event_id,actor_id) VALUES (?,?)').run(eventId,actorId); }
@@ -50,8 +50,17 @@ export class SqliteGameCore {
       const permitted = {EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
       if(!permitted[kind]?.includes(actor.role)) throw new GameError('ROLE_DENIED');
       if(new Set(moves.map(m=>m.id)).size!==moves.length) throw new GameError('DUPLICATE_CORE');
-       // Catch previews are optimistic snapshots, not five-minute ownership locks.
-       // CatchTransaction.confirm validates both inventories inside its transaction.
+      // Prevent other ownership operations from invalidating an active Catch preview.
+      // The preview is a five-minute encounter snapshot, not merely a UI hint.
+      if(['EXCHANGE','RESTORE_1','RESTORE_2','RESUPPLY','HQ_UPLOAD'].includes(kind)) {
+        const now=this.clock();
+        const exists=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catch_previews'").get();
+        const previews=exists?this.db.prepare('SELECT catcher_id,target_id,core_id FROM catch_previews WHERE event_id=? AND expires_at>?').all(eventId,now):[];
+        for(const preview of previews) {
+          if(preview.catcher_id===actorId || preview.target_id===actorId || moves.some(m=>m.id===preview.core_id))
+            throw new GameError('CATCH_PREVIEW_CONFLICT');
+        }
+      }
       // Domain checks run inside the same transaction as the ownership updates.
       // Never accept a caller-supplied energy amount or arbitrary transfer graph.
       if(kind==='HQ_UPLOAD') {
