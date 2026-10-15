@@ -2964,25 +2964,31 @@ function readUnboundExchangeActivity(event,nodeIds,nowMs){
  const activated=event.activatedAt instanceof Date?event.activatedAt.getTime():Date.parse(String(event.activatedAt||''));
  if(!Number.isFinite(activated))throw new Error('UNBOUND_EVENT_START_UNVERIFIED');
  const cache=CacheService.getScriptCache();
- const cacheKey='UB_EXCHANGE_V3_'+Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(event.eventId))).slice(0,32);
+ const cacheKey='UB_EXCHANGE_V4_'+Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(event.eventId))).slice(0,32);
  let events;
  try{const cached=cache.get(cacheKey);if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed))events=parsed;}}catch(error){}
  if(!events){
   const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
   if(!sheet)throw new Error('UNBOUND_ACTIVITY_LOG_MISSING');
-  const last=sheet.getLastRow(),start=Math.max(2,last-999);
-  const rows=last>=2?sheet.getRange(start,1,last-start+1,16).getValues():[];
+  const last=sheet.getLastRow();
   events=[];
   const seen=new Set();
-  for(let i=rows.length-1;i>=0;i--){
-   const row=rows[i],node=String(row[13]||'').trim().toUpperCase();
-   if(row[2]!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!/^NODE-\d{3}$/.test(node))continue;
-   const details=String(row[15]||'');
-   if(!details.startsWith(String(event.eventId)+' // '))continue;
-   const ts=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
-   if(!Number.isFinite(ts)||ts<activated||ts>nowMs)continue;
-   const tx=String(row[0]||'');if(!tx||seen.has(tx))continue;
-   seen.add(tx);events.push({node,ts});
+  // Read the complete durable log in bounded batches; the last 1,000 rows
+  // cannot prove either the rolling count or the last booking of an event.
+  for(let end=last;end>=2;){
+   const start=Math.max(2,end-499);
+   const rows=sheet.getRange(start,1,end-start+1,16).getValues();
+   for(let i=rows.length-1;i>=0;i--){
+    const row=rows[i],node=String(row[13]||'').trim().toUpperCase();
+    if(row[2]!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!/^NODE-\d{3}$/.test(node))continue;
+    const details=String(row[15]||'');
+    if(!details.startsWith(String(event.eventId)+' // '))continue;
+    const ts=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
+    if(!Number.isFinite(ts)||ts<activated||ts>nowMs)continue;
+    const tx=String(row[0]||'');if(!tx||seen.has(tx))continue;
+    seen.add(tx);events.push({node,ts});
+   }
+   end=start-1;
   }
   try{cache.put(cacheKey,JSON.stringify(events),20);}catch(error){}
  }
