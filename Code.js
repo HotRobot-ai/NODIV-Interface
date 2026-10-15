@@ -4246,7 +4246,7 @@ function getNodeOperationOrder(e,operation) {
     const actor=session.player,nodeId=String(e.parameter.node||'').trim().toUpperCase();
     if(forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'&&operation!=='DEINSTALL')throw new Error('EMERGENCY_SHUTDOWN');
     const context=operation==='DEINSTALL'?validateNodeDeinstallation(actor,nodeId):validateNodeInstallation(actor,nodeId);
-    const evacuation=evacuationOperationContext(actor,nodeId,operation,e.parameter.evacuation,e.parameter.uid||'');
+    const evacuation=forceRecallRecord()?.status==='EMERGENCY_SHUTDOWN'?null:evacuationOperationContext(actor,nodeId,operation,e.parameter.evacuation,e.parameter.uid||'');
     const withdrawal=readPreEvacuationRecord(context.event.eventId);
     if(e.parameter.withdrawal)assertPreEvacuationTarget(withdrawal,String(e.parameter.withdrawal),nodeId,operation);
     assertExchangeUnreserved(nodeId,'','');
