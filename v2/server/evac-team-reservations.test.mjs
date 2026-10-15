@@ -13,7 +13,7 @@ function fixture() {
   core.seedNode('E',n,'INSTALLED');
   for(let i=0;i<3;i++)core.seedCore('E',{id:n+'C'+i,uid:n+'U'+i,energy:100+i,ownerType:'NODE',ownerId:n});
  }
- return {core,service:createEvacTeamReservations(core)};
+ const service=createEvacTeamReservations(core);\n core.db.prepare("INSERT INTO evac_control(event_id,state) VALUES ('E','STARTED')").run();\n return {core,service};
 }
 const req={eventId:'E',teamId:'T1',fopId:'F1',pioneerA:'P1',pioneerB:'P2',nodeIds:['N1','N2']};
 test('reserves two three-core snapshots atomically',()=>{
@@ -53,5 +53,14 @@ test('non-field event rejected',()=>{
  try{
   core.db.prepare("UPDATE events SET state='READY' WHERE event_id='E'").run();
   assert.throws(()=>service.reserve(req),/EVAC_EVENT_INVALID/);
+ }finally{core.close();}
+});
+
+test('Founder start must be persisted before team assignment',()=>{
+ const {core,service}=fixture();
+ try{
+  core.db.prepare("UPDATE evac_control SET state='PRE_EVAC_READY' WHERE event_id='E'").run();
+  assert.throws(()=>service.reserve(req),/EVAC_NOT_STARTED/);
+  assert.equal(core.db.prepare('SELECT COUNT(*) n FROM evac_teams').get().n,0);
  }finally{core.close();}
 });
