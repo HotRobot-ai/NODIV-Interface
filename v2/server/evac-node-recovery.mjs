@@ -2,7 +2,8 @@
  * EVAC FOP node recovery: one installed reserved node, three exact NFC-scanned
  * cores, atomic transfer to protected pioneer cargo. No partial recovery.
  */
-export function createEvacNodeRecovery(core) {
+export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
+ if(typeof verifyNfcProof !== 'function') throw Error('EVAC_NFC_VERIFIER_REQUIRED');
  const db=core?.db;
  if(!db?.prepare)throw Error('EVAC_CORE_REQUIRED');
  db.exec(`CREATE TABLE IF NOT EXISTS evac_recoveries (
@@ -11,10 +12,15 @@ export function createEvacNodeRecovery(core) {
  PRIMARY KEY(event_id,node_id), UNIQUE(event_id,operation_id),
  FOREIGN KEY(event_id,team_id) REFERENCES evac_teams(event_id,team_id))`);
  return {
-  recover({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId}) {
+  recover({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) {
    if(!eventId||!teamId||!nodeId||!fopId||!operationId||scannedNodeId!==nodeId||
       !Array.isArray(scannedCoreUids)||scannedCoreUids.length!==3||
       new Set(scannedCoreUids).size!==3)throw Error('EVAC_SCAN_INVALID');
+   // The verifier is a trusted server-side adapter. Client-supplied UID strings alone
+   // never authorize a recovery. A production adapter must validate scan provenance,
+   // actor/session binding, node/core tags, expiration and one-time proof consumption.
+   if(!nfcProof || verifyNfcProof({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) !== true)
+    throw Error('EVAC_NFC_PROOF_DENIED');
    db.exec('BEGIN IMMEDIATE');
    try {
     if(db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state!=='STARTED')throw Error('EVAC_NOT_STARTED');
