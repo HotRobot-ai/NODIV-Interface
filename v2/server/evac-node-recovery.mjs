@@ -1,3 +1,4 @@
+import {installNfcGrantSchema, consumeNfcGrant} from './nfc-grants.mjs';
 /**
  * EVAC FOP node recovery: one installed reserved node, three exact NFC-scanned
  * cores, atomic transfer to protected pioneer cargo. No partial recovery.
@@ -6,20 +7,21 @@ export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
  if(typeof verifyNfcProof !== 'function') throw Error('EVAC_NFC_VERIFIER_REQUIRED');
  const db=core?.db;
  if(!db?.prepare)throw Error('EVAC_CORE_REQUIRED');
+ installNfcGrantSchema(db);
  db.exec(`CREATE TABLE IF NOT EXISTS evac_recoveries (
  event_id TEXT NOT NULL, node_id TEXT NOT NULL, team_id TEXT NOT NULL,
  carrier_id TEXT NOT NULL, fop_id TEXT NOT NULL, operation_id TEXT NOT NULL,
  PRIMARY KEY(event_id,node_id), UNIQUE(event_id,operation_id),
  FOREIGN KEY(event_id,team_id) REFERENCES evac_teams(event_id,team_id))`);
  return {
-  recover({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) {
+  recover({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof,nfcGrantId}) {
    if(!eventId||!teamId||!nodeId||!fopId||!operationId||scannedNodeId!==nodeId||
       !Array.isArray(scannedCoreUids)||scannedCoreUids.length!==3||
       new Set(scannedCoreUids).size!==3)throw Error('EVAC_SCAN_INVALID');
    // The verifier is a trusted server-side adapter. Client-supplied UID strings alone
    // never authorize a recovery. A production adapter must validate scan provenance,
    // actor/session binding, node/core tags, expiration and one-time proof consumption.
-   if(!nfcProof || verifyNfcProof({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) !== true)
+   if(!nfcProof || !nfcGrantId || verifyNfcProof({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) !== true)
     throw Error('EVAC_NFC_PROOF_DENIED');
    db.exec('BEGIN IMMEDIATE');
    try {
@@ -33,6 +35,7 @@ export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
      if(prior.operation_id!==operationId||prior.fop_id!==fopId)throw Error('EVAC_RECOVERY_CONFLICT');
      db.exec('COMMIT');return {eventId,nodeId,carrierId:prior.carrier_id,replayed:true};
     }
+    consumeNfcGrant(db,{id:nfcGrantId,eventId,actorId:fopId,command:'EVAC_NODE_RECOVERY',targetType:'NODE',targetId:nodeId,operationId});
     if(db.prepare("SELECT state FROM nodes WHERE event_id=? AND node_id=?").get(eventId,nodeId)?.state!=='INSTALLED')throw Error('EVAC_NODE_NOT_INSTALLED');
     const snapshot=JSON.parse(assignment.core_snapshot);
     const current=db.prepare("SELECT core_id,uid,version FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(eventId,nodeId);
