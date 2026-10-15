@@ -22,3 +22,8 @@ assert.match(body,/setProperty\(FORCE_RECALL_PROPERTY/);
 // Recovery after a successful Sheets write but failed property write must be explicit.
 assert.match(body,/FORCE_RECALL_COMPLETION_RECOVERY|reconcileForceRecallCompletion/,'interrupted completion needs reconciliation');
 console.log('FORCE RECALL completion source guards: PASS');
+const recoveryStart=code.indexOf('function reconcileForceRecallCompletion(');
+assert(recoveryStart>=0&&recoveryStart<start,'recovery function must be present');
+const recovery=code.slice(recoveryStart,start);
+assert.match(recovery,/FORCE_RECALL_COMPLETION_RECOVERY_AUDIT_MISSING/);
+assert.match(recovery,/FORCE_RECALL_COMPLETED/);
