@@ -2947,27 +2947,42 @@ function recordUnboundDiscovery(player,nodeId,event){
  * 60-minute window. Read only the bounded recent tail of the transaction log.
  * Never expose actor, core or energy data to UNBOUND.
  */
-function readUnboundExchangeActivity(nodeIds,nowMs){
+/*
+ * Cached, event-scoped UNBOUND exchange projection.
+ * This is a short-lived read-through cache, NOT a second source of truth.
+ * Never update it before the durable transaction commit.
+ */
+function readUnboundExchangeActivity(event,nodeIds,nowMs){
  const ids=[...new Set((nodeIds||[]).filter(id=>/^NODE-\d{3}$/.test(id)))];
  const result=Object.fromEntries(ids.map(id=>[id,{count:0,lastBookingAt:null}]));
- if(!ids.length)return result;
- const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
- if(!sheet)throw new Error('UNBOUND_ACTIVITY_LOG_MISSING');
- const last=sheet.getLastRow();
- if(last<2)return result;
- const start=Math.max(2,last-999);
- const rows=sheet.getRange(start,1,last-start+1,16).getValues();
- const seen=new Set();
- for(let i=rows.length-1;i>=0;i--){
-  const row=rows[i],type=String(row[2]||''),node=String(row[13]||'').trim().toUpperCase();
-  if(type!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!Object.prototype.hasOwnProperty.call(result,node))continue;
-  const timestamp=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
-  if(!Number.isFinite(timestamp)||timestamp>nowMs||timestamp<nowMs-3600000)continue;
-  const unique=String(row[0]||'');
-  if(!unique||seen.has(unique))continue;
-  seen.add(unique);
-  const item=result[node];item.count++;
-  if(item.lastBookingAt===null||timestamp>item.lastBookingAt)item.lastBookingAt=timestamp;
+ if(!ids.length||!event||!event.eventId)return result;
+ const activated=event.activatedAt instanceof Date?event.activatedAt.getTime():Date.parse(String(event.activatedAt||''));
+ if(!Number.isFinite(activated))throw new Error('UNBOUND_EVENT_START_UNVERIFIED');
+ const cache=CacheService.getScriptCache();
+ const cacheKey='UB_EXCHANGE_V2_'+Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(event.eventId))).slice(0,32);
+ let events;
+ try{const cached=cache.get(cacheKey);if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed))events=parsed;}}catch(error){}
+ if(!events){
+  const sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTION_LOG_SHEET_NAME);
+  if(!sheet)throw new Error('UNBOUND_ACTIVITY_LOG_MISSING');
+  const last=sheet.getLastRow(),start=Math.max(2,last-999);
+  const rows=last>=2?sheet.getRange(start,1,last-start+1,16).getValues():[];
+  events=[];
+  const seen=new Set();
+  for(let i=rows.length-1;i>=0;i--){
+   const row=rows[i],node=String(row[13]||'').trim().toUpperCase();
+   if(row[2]!=='NORMAL_EXCHANGE'||row[14]!=='SUCCESS'||!/^NODE-\d{3}$/.test(node))continue;
+   const ts=row[1] instanceof Date?row[1].getTime():Date.parse(String(row[1]||''));
+   if(!Number.isFinite(ts)||ts<activated||ts>nowMs||ts<nowMs-3600000)continue;
+   const tx=String(row[0]||'');if(!tx||seen.has(tx))continue;
+   seen.add(tx);events.push({node,ts});
+  }
+  try{cache.put(cacheKey,JSON.stringify(events),20);}catch(error){}
+ }
+ for(const item of events){
+  if(!Object.prototype.hasOwnProperty.call(result,item.node)||item.ts>nowMs||item.ts<Math.max(activated,nowMs-3600000))continue;
+  const node=result[item.node];node.count++;
+  if(node.lastBookingAt===null||item.ts>node.lastBookingAt)node.lastBookingAt=item.ts;
  }
  return result;
 }
@@ -3008,7 +3023,7 @@ function getPlayerState(e) {
   const unboundActiveIds=unboundEntries?readUnboundActiveNodeIds(event):[];
   const unboundRosterVerified=Boolean(unboundEntries&&unboundActiveIds.length>0&&unboundActiveIds.length===Number(event.activeNodes));
   const unboundKnown=unboundEntries?unboundActiveIds.filter(id=>unboundEntries[id]===readNodeSiteGeneration(event.eventId,id)):[];
-  const unboundActivity=unboundEntries?readUnboundExchangeActivity(unboundKnown,Date.now()):null;
+  const unboundActivity=unboundEntries?readUnboundExchangeActivity(event,unboundKnown,Date.now()):null;
   const unboundNodeActivity=unboundActivity?unboundKnown.map(id=>({
     nodeId:id,activity:unboundActivityTier(unboundActivity[id].count),
     ...(unboundRosterVerified&&unboundKnown.length===unboundActiveIds.length?{lastBookingAt:unboundActivity[id].lastBookingAt}:{})
