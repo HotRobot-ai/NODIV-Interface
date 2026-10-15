@@ -10,3 +10,5 @@ Source: `Code.js` on `main`, functions `catchPersonalCores`, `catchContext`, `ca
 - Confirm atomically transfers selected core from target to catcher, with `ownerType='PIONEER'` **even when catcher role is LOCAL or UNBOUND**, and gives target 5 minutes Ghost protection. Logs successful completion and supports idempotent replay.
 - The current V2 SQLite schema has `owner_type='PIONEER'` but capacity enforcement checks actor's personal PIONEER holdings, which can support this legacy representation; however, the V2 core still has no ghost_until column or Catch confirmation state machine.
 - **Do not enable a Catch endpoint** until preview/confirm, reservations, capacity, ghost and replay are implemented together and tested. No production deployment.
+
+V2 isolated implementation update (2026-10-15): Catch excludes active ASSIGNED mission core IDs before selecting highest-energy eligible core; local full suite 95/95. Remaining: other V1 exchange/restore/deployment/install reservations must be represented and enforced before release.
