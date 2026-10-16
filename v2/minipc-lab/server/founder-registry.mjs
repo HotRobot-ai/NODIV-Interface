@@ -6,9 +6,9 @@ function reject(code){throw Error(code)}
 export function createFounderRegistry(db){
   function register({eventId,role,uid,id,energy}){
     const tag=normalizeUid(uid),key=String(id||'').trim().toUpperCase();
-    if(!ID.test(key)||tag.length<4||tag.length>64)reject('REGISTRATION_INVALID');
+    if(!ID.test(key)||!/^[0-9A-F]{8,32}$/.test(tag))reject('REGISTRATION_INVALID');
     const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
-    if(!event||!['READY','INITIALIZED'].includes(event.state))reject('REGISTRATION_PHASE_DENIED');
+    if(!event||event.state!=='READY')reject('REGISTRATION_PHASE_DENIED');
     if(db.prepare('SELECT 1 FROM operations WHERE event_id=? LIMIT 1').get(eventId))reject('REGISTRATION_EVENT_USED');
     const kind=String(role||'').toUpperCase();
     if(!['CARD','NODE','CORE','HQ'].includes(kind))reject('REGISTRATION_INVALID');
