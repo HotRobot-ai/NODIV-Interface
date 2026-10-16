@@ -103,17 +103,42 @@ export class SqliteGameCore {
         if(!transit||transit.owner_type!=='TRANSIT'||transit.owner_id!==actorId) throw new GameError('RESTORE_TRANSIT_NOT_ASSIGNED');
 
       } else if(kind==='RESUPPLY') {
-        if(energyCredit||capacityChange||nodeChanges.length||eventState||moves.length!==1||!missionId) throw new GameError('RESUPPLY_INVALID_SHAPE');
+        // Existing V1/V2 rule: one HQ transit Core replaces the weakest Node Core;
+        // that displaced Core becomes the Pioneer's new personal Core. Node remains 3/3.
+        if(energyCredit||capacityChange||nodeChanges.length||eventState||moves.length!==2||!missionId) throw new GameError('RESUPPLY_INVALID_SHAPE');
         const mission=this.db.prepare('SELECT * FROM missions WHERE event_id=? AND mission_id=?').get(eventId,missionId);
         if(!mission||mission.kind!=='RESUPPLY'||mission.actor_id!==actorId||mission.state!=='ASSIGNED'||mission.expires_at<=this.clock()) throw new GameError('RESUPPLY_MISSION_DENIED');
         if(this.db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,mission.node_id)?.state!=='INSTALLED') throw new GameError('NODE_NOT_INSTALLED');
-        const m=moves[0];
-        if(m.id!==mission.core_id||m.fromType!=='TRANSIT'||m.fromId!==actorId||m.toType!=='PIONEER'||m.toId!==actorId) throw new GameError('RESUPPLY_INVALID_ROUTE');
-        const c=this.core(eventId,m.id);
-        if(!c||c.owner_type!=='TRANSIT'||c.owner_id!==actorId) throw new GameError('RESUPPLY_TRANSIT_NOT_ASSIGNED');
+        const incoming=moves.find(m=>m.id===mission.core_id&&m.fromType==='TRANSIT'&&m.fromId===actorId&&m.toType==='NODE'&&m.toId===mission.node_id);
+        const outgoing=moves.find(m=>m.fromType==='NODE'&&m.fromId===mission.node_id&&m.toType==='PIONEER'&&m.toId===actorId);
+        if(!incoming||!outgoing) throw new GameError('RESUPPLY_INVALID_ROUTE');
+        const transit=this.core(eventId,incoming.id);
+        if(!transit||transit.owner_type!=='TRANSIT'||transit.owner_id!==actorId||transit.status!=='IN_TRANSIT') throw new GameError('RESUPPLY_TRANSIT_NOT_ASSIGNED');
+        const nodeCores=this.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy ASC,core_id ASC").all(eventId,mission.node_id);
+        if(nodeCores.length!==3||nodeCores.some(c=>c.status!=='DEPLOYED')) throw new GameError('NODE_REQUIRES_THREE_CORES');
+        if(outgoing.id!==nodeCores[0].core_id) throw new GameError('RESUPPLY_MUST_DISPLACE_LOWEST');
+        const personal=this.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,actorId).n;
+        if(personal!==0) throw new GameError('RESUPPLY_REQUIRES_EMPTY_INVENTORY');
+      } else if(kind==='INSTALL') {
+        if(energyCredit||capacityChange||eventState||moves.length!==3||nodeChanges.length!==1) throw new GameError('INSTALL_INVALID_SHAPE');
+        const change=nodeChanges[0];
+        if(!change?.id||change.state!=='INSTALLED') throw new GameError('INSTALL_INVALID_NODE_CHANGE');
+        const node=this.db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,change.id);
+        if(!node||node.state==='INSTALLED') throw new GameError('INSTALL_NODE_UNAVAILABLE');
+        if(this.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=?").get(eventId,change.id).n!==0) throw new GameError('INSTALL_NODE_NOT_EMPTY');
+        if(moves.some(m=>m.fromType!=='TRANSIT'||m.fromId!==actorId||m.toType!=='NODE'||m.toId!==change.id||m.status!=='DEPLOYED')) throw new GameError('INSTALL_INVALID_ROUTE');
+        for(const m of moves){const c=this.core(eventId,m.id);if(!c||c.owner_type!=='TRANSIT'||c.owner_id!==actorId||c.status!=='IN_TRANSIT') throw new GameError('INSTALL_CARGO_INVALID');}
+      } else if(kind==='DEINSTALL') {
+        if(energyCredit||capacityChange||eventState||moves.length!==3||nodeChanges.length!==1) throw new GameError('DEINSTALL_INVALID_SHAPE');
+        const change=nodeChanges[0];
+        if(!change?.id||change.state!=='DEINSTALLED') throw new GameError('DEINSTALL_INVALID_NODE_CHANGE');
+        if(this.db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,change.id)?.state!=='INSTALLED') throw new GameError('DEINSTALL_NODE_NOT_INSTALLED');
+        const current=this.db.prepare("SELECT core_id,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(eventId,change.id);
+        if(current.length!==3||current.some(c=>c.status!=='DEPLOYED')) throw new GameError('NODE_REQUIRES_THREE_CORES');
+        if(moves.some(m=>m.fromType!=='NODE'||m.fromId!==change.id||m.toType!=='HQ'||m.toId!=='HQ'||m.status!=='RESERVE')) throw new GameError('DEINSTALL_INVALID_ROUTE');
+        if(new Set(moves.map(m=>m.id)).size!==3||moves.some(m=>!current.some(c=>c.core_id===m.id))) throw new GameError('DEINSTALL_CORE_MISMATCH');
       } else {
-        // The other gameplay actions require their own complete rule validators.
-        // Until implemented, deny them rather than expose a generic mutation API.
+        // Remaining operations require dedicated domain services rather than a generic mutation path.
         throw new GameError('ACTION_NOT_IMPLEMENTED');
       }
 
