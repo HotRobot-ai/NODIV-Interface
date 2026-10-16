@@ -16,7 +16,15 @@ export function createLabEvacNfc(core,{now=()=>Date.now(),ttlMs=30000}={}){
   );`);
 
   function issue({eventId,actorId,command,targetType,targetId,operationId}){
-    const proofId='LABPROOF-'+randomUUID(),timestamp=now(),expiresAt=timestamp+ttlMs;
+    const timestamp=now();
+    const prior=db.prepare(`SELECT p.proof_id,p.expires_at,g.id grant_id FROM lab_evac_nfc_proofs p
+      JOIN v2_nfc_grants g ON g.event_id=p.event_id AND g.actor_id=p.actor_id AND g.command=p.command
+        AND g.target_type=p.target_type AND g.target_id=p.target_id AND g.operation_id=p.operation_id
+      WHERE p.event_id=? AND p.actor_id=? AND p.command=? AND p.target_type=? AND p.target_id=? AND p.operation_id=?
+        AND p.expires_at>=? AND g.expires_at>=? AND g.consumed_at IS NULL
+      ORDER BY p.expires_at DESC LIMIT 1`).get(eventId,actorId,command,targetType,targetId,operationId,timestamp,timestamp);
+    if(prior)return {proofId:prior.proof_id,nfcGrantId:prior.grant_id,expiresAt:prior.expires_at,replayed:true};
+    const proofId='LABPROOF-'+randomUUID(),expiresAt=timestamp+ttlMs;
     db.exec('BEGIN IMMEDIATE');
     try{
       db.prepare('INSERT INTO lab_evac_nfc_proofs(proof_id,event_id,actor_id,command,target_type,target_id,operation_id,expires_at) VALUES (?,?,?,?,?,?,?,?)')
