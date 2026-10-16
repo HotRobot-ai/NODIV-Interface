@@ -3,6 +3,8 @@ name: V2 Block05 Roles
 on:
   push:
     branches: [feature/v2-block05-roles]
+  pull_request:
+    branches: [feature/v2-block04-integrity]
   workflow_dispatch:
 
 jobs:
