@@ -175,9 +175,7 @@ export class SqliteGameCore {
         const phase=kind==='RESTORE_2'?2:1;
         if(energyCredit||nodeChanges.length||eventState||capacityChange!==1||actor.capacity!==phase||moves.length!==2) this._fail(kind+'_INVALID_SHAPE');
         const incoming=moves.find(m=>m.fromType==='TRANSIT'&&m.fromId===actorId&&m.toType==='NODE');
-        const outgoing=phase===1
-          ? moves.find(m=>m.fromType==='NODE'&&m.toType==='PIONEER'&&m.toId===actorId)
-          : moves.find(m=>m.fromType==='NODE'&&m.toType==='HQ'&&m.toId==='HQ');
+        const outgoing=moves.find(m=>m.fromType==='NODE'&&m.toType==='PIONEER'&&m.toId===actorId);
         if(!incoming||!outgoing||incoming.toId!==outgoing.fromId) this._fail(kind+'_INVALID_ROUTE');
         nodeId=incoming.toId;
         if(this.db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,nodeId)?.state!=='INSTALLED') this._fail('NODE_NOT_INSTALLED');
