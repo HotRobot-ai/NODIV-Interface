@@ -34,7 +34,8 @@ export function createFounderRegistry(db){
       db.prepare("INSERT INTO cores(event_id,core_id,uid,visible_energy,actual_energy,owner_type,owner_id,status) VALUES (?,?,?,?,?,'HQ','HQ','RESERVE')").run(eventId,key,tag,energy,energy);
     }else{
       if(!db.prepare('SELECT 1 FROM hq_upload_bays WHERE event_id=? AND bay_id=?').get(eventId,key))reject('REGISTRATION_HQ_UNKNOWN');
-      if(db.prepare('SELECT 1 FROM hq_upload_bays WHERE event_id=? AND uid=?').get(eventId,tag))reject('REGISTRATION_UID_DUPLICATE');
+      const bay=db.prepare('SELECT uid FROM hq_upload_bays WHERE event_id=? AND bay_id=?').get(eventId,key);
+      if(bay.uid && !String(bay.uid).startsWith('PENDING-'))reject('REGISTRATION_TARGET_DUPLICATE');
       db.prepare('UPDATE hq_upload_bays SET uid=? WHERE event_id=? AND bay_id=?').run(tag,eventId,key);
     }
     return {kind,id:key,uid:tag,...(kind==='CORE'?{energy}:{})};
