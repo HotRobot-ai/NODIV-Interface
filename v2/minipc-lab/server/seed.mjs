@@ -35,8 +35,12 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
     core.seedActor(eventId,'FOUNDER-TEST','FOUNDER',0);
     core.seedActor(eventId,'LOCAL-TEST','LOCAL',1);
     core.seedActor(eventId,'UNBOUND-TEST','UNBOUND',2);
-    core.seedNode(eventId,'NODE-001',mode==='registration'?'AVAILABLE':'INSTALLED');
-    core.seedNode(eventId,'NODE-002','AVAILABLE');
+    if(mode==='registration'){
+      for(let i=1;i<=10;i++) core.seedNode(eventId,'NODE-'+String(i).padStart(3,'0'),'AVAILABLE');
+    }else{
+      core.seedNode(eventId,'NODE-001','INSTALLED');
+      core.seedNode(eventId,'NODE-002','AVAILABLE');
+    }
     if(mode==='legacy'){
     core.seedCore(eventId,{id:'NC-P-001',uid:envUid('NODIV_UID_PIONEER_CORE',DEFAULT_UIDS.pioneerCore),energy:341,ownerType:'PIONEER',ownerId:'P9003',status:'FIELD'});
     core.seedCore(eventId,{id:'NC-N-001',uid:envUid('NODIV_UID_NODE_CORE_1',DEFAULT_UIDS.node1),energy:105,ownerType:'NODE',ownerId:'NODE-001',status:'DEPLOYED'});
