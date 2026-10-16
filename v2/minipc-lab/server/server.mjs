@@ -206,6 +206,56 @@ export function createLabApp(config=labConfig()){
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
   const founderRegistry=createFounderRegistry(core.db);
   const realtest=createBlock06Realtest(core,config.mode);
+
+  function evacSupportState(eventId){
+    if(config.mode!=='evac')return null;
+    const physical=core.db.prepare("SELECT team_id FROM evac_teams WHERE event_id=? AND fop_id='FOP-TEST'").get(eventId);
+    const physicalRecoveries=physical?core.db.prepare('SELECT COUNT(*) n FROM evac_recoveries WHERE event_id=? AND team_id=?').get(eventId,physical.team_id).n:0;
+    const physicalUploads=physical?core.db.prepare('SELECT COUNT(*) n FROM evac_final_uploads WHERE event_id=? AND team_id=?').get(eventId,physical.team_id).n:0;
+    const totalRecoveries=core.db.prepare('SELECT COUNT(*) n FROM evac_recoveries WHERE event_id=?').get(eventId).n;
+    const totalUploads=core.db.prepare('SELECT COUNT(*) n FROM evac_final_uploads WHERE event_id=?').get(eventId).n;
+    return {physicalTeamId:physical?.team_id||null,physicalRecoveries,physicalUploads,totalRecoveries,totalUploads,ready:physicalRecoveries===2&&physicalUploads===2&&totalUploads<10,done:totalRecoveries===10&&totalUploads===10};
+  }
+
+  function runEvacSupport(eventId){
+    if(config.mode!=='evac')throw Error('EVAC_SUPPORT_MODE_REQUIRED');
+    if(!runtime.evac.flow)throw Error('EVAC_NFC_VERIFIER_REQUIRED');
+    const state=evacSupportState(eventId);
+    if(!state?.physicalTeamId||state.physicalRecoveries!==2||state.physicalUploads!==2)throw Error('EVAC_PHYSICAL_ACCEPTANCE_REQUIRED');
+    const teams=[
+      ['SUPPORT-2','FOP-E2','P-E3','P-E4','NODE-003','NODE-004'],
+      ['SUPPORT-3','FOP-E3','P-E5','P-E6','NODE-005','NODE-006'],
+      ['SUPPORT-4','FOP-E4','P-E7','P-E8','NODE-007','NODE-008'],
+      ['SUPPORT-5','FOP-E5','P-E9','P-E10','NODE-009','NODE-010']
+    ];
+    for(const [teamId,fopId,pioneerA,pioneerB,nodeA,nodeB] of teams){
+      let team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND team_id=?').get(eventId,teamId);
+      if(!team){
+        runtime.evac.teams.reserve({eventId,teamId,fopId,pioneerA,pioneerB,nodeIds:[nodeA,nodeB]});
+        team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND team_id=?').get(eventId,teamId);
+      }
+      const assignments=core.db.prepare('SELECT * FROM evac_assignments WHERE event_id=? AND team_id=? ORDER BY sequence').all(eventId,teamId);
+      for(const a of assignments){
+        let recovery=core.db.prepare('SELECT * FROM evac_recoveries WHERE event_id=? AND node_id=?').get(eventId,a.node_id);
+        if(!recovery){
+          const snapshot=JSON.parse(a.core_snapshot),operationId='SUPPORT-REC-'+a.node_id;
+          const proof=labEvacNfc.issue({eventId,actorId:fopId,command:'EVAC_NODE_RECOVERY',targetType:'NODE',targetId:a.node_id,operationId});
+          runtime.evac.flow.recover({eventId,teamId,nodeId:a.node_id,fopId,scannedNodeId:a.node_id,scannedCoreUids:snapshot.map(x=>x.uid),operationId,nfcProof:{id:proof.proofId},nfcGrantId:proof.nfcGrantId});
+          recovery=core.db.prepare('SELECT * FROM evac_recoveries WHERE event_id=? AND node_id=?').get(eventId,a.node_id);
+        }
+        if(!core.db.prepare('SELECT 1 FROM evac_final_uploads WHERE event_id=? AND carrier_id=?').get(eventId,a.carrier_id)){
+          const cargo=core.db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO' ORDER BY core_id").all(eventId,a.carrier_id).map(x=>x.core_id);
+          if(cargo.length!==3)throw Error('EVAC_SUPPORT_CARGO_INVALID');
+          const operationId='SUPPORT-UP-'+a.carrier_id;
+          const proof=labEvacNfc.issue({eventId,actorId:a.carrier_id,command:'EVAC_FINAL_UPLOAD',targetType:'HQ',targetId:'HQ',operationId});
+          runtime.evac.flow.upload({eventId,teamId,carrierId:a.carrier_id,operationId,coreIds:cargo,selectedCoreId:cargo[0],nfcProof:{id:proof.proofId},nfcGrantId:proof.nfcGrantId});
+        }
+      }
+    }
+    const after=evacSupportState(eventId);
+    core.assertIntegrity(eventId);
+    return after;
+  }
   const handler=async(req,res)=>{
     const started=performance.now();
     try{
@@ -220,6 +270,7 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='INITIALIZED')view.nextAction={code:'REALTEST_START',label:view.realtest.canStart?'EVENT STARTEN':'START BLOCKIERT',detail:view.realtest.canStart?'Vorbereitung gespeichert. Feldbetrieb kann aktiviert werden.':view.realtest.blockers.join(' · ')};
         }
         if(config.mode==='registration'&&s.role==='PIONEER'&&!view.mission){view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
       }
       if(req.method==='POST'&&u.pathname==='/api/session/start'){const b=await body(req);const s=store.startSession(config.eventId,b.uid);return json(res,200,{ok:true,...s});}
@@ -404,6 +455,11 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/founder/evac/start'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
         return json(res,200,{ok:true,...runtime.evac.start.start({eventId:s.event_id,founderId:s.actor_id,operationId:b.operationId||('EVAC-START-'+randomUUID())})});
+      }
+
+      if(req.method==='POST'&&u.pathname==='/api/founder/evac/support'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');
+        return json(res,200,{ok:true,...runEvacSupport(s.event_id)});
       }
 
       if(req.method==='POST'&&u.pathname==='/api/founder/evac/complete'){
