@@ -66,8 +66,10 @@ test('BLOCK07 desktop: incomplete real stock can start, end early and survive re
     assert.equal(ended.snapshot.stateBefore,'FIELD_ACTIVE');
     assert.equal(db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId).state,'TEST_ENDED');
     assert.equal(db.prepare("SELECT COUNT(*) n FROM events WHERE event_id=? AND state='COMPLETED'").get(eventId).n,0);
-    const evac=db.prepare('SELECT state,completed_at FROM evac_control WHERE event_id=?').get(eventId);
-    assert.ok(!evac||evac.completed_at==null);
+    const evac=db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId);
+    const completion=db.prepare('SELECT COUNT(*) n FROM evac_completion_receipts WHERE event_id=?').get(eventId).n;
+    assert.ok(!evac||evac.state!=='COMPLETED');
+    assert.equal(completion,0);
 
     await fx.app.close();fx=null;
     fx=await startApp(dbPath,eventId);
