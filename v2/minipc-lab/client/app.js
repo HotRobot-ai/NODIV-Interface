@@ -303,7 +303,8 @@ async function openFopEvac(){
     }
     const pending=(e.assignments||[]).find(a=>!a.recovered);
     if(!pending){host.innerHTML='<p class="phase-note">Beide Team-Nodes geborgen. Pioneer führen jetzt den Last Secure Upload aus.</p>';phase('success','Team-Recovery abgeschlossen.');return;}
-    host.innerHTML=`<p><b>TEAM ${esc(e.team.id)}</b><br>Nächster Ziel-Node: <b>${esc(pending.node_id)}</b><br>Carrier: ${esc(pending.carrier_id)}</p><button id="evacRecoverStart" class="primary">NODE-RECOVERY SCANNEN</button><div id="evacFopOut" class="feedback"></div>`;
+    const cargoHint=(pending.coreEnergies||[]).length?`<br>Erwartete reale Core-Werte: <b>${pending.coreEnergies.map(x=>esc(x+' E')).join(' · ')}</b>`:'';
+    host.innerHTML=`<p><b>TEAM ${esc(e.team.id)}</b><br>Nächster Ziel-Node: <b>${esc(pending.node_id)}</b><br>Carrier: ${esc(pending.carrier_id)}${cargoHint}</p><button id="evacRecoverStart" class="primary">NODE-RECOVERY SCANNEN</button><div id="evacFopOut" class="feedback"></div>`;
     evacFlow.teamId=e.team.id;evacFlow.nodeId=pending.node_id;$('evacRecoverStart').onclick=checkEvacRecovery;phase('success','Nächster EVAC-Node bestätigt.');
   }catch(e){phase('error',friendly(e));}
 }
