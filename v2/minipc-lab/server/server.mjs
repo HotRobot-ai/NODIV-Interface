@@ -276,6 +276,11 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='READY')view.nextAction={code:'REALTEST_PREFLIGHT',label:view.realtest.canInitialize?'EVENT VORBEREITEN':'HARDWARE VERVOLLSTÄNDIGEN',detail:view.realtest.canInitialize?'Registrierung vollständig. Initialisierung kann gesichert werden.':'Registriere die noch fehlenden Access Cards, Nodes, N-Cores und den HQ-Tag.'};
           if(view.event.state==='INITIALIZED')view.nextAction={code:'REALTEST_START',label:view.realtest.canStart?'EVENT STARTEN':'START BLOCKIERT',detail:view.realtest.canStart?'Vorbereitung gespeichert. Feldbetrieb kann aktiviert werden.':'Start ist noch blockiert. Prüfe die Hardwareübersicht und den gespeicherten Teststand.'};
         }
+        if(config.mode==='desktop'&&s.role==='FOP'){
+          const registered=core.db.prepare("SELECT n.state,COUNT(*) count FROM lab_node_tags t JOIN nodes n ON n.event_id=t.event_id AND n.node_id=t.node_id WHERE t.event_id=? GROUP BY n.state").all(s.event_id);
+          const actual=Object.fromEntries(registered.map(x=>[x.state,x.count]));
+          view.nodes={available:actual.AVAILABLE||0,installed:actual.INSTALLED||0,total:registered.reduce((sum,x)=>sum+x.count,0)};
+        }
         if(config.mode==='desktop'&&s.role==='FOUNDER'){
           view.hardware=founderRegistry.list(s.event_id);
           view.desktopTest=desktopTest.status(s.event_id);
