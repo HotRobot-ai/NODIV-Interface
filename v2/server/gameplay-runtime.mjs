@@ -93,7 +93,7 @@ export function createV2GameplayRuntime(path=':memory:', {
     let energyCredit=0,mandatoryResupply=null;
     const moves=coreIds.map(id=>{
       const c=core.core(eventId,id);
-      if(!c||c.owner_type!=='PIONEER'||c.owner_id!==pioneerId||c.status!=='FIELD')throw new GameError('UPLOAD_CORE_NOT_OWNED');
+      if(!c)throw new GameError('UPLOAD_CORE_NOT_OWNED');
       if(!Number.isSafeInteger(c.actual_energy)||c.actual_energy<=0)throw new GameError('UPLOAD_ENERGY_INVALID');
       energyCredit+=c.actual_energy;
       return move(id,'PIONEER',pioneerId,'HQ','HQ','SECURED');
