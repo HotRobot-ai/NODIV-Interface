@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let token='',session=null,view=null;
-let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null;
+let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,evacFlow=null;
 
 const ROLE_LABEL={FOUNDER:'FOUNDER',FOP:'FIELD OPERATOR',PIONEER:'PIONEER',LOCAL:'LOCAL',UNBOUND:'UNBOUND'};
 const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'CYAN FIELD CHANNEL',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
@@ -98,7 +98,7 @@ function renderMission(v){
 function renderPioneer(v){
   const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
-  const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">EVAC-Core-Transfers bleiben am bestehenden vertrauenswürdigen NFC-Grant-Pfad. Der Browser darf diesen Schutz nicht umgehen.</p></section>`:'';
+  const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">Nur bestätigte EVAC-Scans werden akzeptiert.</p><button id="evacPioneerOpen" class="primary">EVAC-AUFTRAG ÖFFNEN</button><div id="evacPioneerWork"></div></section>`:'';
   return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary">HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
@@ -107,7 +107,7 @@ function renderCatcher(v){
   return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>`;
 }
 function renderFop(v){
-  const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Node-Recovery und Cargo-Transfer bleiben am bestehenden Single-Use-NFC-Grant gebunden.</p></section>`:'';
+  const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
   return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div></section>${evac}`;
 }
 function renderFounder(v){
@@ -125,6 +125,8 @@ function bindRole(){
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
   $('founderEvacStart')?.addEventListener('click',startFounderEvac);
+  $('evacFopOpen')?.addEventListener('click',openFopEvac);
+  $('evacPioneerOpen')?.addEventListener('click',openPioneerEvac);
 }
 
 async function startExchange(){
@@ -278,6 +280,80 @@ async function commitFop(){
     await api(path,{method:'POST',data});phase('success',`${fopFlow.action} abgeschlossen.`);fopFlow=null;await refreshRole({quiet:true});
   }catch(e){phase('error',friendly(e));}
 }
+async function openFopEvac(){
+  try{
+    phase('check','EVAC-Teamstatus wird geprüft.');const e=await api('/api/evac/state');evacFlow={state:e};
+    const host=$('evacFopWork');if(!host)return;
+    if(!e.team){
+      host.innerHTML='<p>Zwei Pioneer Access Cards scannen. Danach weist der Server dem Team zwei freie EVAC-Nodes zu.</p><button id="evacTeamScan" class="primary">2 PIONEER-KARTEN SCANNEN</button>';
+      $('evacTeamScan').onclick=createEvacTeam;phase('success','EVAC bereit. Team noch nicht gebildet.');return;
+    }
+    const pending=(e.assignments||[]).find(a=>!a.recovered);
+    if(!pending){host.innerHTML='<p class="phase-note">Beide Team-Nodes geborgen. Pioneer führen jetzt den Last Secure Upload aus.</p>';phase('success','Team-Recovery abgeschlossen.');return;}
+    host.innerHTML=`<p><b>TEAM ${esc(e.team.id)}</b><br>Nächster Ziel-Node: <b>${esc(pending.node_id)}</b><br>Carrier: ${esc(pending.carrier_id)}</p><button id="evacRecoverStart" class="primary">NODE-RECOVERY SCANNEN</button><div id="evacFopOut" class="feedback"></div>`;
+    evacFlow.teamId=e.team.id;evacFlow.nodeId=pending.node_id;$('evacRecoverStart').onclick=checkEvacRecovery;phase('success','Nächster EVAC-Node bestätigt.');
+  }catch(e){phase('error',friendly(e));}
+}
+async function createEvacTeam(){
+  try{
+    const pioneerAUid=await nfc('PIONEER 1 ACCESS CARD'),pioneerBUid=await nfc('PIONEER 2 ACCESS CARD');
+    phase('check','Team und freie EVAC-Nodes werden serverseitig geprüft.');
+    await api('/api/evac/team',{method:'POST',data:{pioneerAUid,pioneerBUid}});phase('success','EVAC-Team gebildet.');await openFopEvac();
+  }catch(e){phase('error',friendly(e));}
+}
+async function checkEvacRecovery(){
+  const key='nodiv-v2-evac-recovery-op';
+  try{
+    const nodeUid=await nfc('EVAC ZIEL-NODE'),coreUids=[];
+    for(let i=0;i<3;i++)coreUids.push(await nfc(`NODE N-CORE ${i+1}/3`));
+    let operationId=sessionStorage.getItem(key);if(!operationId){operationId=op('EVAC-REC');sessionStorage.setItem(key,operationId);}
+    phase('check','Node und 3/3 Cores werden gegen die EVAC-Zuweisung geprüft.');
+    const r=await api('/api/evac/recovery/check',{method:'POST',data:{teamId:evacFlow.teamId,nodeUid,coreUids,operationId}});
+    evacFlow={...evacFlow,...r};
+    $('evacFopOut').innerHTML='<span>4/4 Scans bestätigt. Noch keine Umbuchung.</span><button id="evacRecoverConfirm" class="primary">RECOVERY VERBINDLICH BESTÄTIGEN</button>';
+    $('evacRecoverConfirm').onclick=confirmEvacRecovery;phase('success','EVAC-Recovery geprüft. Commit bereit.');
+  }catch(e){phase('error',friendly(e));}
+}
+async function confirmEvacRecovery(){
+  try{
+    phase('commit','3 N-Cores werden atomar dem zugewiesenen Carrier übergeben.');
+    await api('/api/evac/recovery/confirm',{method:'POST',data:{teamId:evacFlow.teamId,nodeId:evacFlow.nodeId,operationId:evacFlow.operationId,scannedCoreUids:evacFlow.scannedCoreUids,proofId:evacFlow.proofId,nfcGrantId:evacFlow.nfcGrantId}});
+    sessionStorage.removeItem('nodiv-v2-evac-recovery-op');phase('success','Node-Recovery abgeschlossen.');await refreshRole({quiet:true});await openFopEvac();
+  }catch(e){phase('error',friendly(e));}
+}
+async function openPioneerEvac(){
+  try{
+    phase('check','Persönlicher EVAC-Auftrag wird geprüft.');const e=await api('/api/evac/state');evacFlow={state:e};
+    const host=$('evacPioneerWork');if(!host)return;
+    if(!e.team){host.innerHTML='<p class="phase-note">Warte auf Teamzuweisung durch FOP.</p>';phase('success','Noch keine EVAC-Teamzuweisung.');return;}
+    if(!e.recovered){host.innerHTML=`<p>Team <b>${esc(e.team.id)}</b><br>Mit dem FOP zum Ziel-Node <b>${esc(e.assignment?.node_id||'—')}</b>.</p>`;phase('success','Node-Recovery steht noch aus.');return;}
+    if(e.uploaded){host.innerHTML='<p class="phase-note">FINAL UPLOAD BESTÄTIGT. EVAC-Auftrag abgeschlossen.</p>';phase('success','EVAC Final Upload abgeschlossen.');return;}
+    host.innerHTML=`<h4>LAST SECURE UPLOAD POINT</h4><p>Genau einen der drei EVAC-Cores auswählen und anschließend genau diesen Core scannen.</p><div class="choice-list">${(e.cargo||[]).map(c=>`<label class="choice"><input type="radio" name="evacFinalCore" value="${esc(c.id)}"><span>EVAC CORE</span><b>${c.energy} E</b></label>`).join('')}</div><button id="evacFinalScan" class="primary">GEWÄHLTEN CORE SCANNEN</button><div id="evacPioneerOut" class="feedback"></div>`;
+    evacFlow.teamId=e.team.id;$('evacFinalScan').onclick=checkEvacFinal;phase('success','EVAC Cargo bereit für Final Upload.');
+  }catch(e){phase('error',friendly(e));}
+}
+async function checkEvacFinal(){
+  const key='nodiv-v2-evac-final-op';
+  try{
+    const chosen=document.querySelector('input[name="evacFinalCore"]:checked')?.value;if(!chosen)throw Error('EVAC_FINAL_CORE_REQUIRED');
+    const selectedCoreUid=await nfc('AUSGEWÄHLTEN EVAC-CORE');
+    let operationId=sessionStorage.getItem(key);if(!operationId){operationId=op('EVAC-UP');sessionStorage.setItem(key,operationId);}
+    phase('check','Ausgewählter Core und EVAC-Cargo werden geprüft.');
+    const r=await api('/api/evac/final/check',{method:'POST',data:{teamId:evacFlow.teamId,selectedCoreUid,operationId}});
+    if(r.selectedCoreId!==chosen)throw Error('EVAC_FINAL_CORE_SET_MISMATCH');
+    evacFlow={...evacFlow,...r};
+    $('evacPioneerOut').innerHTML=`<span>${r.selectedEnergy} E als finaler Upload bestätigt. Noch keine Buchung.</span><button id="evacFinalConfirm" class="primary">FINAL UPLOAD BESTÄTIGEN</button>`;
+    $('evacFinalConfirm').onclick=confirmEvacFinal;phase('success','Finaler Core bestätigt. Commit bereit.');
+  }catch(e){phase('error',friendly(e));}
+}
+async function confirmEvacFinal(){
+  try{
+    phase('commit','EVAC Cargo und finale Energie werden atomar gesichert.');
+    const r=await api('/api/evac/final/confirm',{method:'POST',data:{teamId:evacFlow.teamId,operationId:evacFlow.operationId,coreIds:evacFlow.coreIds,selectedCoreId:evacFlow.selectedCoreId,proofId:evacFlow.proofId,nfcGrantId:evacFlow.nfcGrantId}});
+    sessionStorage.removeItem('nodiv-v2-evac-final-op');phase('success',`Final Upload abgeschlossen // ${r.energy} E gesichert.`);await refreshRole({quiet:true});await openPioneerEvac();
+  }catch(e){phase('error',friendly(e));}
+}
+
 async function startFounderEvac(){
   try{phase('commit','EVAC-Start wird gegen alle Server-Guards geprüft.');const r=await api('/api/founder/evac/start',{method:'POST',data:{operationId:op('EVAC-START')}});setFeedback('founderOut','Evakuierung gestartet.');phase('success','EVAC aktiv.');await refreshRole({quiet:true});}
   catch(e){setFeedback('founderOut',friendly(e),true);phase('error',friendly(e));}
@@ -291,7 +367,7 @@ $('btnAuth').onclick=async()=>{
     await refreshRole({quiet:true});phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
   }catch(e){setFeedback('authOut',friendly(e),true);phase('error',friendly(e));}
 };
-$('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=null;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
+$('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=evacFlow=null;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
 
 const BLOCK02_KEY='nodiv-v2-block02-before-v1';
 function canonicalState(s){return {eventId:s.eventId,actor:s.actor,personal:(s.personal||[]).map(x=>({core_id:x.core_id,uid:x.uid,visible_energy:x.visible_energy,status:x.status})),nodes:(s.nodes||[]).map(n=>({node_id:n.node_id,state:n.state,cores:(n.cores||[]).map(x=>({core_id:x.core_id,uid:x.uid,visible_energy:x.visible_energy,status:x.status}))})),recent:(s.recent||[]).map(x=>({operation_id:x.operation_id,kind:x.kind,created_at:x.created_at,response:x.response}))};}
