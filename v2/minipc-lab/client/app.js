@@ -1,0 +1,19 @@
+const $=id=>document.getElementById(id); let token='',nodeGrant='',exchangeId='',accessCode='',ownScanned=false,nodeCoreScanned=false;
+function out(id,msg,err=false){const el=$(id);el.textContent=msg;el.classList.toggle('err',err)}
+async function api(path,{method='GET',data,auth=true}={}){const r=await fetch(path,{method,headers:{'content-type':'application/json',...(auth&&token?{authorization:`Bearer ${token}`}:{})},body:data?JSON.stringify(data):undefined});const j=await r.json().catch(()=>({ok:false,error:'BAD_JSON'}));if(!r.ok||!j.ok)throw Error(j.error||`HTTP_${r.status}`);return j}
+async function nfc(label){
+ if(!('NDEFReader'in window))throw Error('WEB_NFC_NICHT_VERFUEGBAR');
+ const reader=new NDEFReader(),ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);
+ out('exchangeOut',`${label}: Tag jetzt ans Handy halten …`);
+ try{return await new Promise((resolve,reject)=>{reader.addEventListener('reading',e=>{const uid=(e.serialNumber||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();ctrl.abort();uid?resolve(uid):reject(Error('NFC_KEINE_SERIENNUMMER'));},{once:true});reader.addEventListener('readingerror',()=>reject(Error('NFC_LESFEHLER')),{once:true});reader.scan({signal:ctrl.signal}).catch(reject);});}finally{clearTimeout(timer)}
+}
+async function refresh(){try{$('health').textContent=(await api('/health',{auth:false})).secure?'ONLINE · HTTPS':'ONLINE · HTTP (NFC gesperrt)'}catch{$('health').textContent='NICHT ERREICHBAR'}}
+$('btnAuth').onclick=async()=>{try{const uid=await nfc('Access Card');const r=await api('/api/session/start',{method:'POST',auth:false,data:{uid}});token=r.token;out('authOut',`Pioneer ${r.actorId} autorisiert.`);$('exchange').classList.remove('locked');$('btnState').disabled=false;}catch(e){out('authOut',e.message,true)}};
+$('btnNode').onclick=async()=>{try{const uid=await nfc('Node');const r=await api('/api/scan',{method:'POST',data:{uid}});nodeGrant=r.grantId;out('exchangeOut',`${r.nodeId} erkannt · Freigabe bereit.`);$('btnPrepare').disabled=false;}catch(e){out('exchangeOut',e.message,true)}};
+$('btnPrepare').onclick=async()=>{try{const r=await api('/api/exchange/prepare',{method:'POST',data:{grantId:nodeGrant,count:1}});exchangeId=r.exchangeId;accessCode=r.accessCode;$('accessCode').textContent=accessCode;$('codeBox').classList.remove('hidden');$('btnOwn').disabled=false;$('btnNodeCore').disabled=false;out('exchangeOut','Exchange vorbereitet. Jetzt genau zwei N-Cores scannen.');}catch(e){out('exchangeOut',e.message,true)}};
+async function scanCore(expected){const uid=await nfc(expected);const r=await api('/api/scan',{method:'POST',data:{uid,exchangeId}});if(expected==='Eigener N-Core'&&r.kind!=='PIONEER_CORE')throw Error('FALSCHER_CORE: erwartet eigener Core');if(expected==='Node-Core'&&r.kind!=='NODE_CORE')throw Error('FALSCHER_CORE: erwartet Node-Core');return r}
+$('btnOwn').onclick=async()=>{try{const r=await scanCore('Eigener N-Core');ownScanned=true;out('exchangeOut',`Eigener Core ${r.coreId} erkannt.`);$('btnConfirm').disabled=!(ownScanned&&nodeCoreScanned);}catch(e){out('exchangeOut',e.message,true)}};
+$('btnNodeCore').onclick=async()=>{try{const r=await scanCore('Node-Core');nodeCoreScanned=true;out('exchangeOut',`Node-Core ${r.coreId} erkannt.`);$('btnConfirm').disabled=!(ownScanned&&nodeCoreScanned);}catch(e){out('exchangeOut',e.message,true)}};
+$('btnConfirm').onclick=async()=>{try{$('btnConfirm').disabled=true;const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId,accessCode}});out('exchangeOut',`BESTÄTIGT · ${r.incomingCoreId} ⇄ ${r.outgoingCoreId}${r.replayed?' · REPLAY':''}`);await showState();}catch(e){$('btnConfirm').disabled=false;out('exchangeOut',e.message,true)}};
+async function showState(){try{$('stateOut').textContent=JSON.stringify(await api('/api/state'),null,2)}catch(e){$('stateOut').textContent=e.message}}
+$('btnState').onclick=showState;refresh();
