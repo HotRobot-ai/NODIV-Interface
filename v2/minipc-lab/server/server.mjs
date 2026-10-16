@@ -165,7 +165,7 @@ function createBlock06Realtest(core,mode){
 }
 
 export function createLabApp(config=labConfig()){
-  seedTestDatabase(config.dbPath,config.eventId,config.mode);
+  seedTestDatabase(config.dbPath,config.eventId,config.mode,config.sourceDbPath,config.sourceEventId);
   let labEvacNfc=null;
   const runtime=createV2GameplayRuntime(config.dbPath,{
     verifyRecoveryNfcProof:ctx=>labEvacNfc?.verifyRecovery(ctx)===true,
@@ -292,7 +292,7 @@ export function createLabApp(config=labConfig()){
         const state=core.db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(s.event_id)?.state||null;
         if(s.role==='FOP'){
           const team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND fop_id=?').get(s.event_id,s.actor_id)||null;
-          const assignments=team?core.db.prepare('SELECT sequence,node_id,carrier_id FROM evac_assignments WHERE event_id=? AND team_id=? ORDER BY sequence').all(s.event_id,team.team_id).map(a=>({...a,recovered:!!core.db.prepare('SELECT 1 FROM evac_recoveries WHERE event_id=? AND node_id=?').get(s.event_id,a.node_id)})):[];
+          const assignments=team?core.db.prepare('SELECT sequence,node_id,carrier_id,core_snapshot FROM evac_assignments WHERE event_id=? AND team_id=? ORDER BY sequence').all(s.event_id,team.team_id).map(a=>{let snapshot=[];try{snapshot=JSON.parse(a.core_snapshot||'[]')}catch{}return {sequence:a.sequence,node_id:a.node_id,carrier_id:a.carrier_id,coreEnergies:snapshot.map(c=>c.visible_energy),recovered:!!core.db.prepare('SELECT 1 FROM evac_recoveries WHERE event_id=? AND node_id=?').get(s.event_id,a.node_id)}}):[];
           return json(res,200,{ok:true,state,role:'FOP',team:team?{id:team.team_id,pioneers:[team.pioneer_a,team.pioneer_b]}:null,assignments});
         }
         if(s.role==='PIONEER'){
