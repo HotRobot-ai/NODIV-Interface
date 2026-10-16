@@ -29,11 +29,34 @@ jobs:
         run: |
           set -euo pipefail
           out="NODIV-V2-BLOCK06-REALTEST-RELEASE"
-          mkdir -p "$out"
-          cp -R v2/minipc-lab/. "$out/"
+          mkdir -p "$out/v2"
+          cp -R v2/minipc-lab "$out/v2/minipc-lab"
+          cp -R v2/server "$out/v2/server"
           cp v2/BLOCK06-REALTEST.md "$out/BLOCK06-REALTEST.md"
-          rm -f "$out/.env" "$out"/data/*.sqlite "$out"/data/*.sqlite-wal "$out"/data/*.sqlite-shm 2>/dev/null || true
+          rm -rf "$out/v2/minipc-lab/tests" "$out/v2/minipc-lab/scripts"
+          find "$out/v2/server" -type f -name '*.test.mjs' -delete
+          rm -f "$out/v2/minipc-lab/START-TEST.cmd" "$out/v2/minipc-lab/RESET-TEST.cmd"
+          find "$out" -type f \( -name '.env' -o -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' \) -delete
+          printf '@echo off\r\ncall "%%~dp0v2\\minipc-lab\\NODIV-V2-STARTER.cmd"\r\n' > "$out/NODIV-V2-BLOCK06-STARTEN.cmd"
           printf 'GitHub commit: %s\nBranch: %s\nCI run: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > "$out/SOURCE.txt"
+      - name: Smoke test BLOCK 06 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="NODIV-V2-BLOCK06-REALTEST-RELEASE"
+          test -f "$out/NODIV-V2-BLOCK06-STARTEN.cmd"
+          test -f "$out/v2/minipc-lab/NODIV-V2-STARTER.cmd"
+          test -f "$out/v2/server/gameplay-runtime.mjs"
+          test ! -e "$out/v2/minipc-lab/RESET-TEST.cmd"
+          test ! -e "$out/v2/minipc-lab/START-TEST.cmd"
+          if find "$out" -type f \( -name '.env' -o -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' \) | grep -q .; then
+            echo "State/secrets leaked into package" >&2
+            exit 1
+          fi
+          (
+            cd "$out/v2/minipc-lab"
+            node -e "import('./server/server.mjs').then(()=>console.log('BLOCK06 package import smoke PASS'))"
+          )
       - name: Upload BLOCK 06 realtest package
         uses: actions/upload-artifact@v4
         with:
