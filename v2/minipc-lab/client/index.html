@@ -1,9 +1,64 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>NODIV V2 LAB</title><link rel="stylesheet" href="/style.css"></head><body>
-<main><header><div class="brand">NODIV</div><div class="sub">V2 LAB // MINI-PC ERSTTEST</div></header>
-<section class="warning">TEST ONLY · separate SQLite-Datenbank · keine V1-Produktivdaten</section>
-<section id="status" class="panel"><b>System</b><span id="health">Prüfe Verbindung …</span></section>
-<section id="auth" class="panel"><h2>1 · Testidentität</h2><p>Scanne die TEST-Pioneer-Access-Card.</p><button id="btnAuth">ACCESS CARD SCANNEN</button><div id="authOut" class="out"></div></section>
-<section id="exchange" class="panel locked"><h2>2 · 1-Core Exchange</h2><div class="step"><span>Node</span><button id="btnNode">NODE SCANNEN</button></div><div class="step"><span>Freigabe</span><button id="btnPrepare" disabled>1-CORE EXCHANGE VORBEREITEN</button></div><div id="codeBox" class="code hidden">ACCESS CODE <strong id="accessCode">----</strong></div><div class="step"><span>Dein Core</span><button id="btnOwn" disabled>EIGENEN N-CORE SCANNEN</button></div><div class="step"><span>Node-Core</span><button id="btnNodeCore" disabled>NODE-CORE SCANNEN</button></div><button id="btnConfirm" class="primary" disabled>EXCHANGE BESTÄTIGEN</button><div id="exchangeOut" class="out"></div></section>
-<section class="panel block02"><h2>BLOCK 02 · Neustart & reale Handy-Latenz</h2><p>Kein neuer Exchange nötig. Erst Zustand sichern, Mini-PC vollständig neu starten und danach vergleichen.</p><button id="btnRestartSave" disabled>ZUSTAND VOR NEUSTART SPEICHERN</button><button id="btnRestartCompare" disabled>NACH NEUSTART VERGLEICHEN</button><div id="restartOut" class="out mono"></div><hr><p>Misst direkt im Samsung-Browser 25 sequenzielle HTTPS-Roundtrips zum Mini-PC.</p><button id="btnLatency">HANDY-LATENZ MESSEN</button><div id="latencyOut" class="out mono"></div></section>
-<section class="panel"><h2>Zustand</h2><button id="btnState" disabled>AKTUELLEN SERVERSTAND LADEN</button><pre id="stateOut">–</pre></section>
-</main><script type="module" src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#05090d">
+  <title>NODIV V2 // FIELD INTERFACE</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header class="brand-head">
+    <div class="brand">NODIV</div>
+    <div class="sub">MISSION WÜRZBURG // V2 FIELD INTERFACE</div>
+  </header>
+
+  <section class="lab-flag">ISOLIERTER V2-TESTSTAND · KEINE PRODUKTIVDATEN</section>
+  <section class="system-strip"><span id="health">VERBINDUNG WIRD GEPRÜFT</span><span id="clock">—</span></section>
+
+  <section id="auth" class="panel hero">
+    <small>ACCESS CONTROL</small>
+    <h1>IDENTITÄT<br>VERIFIZIEREN</h1>
+    <p>Halte deine NODIV Access Card an das Smartphone.</p>
+    <button id="btnAuth" class="primary">ACCESS CARD SCANNEN</button>
+    <div id="authOut" class="feedback" role="status"></div>
+  </section>
+
+  <section id="roleShell" hidden>
+    <header class="role-head">
+      <div><small id="roleChannel">NODIV // FIELD</small><h2 id="roleIdentity">—</h2><p id="roleName">—</p></div>
+      <div class="role-sigil" aria-hidden="true"></div>
+    </header>
+
+    <section id="nextAction" class="next-card">
+      <small>NÄCHSTER SCHRITT</small>
+      <strong id="nextTitle">—</strong>
+      <p id="nextDetail"></p>
+    </section>
+
+    <section id="flowBar" class="flow-bar" data-phase="idle" hidden>
+      <span id="flowPhase">BEREIT</span>
+      <strong id="flowMessage">—</strong>
+    </section>
+
+    <div id="roleContent"></div>
+
+    <button id="btnLock" class="ghost">INTERFACE SPERREN</button>
+  </section>
+
+  <details id="diagnostics" class="diagnostics">
+    <summary>TESTDIAGNOSE // BLOCK 02</summary>
+    <p>Nur für den isolierten Teststand. Diese Daten steuern keine Spielregel.</p>
+    <button id="btnRestartSave" disabled>ZUSTAND VOR NEUSTART SPEICHERN</button>
+    <button id="btnRestartCompare" disabled>NACH NEUSTART VERGLEICHEN</button>
+    <div id="restartOut" class="feedback mono"></div>
+    <button id="btnLatency">HANDY-LATENZ MESSEN</button>
+    <div id="latencyOut" class="feedback mono"></div>
+    <button id="btnState" disabled>TECHNISCHEN SERVERSTAND LADEN</button>
+    <pre id="stateOut">—</pre>
+  </details>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
