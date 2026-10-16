@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let token='',session=null,view=null;
-let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,evacFlow=null;
+let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,evacFlow=null,scanActive=false;
 
 const ROLE_LABEL={FOUNDER:'FOUNDER',FOP:'FIELD OPERATOR',PIONEER:'PIONEER',LOCAL:'LOCAL',UNBOUND:'UNBOUND'};
 const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'CYAN FIELD CHANNEL',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
@@ -28,7 +28,10 @@ const ERROR_TEXT={
   FOP_THREE_CORES_REQUIRED:'Für die Installation werden exakt drei N-Cores benötigt.',
   EVAC_NORMAL_ACTION_FROZEN:'Normale Feldaktionen sind während EVAC gesperrt.',
   RESUPPLY_ASSIGNMENT_UNAVAILABLE:'Voll-Upload nicht möglich: RE-SUPPLY kann gerade nicht sicher zugewiesen werden.',
-  RESUPPLY_ASSIGNMENT_CONFLICT:'Voll-Upload nicht möglich: Ein anderer Auftrag ist noch aktiv.'
+  RESUPPLY_ASSIGNMENT_CONFLICT:'Voll-Upload nicht möglich: Ein anderer Auftrag ist noch aktiv.',
+  NFC_KEINE_SERIENNUMMER:'NFC-Tag erkannt, aber keine UID übertragen. Tag erneut ruhig an das Smartphone halten.',
+  NFC_LESFEHLER:'NFC konnte nicht gelesen werden. Tag erneut an das Smartphone halten.',
+  'WEB NFC NICHT VERFÜGBAR':'Web NFC ist hier nicht verfügbar. Auf Android Chrome über die HTTPS-Adresse öffnen.'
 };
 function friendly(error){const code=String(error?.message||error||'UNBEKANNTER FEHLER');return ERROR_TEXT[code]||code.replaceAll('_',' ');}
 function setFeedback(id,msg,error=false){const el=$(id);if(!el)return;el.textContent=msg;el.classList.toggle('error',error);el.classList.toggle('ok',!error&&!!msg);}
@@ -47,15 +50,20 @@ async function api(path,{method='GET',data,auth=true}={}){
 function uidFromEvent(e){return String(e.serialNumber||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();}
 async function nfc(label){
   if(!('NDEFReader'in window))throw Error('WEB NFC NICHT VERFÜGBAR');
+  scanActive=true;
   phase('scan',`${label}: Tag jetzt ans Smartphone halten.`);
   const reader=new NDEFReader(),ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),30000);
   try{
     return await new Promise((resolve,reject)=>{
-      reader.addEventListener('reading',e=>{const uid=uidFromEvent(e);ctrl.abort();uid?resolve(uid):reject(Error('NFC_KEINE_SERIENNUMMER'));},{once:true});
+      reader.addEventListener('reading',e=>{
+        const uid=uidFromEvent(e);ctrl.abort();
+        if(!uid){reject(Error('NFC_KEINE_SERIENNUMMER'));return;}
+        phase('check',`${label}: NFC erkannt. UID wird geprüft.`);resolve(uid);
+      },{once:true});
       reader.addEventListener('readingerror',()=>reject(Error('NFC_LESFEHLER')),{once:true});
       reader.scan({signal:ctrl.signal}).catch(reject);
     });
-  }finally{clearTimeout(timer)}
+  }finally{clearTimeout(timer);scanActive=false}
 }
 function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmt(seconds){seconds=Math.max(0,Math.ceil(Number(seconds)||0));return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
@@ -65,24 +73,32 @@ async function refreshHealth(){
   try{const h=await api('/health',{auth:false});$('health').textContent=h.secure?'ONLINE // HTTPS':'ONLINE // HTTP · NFC GESPERRT';}
   catch{$('health').textContent='SERVER NICHT ERREICHBAR';}
 }
-async function refreshRole({quiet=false}={}){
+function roleInteractionActive(){
+  const host=$('roleContent'),active=document.activeElement;
+  const formFocused=!!(host&&active&&host.contains(active)&&['INPUT','SELECT','TEXTAREA'].includes(active.tagName));
+  return !!(scanActive||exchange||catchPreview||fopFlow||missionFlow||hqFlow||evacFlow||host?.dataset.userEditing==='1'||formFocused);
+}
+async function refreshRole({quiet=false,passive=false}={}){
   if(!token)return;
-  try{view=await api('/api/role/state');renderRole();if(!quiet)phase('success','Serverzustand aktualisiert.');}
+  try{view=await api('/api/role/state');renderRole({passive});if(!quiet)phase('success','Serverzustand aktualisiert.');}
   catch(e){if(!quiet)phase('error',friendly(e));}
 }
 
-function renderRole(){
+function renderRole({passive=false}={}){
   if(!view)return;
+  $('roleShell').dataset.role=view.actor.role;
   $('roleChannel').textContent=ROLE_CHANNEL[view.actor.role]||'NODIV';
   $('roleIdentity').textContent=view.actor.id;
   $('roleName').textContent=ROLE_LABEL[view.actor.role]||view.actor.role;
   $('nextTitle').textContent=view.nextAction?.label||'STATUS PRÜFEN';
   $('nextDetail').textContent=view.nextAction?.detail||'';
   const host=$('roleContent');
+  if(passive&&roleInteractionActive())return;
   if(view.actor.role==='PIONEER')host.innerHTML=renderPioneer(view);
   if(view.actor.role==='LOCAL'||view.actor.role==='UNBOUND')host.innerHTML=renderCatcher(view);
   if(view.actor.role==='FOP')host.innerHTML=renderFop(view);
   if(view.actor.role==='FOUNDER')host.innerHTML=renderFounder(view);
+  host.dataset.userEditing='0';
   bindRole();
 }
 function renderSlots(v){
