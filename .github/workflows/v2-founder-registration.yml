@@ -24,3 +24,20 @@ jobs:
       - name: Browser client syntax
         working-directory: v2/minipc-lab
         run: node --check client/app.js
+      - name: Build BLOCK 06 realtest package
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="NODIV-V2-BLOCK06-REALTEST-RELEASE"
+          mkdir -p "$out"
+          cp -R v2/minipc-lab/. "$out/"
+          cp v2/BLOCK06-REALTEST.md "$out/BLOCK06-REALTEST.md"
+          rm -f "$out/.env" "$out"/data/*.sqlite "$out"/data/*.sqlite-wal "$out"/data/*.sqlite-shm 2>/dev/null || true
+          printf 'GitHub commit: %s\nBranch: %s\nCI run: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > "$out/SOURCE.txt"
+      - name: Upload BLOCK 06 realtest package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NODIV-V2-BLOCK06-REALTEST
+          path: NODIV-V2-BLOCK06-REALTEST-RELEASE
+          if-no-files-found: error
+          retention-days: 14
