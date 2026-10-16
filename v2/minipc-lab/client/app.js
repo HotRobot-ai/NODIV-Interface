@@ -100,8 +100,9 @@ function renderMission(v){
 function renderPioneer(v){
   const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
+  const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
   const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">Nur bestätigte EVAC-Scans werden akzeptiert.</p><button id="evacPioneerOpen" class="primary">EVAC-AUFTRAG ÖFFNEN</button><div id="evacPioneerWork"></div></section>`:'';
-  return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary">HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
+  return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${dispatch}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary">HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
   const role=v.actor.role;
@@ -117,17 +118,28 @@ function renderFounder(v){
   const nodes=Object.fromEntries((v.overview.nodes||[]).map(x=>[x.state,x.count]));
   const canEvac=v.allowedActions.includes('EVAC_START');
   const canComplete=v.allowedActions.includes('EVAC_COMPLETE');
-  return `<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+  const rt=v.realtest;
+  const es=v.evacSupport;
+  const blocker=x=>x.startsWith('CARD_REQUIRED:')?`Access Card fehlt: ${x.split(':')[1]}`:x.startsWith('NODE_REQUIRED:')?`Node-Tag fehlt: ${x.split(':')[1]}`:x==='HQ_REQUIRED'?'HQ-Uploadpunkt noch nicht registriert':x==='TWELVE_CORES_REQUIRED'?'12 reale N-Cores vollständig mit E-Wert registrieren':x==='FRESH_EVENT_REQUIRED'?'Testbestand enthält bereits Spielaktionen':x==='SECURE_APPROACH_150E_NOT_POSSIBLE'?'Für den Secure-Approach-Test fehlt im FOP-Feldloadout ein tauschbarer Core mit mindestens 150 E':x;
+  const hardware=v.event.state==='READY'?`<section class="card"><small>FOUNDER // HARDWARE</small><h3>NFC REGISTRIEREN</h3><p>Reale Tags eindeutig zuordnen. Für BLOCK 06 werden Founder, FOP, P9003, P9004, Local, Unbound, vier Nodes, HQ und 12 reale N-Cores benötigt.</p><label>TYP<select id="regKind"><option value="CORE">N-Core</option><option value="CARD">Access Card</option><option value="NODE">Node</option><option value="HQ">HQ-Uploadpunkt</option></select></label><label>KENNUNG<input id="regId" placeholder="NC-001 / P9004 / NODE-001" /></label><label>E-WERT (N-CORE)<input id="regEnergy" type="number" min="1" max="9999" placeholder="eingravierter Wert" /></label><button id="regScan" class="primary">NFC SCANNEN UND REGISTRIEREN</button><div id="regOut" class="feedback" role="status"></div></section>`:'';
+  const realtest=rt?`<section class="card"><small class="card-kicker">BLOCK 06 // REALTEST</small><h3>${rt.eventState==='READY'?'VORBEREITUNG':rt.eventState==='INITIALIZED'?'STARTFREIGABE':'TESTBESTAND'}</h3><div class="founder-grid"><div class="metric"><small>ACCESS CARDS</small><b>${rt.counts.cards}/6</b></div><div class="metric"><small>NODES</small><b>${rt.counts.nodes}/4</b></div><div class="metric"><small>N-CORES</small><b>${rt.counts.cores}/12</b></div><div class="metric"><small>HQ</small><b>${rt.counts.hq}/1</b></div></div><p>${rt.blockers?.length?rt.blockers.map(blocker).map(esc).join(' · '):'Alle erforderlichen Registrierungen sind serverseitig konsistent.'}</p>${rt.plan?`<p class="phase-note">P9003 Start: ${rt.plan.p9003?.energy??'—'} E · P9004 Start: ${rt.plan.p9004?.energy??'—'} E · FOP Transit: ${rt.plan.fop?.length??0} Cores (${(rt.plan.fopEnergies||[]).join(' / ')} E) · HQ-Reserve bleibt erhalten.</p>`:''}${rt.canInitialize?'<button id="founderInitialize" class="primary">TESTEVENT VORBEREITEN</button>':''}${rt.canStart?'<button id="founderStart" class="primary">EVENT STARTEN</button>':''}<div id="realtestOut" class="feedback"></div></section>`:'';
+  const evacSupport=es?`<section class="card evac"><small class="card-kicker">BLOCK 06 // EVAC SUPPORT</small><h3>${es.done?'SUPPORT VOLLSTÄNDIG':es.ready?'REALES TEAM BESTÄTIGT':'REALES TEAM ZUERST'}</h3><div class="founder-grid"><div class="metric"><small>REAL RECOVERY</small><b>${es.physicalRecoveries}/2</b></div><div class="metric"><small>REAL FINAL</small><b>${es.physicalUploads}/2</b></div><div class="metric"><small>GESAMT RECOVERY</small><b>${es.totalRecoveries}/10</b></div><div class="metric"><small>GESAMT FINAL</small><b>${es.totalUploads}/10</b></div></div><p>${es.done?'Alle fünf Teams haben die regulären EVAC-Runtime-Regeln erfüllt. Founder-Abschluss ist der nächste Schritt.':es.ready?'Das reale Team ist vollständig. Die vier nicht-physischen Support-Teams dürfen jetzt über denselben EVAC-Kern abgearbeitet werden.':'FOP + P9003 + P9004 müssen zuerst NODE-001/002 und beide Final Uploads real per NFC abschließen.'}</p>${es.ready?'<button id="founderEvacSupport" class="primary">SUPPORT-TEAMS DURCHLAUFEN</button>':''}<div id="evacSupportOut" class="feedback"></div></section>`:'';
+  return `${hardware}${realtest}${evacSupport}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
 }
 
 function bindRole(){
   $('exchangeStart')?.addEventListener('click',startExchange);
   $('missionStart')?.addEventListener('click',startMission);
+  $('restoreAssign')?.addEventListener('click',assignRestoreMission);
   $('hqOpen')?.addEventListener('click',openHq);
   $('catchScan')?.addEventListener('click',scanCatch);
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
+  $('regScan')?.addEventListener('click',registerFounderHardware);
+  $('founderInitialize')?.addEventListener('click',initializeRealtest);
+  $('founderStart')?.addEventListener('click',startRealtest);
   $('founderEvacStart')?.addEventListener('click',startFounderEvac);
+  $('founderEvacSupport')?.addEventListener('click',runFounderEvacSupport);
   $('founderEvacComplete')?.addEventListener('click',completeFounderEvac);
   $('evacFopOpen')?.addEventListener('click',openFopEvac);
   $('evacPioneerOpen')?.addEventListener('click',openPioneerEvac);
@@ -261,9 +273,24 @@ async function scanFopNode(){
       $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Server bestätigt: 3/3-Node. Deinstallation führt alle drei Cores zurück zur Reserve.</p><button id="fopCommit" class="primary">DEINSTALLATION BESTÄTIGEN</button>`;
       $('fopCommit').onclick=commitFop;phase('success','Deinstallation zulässig. Noch keine Umbuchung.');
     }else{
-      $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Exakt drei zugewiesene Transit-Cores scannen.</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
-      $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Installation zulässig. Loadout scannen.');
+      const energies=(r.transit||[]).map(x=>x.visible_energy+' E').join(' · ');
+      if(r.canRequestLoadout){
+        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Für diesen weiteren Node wird ein neues serverseitiges FOP-Loadout benötigt.</p><button id="fopLoadout" class="primary">3-CORE-LOADOUT ABRUFEN</button><div id="fopProgress" class="feedback"></div>`;
+        $('fopLoadout').onclick=requestFopLoadout;phase('success','Node frei. Loadout kann aus der HQ-Reserve zugewiesen werden.');
+      }else{
+        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Exakt drei zugewiesene Transit-Cores scannen.</p><p class="phase-note">LOADOUT // ${esc(energies||'3 zugewiesene Cores')}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+        $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Installation zulässig. Loadout scannen.');
+      }
     }
+  }catch(e){phase('error',friendly(e));}
+}
+async function requestFopLoadout(){
+  try{
+    phase('commit','Drei freie HQ-Cores werden serverseitig als FOP-Transit gebunden.');
+    const r=await api('/api/fop/loadout',{method:'POST',data:{nodeId:fopFlow.nodeId}});
+    const energies=(r.transit||[]).map(x=>x.visible_energy+' E').join(' · ');
+    $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(fopFlow.nodeId)}</b></div><p class="phase-note">NEUES LOADOUT // ${esc(energies)}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+    $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Loadout zugewiesen. Genau diese drei Cores scannen.');
   }catch(e){phase('error',friendly(e));}
 }
 async function scanFopCore(){
@@ -294,7 +321,8 @@ async function openFopEvac(){
     }
     const pending=(e.assignments||[]).find(a=>!a.recovered);
     if(!pending){host.innerHTML='<p class="phase-note">Beide Team-Nodes geborgen. Pioneer führen jetzt den Last Secure Upload aus.</p>';phase('success','Team-Recovery abgeschlossen.');return;}
-    host.innerHTML=`<p><b>TEAM ${esc(e.team.id)}</b><br>Nächster Ziel-Node: <b>${esc(pending.node_id)}</b><br>Carrier: ${esc(pending.carrier_id)}</p><button id="evacRecoverStart" class="primary">NODE-RECOVERY SCANNEN</button><div id="evacFopOut" class="feedback"></div>`;
+    const cargoHint=(pending.coreEnergies||[]).length?`<br>Erwartete reale Core-Werte: <b>${pending.coreEnergies.map(x=>esc(x+' E')).join(' · ')}</b>`:'';
+    host.innerHTML=`<p><b>TEAM ${esc(e.team.id)}</b><br>Nächster Ziel-Node: <b>${esc(pending.node_id)}</b><br>Carrier: ${esc(pending.carrier_id)}${cargoHint}</p><button id="evacRecoverStart" class="primary">NODE-RECOVERY SCANNEN</button><div id="evacFopOut" class="feedback"></div>`;
     evacFlow.teamId=e.team.id;evacFlow.nodeId=pending.node_id;$('evacRecoverStart').onclick=checkEvacRecovery;phase('success','Nächster EVAC-Node bestätigt.');
   }catch(e){phase('error',friendly(e));}
 }
@@ -358,9 +386,44 @@ async function confirmEvacFinal(){
   }catch(e){phase('error',friendly(e));}
 }
 
+async function registerFounderHardware(){
+  const kind=$('regKind')?.value,id=$('regId')?.value?.trim().toUpperCase(),energy=Number($('regEnergy')?.value);
+  try{
+    if(!id)throw Error('KENNUNG_FEHLT');
+    if(kind==='CORE'&&(!Number.isInteger(energy)||energy<1))throw Error('E_WERT_FEHLT');
+    const uid=await nfc('HARDWARE '+kind);
+    const result=await api('/api/founder/register',{method:'POST',data:{role:kind,id,uid,...(kind==='CORE'?{energy}:{})}});
+    setFeedback('regOut',`Registriert: ${result.id} // ${result.uid}${kind==='CORE'?` // ${result.energy} E`:''}`);
+    phase('success','Hardware erfolgreich registriert.');await refreshRole({quiet:true});
+  }catch(e){setFeedback('regOut',friendly(e),true);phase('error',friendly(e));}
+}
+
+async function initializeRealtest(){
+  try{phase('commit','Registrierungen werden geprüft und der Testbestand transaktionssicher vorbereitet.');await api('/api/founder/realtest/initialize',{method:'POST'});phase('success','Testevent vorbereitet. Noch nicht im Feldbetrieb.');await refreshRole({quiet:true});}
+  catch(e){setFeedback('realtestOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function startRealtest(){
+  try{phase('commit','Feldbetrieb wird aktiviert.');await api('/api/founder/realtest/start',{method:'POST'});phase('success','FIELD ACTIVE. FOP kann jetzt die Nodes installieren.');await refreshRole({quiet:true});}
+  catch(e){setFeedback('realtestOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function assignRestoreMission(){
+  try{phase('commit','RESTORE-Qualifikation und Ziel werden serverseitig geprüft.');const r=await api('/api/mission/assign-next',{method:'POST'});phase('success',`${r.kind} zugewiesen // ${r.nodeId}.`);await refreshRole({quiet:true});}
+  catch(e){phase('error',friendly(e));}
+}
+
 async function startFounderEvac(){
   try{phase('commit','EVAC-Start wird gegen alle Server-Guards geprüft.');const r=await api('/api/founder/evac/start',{method:'POST',data:{operationId:op('EVAC-START')}});setFeedback('founderOut','Evakuierung gestartet.');phase('success','EVAC aktiv.');await refreshRole({quiet:true});}
   catch(e){setFeedback('founderOut',friendly(e),true);phase('error',friendly(e));}
+}
+
+async function runFounderEvacSupport(){
+  try{
+    phase('commit','Vier Support-Teams werden über die unveränderten EVAC-Regeln abgearbeitet.');
+    const r=await api('/api/founder/evac/support',{method:'POST'});
+    setFeedback('evacSupportOut',r.done?'Support vollständig. Founder kann das Event jetzt regulär abschließen.':'Support noch nicht vollständig.',!r.done);
+    phase(r.done?'success':'error',r.done?'10/10 Recovery und 10/10 Final Upload bestätigt.':'Support unvollständig.');
+    await refreshRole({quiet:true});
+  }catch(e){setFeedback('evacSupportOut',friendly(e),true);phase('error',friendly(e));}
 }
 
 async function completeFounderEvac(){
