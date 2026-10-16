@@ -51,7 +51,11 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
     if(!['READY','INITIALIZED'].includes(state))throw Error('REGISTRATION_REQUIRES_FRESH_READY_DATABASE');
     if(!core.db.prepare('SELECT 1 FROM hq_upload_bays WHERE event_id=? AND bay_id=?').get(eventId,'HQ-01'))runtime.hq.seedBay(eventId,{id:'HQ-01',uid:'PENDING-HQ-01'});
     const existing=core.db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,'FOUNDER-TEST');
-    if(!existing)core.db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,envUid('NODIV_UID_FOUNDER_CARD',DEFAULT_UIDS.founderAccess),'FOUNDER-TEST');
+    if(!existing){
+      const founderUid=normalizeUid(process.env.NODIV_UID_FOUNDER_CARD||'');
+      if(founderUid.length<4)throw Error('REGISTRATION_FOUNDER_UID_REQUIRED');
+      core.db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,founderUid,'FOUNDER-TEST');
+    }
     runtime.close();
     return {dbPath,eventId,created:!exists,mode};
   }
