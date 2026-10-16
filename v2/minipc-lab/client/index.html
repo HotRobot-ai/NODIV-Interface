@@ -1,0 +1,8 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>NODIV V2 LAB</title><link rel="stylesheet" href="/style.css"></head><body>
+<main><header><div class="brand">NODIV</div><div class="sub">V2 LAB // MINI-PC ERSTTEST</div></header>
+<section class="warning">TEST ONLY · separate SQLite-Datenbank · keine V1-Produktivdaten</section>
+<section id="status" class="panel"><b>System</b><span id="health">Prüfe Verbindung …</span></section>
+<section id="auth" class="panel"><h2>1 · Testidentität</h2><p>Scanne die TEST-Pioneer-Access-Card.</p><button id="btnAuth">ACCESS CARD SCANNEN</button><div id="authOut" class="out"></div></section>
+<section id="exchange" class="panel locked"><h2>2 · 1-Core Exchange</h2><div class="step"><span>Node</span><button id="btnNode">NODE SCANNEN</button></div><div class="step"><span>Freigabe</span><button id="btnPrepare" disabled>1-CORE EXCHANGE VORBEREITEN</button></div><div id="codeBox" class="code hidden">ACCESS CODE <strong id="accessCode">----</strong></div><div class="step"><span>Dein Core</span><button id="btnOwn" disabled>EIGENEN N-CORE SCANNEN</button></div><div class="step"><span>Node-Core</span><button id="btnNodeCore" disabled>NODE-CORE SCANNEN</button></div><button id="btnConfirm" class="primary" disabled>EXCHANGE BESTÄTIGEN</button><div id="exchangeOut" class="out"></div></section>
+<section class="panel"><h2>Zustand</h2><button id="btnState" disabled>AKTUELLEN SERVERSTAND LADEN</button><pre id="stateOut">–</pre></section>
+</main><script type="module" src="/app.js"></script></body></html>
