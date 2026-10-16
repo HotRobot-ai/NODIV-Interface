@@ -214,7 +214,9 @@ export function createDesktopTest(core, mode){
     const owners=db.prepare('SELECT owner_type,status,COUNT(*) count,SUM(visible_energy) energy FROM cores WHERE event_id=? GROUP BY owner_type,status ORDER BY owner_type,status').all(eventId);
     const missions=db.prepare("SELECT kind,state,COUNT(*) count FROM missions WHERE event_id=? GROUP BY kind,state ORDER BY kind,state").all(eventId);
     const operations=db.prepare('SELECT kind,COUNT(*) count FROM operations WHERE event_id=? GROUP BY kind ORDER BY kind').all(eventId);
-    const evac=db.prepare('SELECT state,started_at,completed_at FROM evac_control WHERE event_id=?').get(eventId)||null;
+    const evacControl=db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)||null;
+    const evacCompletion=db.prepare('SELECT operation_id,founder_id,completed_at FROM evac_completion_receipts WHERE event_id=?').get(eventId)||null;
+    const evac={controlState:evacControl?.state||null,completion:evacCompletion};
     return {stateBefore,endedAt:core.clock(),roles,nodes,owners,missions,operations,evac};
   }
 
