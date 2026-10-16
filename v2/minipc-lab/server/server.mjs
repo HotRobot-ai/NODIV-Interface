@@ -455,7 +455,10 @@ export function createLabApp(config=labConfig()){
 
       if(req.method==='POST'&&u.pathname==='/api/founder/register'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
-        return json(res,200,{ok:true,...founderRegistry.register({eventId:s.event_id,...b})});
+        const registered=founderRegistry.register({eventId:s.event_id,...b});
+        const latePioneer=config.mode==='desktop'&&registered.kind==='CARD'&&registered.actorRole==='PIONEER'
+          ?desktopTest.attachLatePioneer(s.event_id,registered.id):null;
+        return json(res,200,{ok:true,...registered,...(latePioneer?{latePioneer}:{})});
       }
 
       if(req.method==='GET'&&u.pathname==='/api/founder/realtest/status'){
