@@ -101,6 +101,11 @@ export function createLabApp(config=labConfig()){
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length});
       }
+      if(req.method==='POST'&&u.pathname==='/api/fop/core/check'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),c=store.coreTarget(s,b.uid);
+        if(c.owner_type!=='TRANSIT'||c.owner_id!==s.actor_id||c.status!=='IN_TRANSIT')throw Error('INSTALL_CARGO_INVALID');
+        return json(res,200,{ok:true,coreId:c.core_id,energy:c.visible_energy});
+      }
       if(req.method==='POST'&&u.pathname==='/api/fop/install'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==3)throw Error('FOP_THREE_CORES_REQUIRED');
