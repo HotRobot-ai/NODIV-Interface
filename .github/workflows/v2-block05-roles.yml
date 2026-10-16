@@ -1,0 +1,24 @@
+name: V2 Block05 Roles
+
+on:
+  push:
+    branches: [feature/v2-block05-roles]
+  workflow_dispatch:
+
+jobs:
+  roles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Server regression
+        working-directory: v2/server
+        run: node --test *.test.mjs
+      - name: Mini-PC lab regression
+        working-directory: v2/minipc-lab
+        run: npm test
+      - name: Browser client syntax
+        working-directory: v2/minipc-lab
+        run: node --check client/app.js
