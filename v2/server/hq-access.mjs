@@ -28,6 +28,7 @@ export function createHqAccess(core,{upload}={}){
       core_ids_json TEXT NOT NULL DEFAULT '[]',
       expires_at INTEGER NOT NULL,
       operation_id TEXT,
+      upload_operation_id TEXT,
       PRIMARY KEY(event_id,order_id),
       UNIQUE(event_id,operation_id)
     );
@@ -38,6 +39,9 @@ export function createHqAccess(core,{upload}={}){
       PRIMARY KEY(event_id,actor_id)
     );
   `);
+  const hqCols=db.prepare('PRAGMA table_info(hq_upload_orders)').all().map(x=>x.name);
+  if(!hqCols.includes('upload_operation_id'))db.exec('ALTER TABLE hq_upload_orders ADD COLUMN upload_operation_id TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hq_upload_orders_upload_op ON hq_upload_orders(event_id,upload_operation_id) WHERE upload_operation_id IS NOT NULL');
 
   function assertPioneer(eventId,pioneerId){
     const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
@@ -160,19 +164,23 @@ export function createHqAccess(core,{upload}={}){
   function confirm({eventId,pioneerId,orderId,operationId}){
     if(!eventId||!pioneerId||!orderId||!operationId) throw new GameError('HQ_UPLOAD_CONFIRM_REQUIRED');
     const order=db.prepare('SELECT * FROM hq_upload_orders WHERE event_id=? AND order_id=?').get(eventId,orderId);
-    if(!order||order.actor_id!==pioneerId||order.expires_at<=core.clock()||order.state!=='AUTHORIZED') throw new GameError('HQ_UPLOAD_ORDER_INVALID');
+    if(!order||order.actor_id!==pioneerId) throw new GameError('HQ_UPLOAD_ORDER_INVALID');
+    if(order.state==='COMPLETED'&&order.upload_operation_id!==operationId)throw new GameError('HQ_UPLOAD_ALREADY_COMPLETED');
+    if(order.state!=='COMPLETED'&&(order.expires_at<=core.clock()||order.state!=='AUTHORIZED')) throw new GameError('HQ_UPLOAD_ORDER_INVALID');
     const coreIds=JSON.parse(order.core_ids_json||'[]');
     const result=upload({eventId,operationId,pioneerId,coreIds},(tx,{replay})=>{
-      const current=tx.prepare('SELECT actor_id,state,core_ids_json FROM hq_upload_orders WHERE event_id=? AND order_id=?').get(eventId,orderId);
+      const current=tx.prepare('SELECT actor_id,state,core_ids_json,upload_operation_id FROM hq_upload_orders WHERE event_id=? AND order_id=?').get(eventId,orderId);
       if(!current||current.actor_id!==pioneerId||current.core_ids_json!==JSON.stringify(coreIds)) throw new GameError('HQ_UPLOAD_ORDER_INVALID');
-      if(!replay&&current.state!=='AUTHORIZED') throw new GameError('HQ_UPLOAD_ORDER_INVALID');
-      tx.prepare("UPDATE hq_upload_orders SET state='COMPLETED' WHERE event_id=? AND order_id=?").run(eventId,orderId);
-      if(!replay){
-        const reservations=tx.prepare("SELECT reservation_id,payload_json FROM reservations WHERE event_id=? AND kind='SECURE_APPROACH' AND actor_id=?").all(eventId,pioneerId);
-        for(const reservation of reservations){
-          let payload=null; try{payload=JSON.parse(reservation.payload_json)}catch{}
-          if(payload?.bayId===order.bay_id) tx.prepare('DELETE FROM reservations WHERE event_id=? AND reservation_id=?').run(eventId,reservation.reservation_id);
-        }
+      if(replay){
+        if(current.state!=='COMPLETED'||current.upload_operation_id!==operationId)throw new GameError('HQ_UPLOAD_REPLAY_SCOPE_DENIED');
+        return;
+      }
+      if(current.state!=='AUTHORIZED') throw new GameError('HQ_UPLOAD_ORDER_INVALID');
+      tx.prepare("UPDATE hq_upload_orders SET state='COMPLETED',upload_operation_id=? WHERE event_id=? AND order_id=?").run(operationId,eventId,orderId);
+      const reservations=tx.prepare("SELECT reservation_id,payload_json FROM reservations WHERE event_id=? AND kind='SECURE_APPROACH' AND actor_id=?").all(eventId,pioneerId);
+      for(const reservation of reservations){
+        let payload=null; try{payload=JSON.parse(reservation.payload_json)}catch{}
+        if(payload?.bayId===order.bay_id) tx.prepare('DELETE FROM reservations WHERE event_id=? AND reservation_id=?').run(eventId,reservation.reservation_id);
       }
     });
     const balance=db.prepare('SELECT secured_energy FROM balances WHERE event_id=? AND actor_id=?').get(eventId,pioneerId)?.secured_energy||0;
