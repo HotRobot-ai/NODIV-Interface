@@ -1,0 +1,14 @@
+{
+  "name":"nodiv-v2-minipc-firsttest",
+  "version":"0.1.0",
+  "private":true,
+  "type":"module",
+  "engines":{"node":">=24.15 <25"},
+  "scripts":{
+    "start":"node server/server.mjs",
+    "seed":"node scripts/seed-test.mjs",
+    "reset":"node scripts/reset-test.mjs",
+    "test":"node --test tests/*.test.mjs",
+    "precheck":"node scripts/api-precheck.mjs"
+  }
+}
