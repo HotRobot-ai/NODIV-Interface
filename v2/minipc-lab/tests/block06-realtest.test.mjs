@@ -46,6 +46,13 @@ test('BLOCK06 registration flow persists start and exposes RESTORE only after qu
     const next3=plan.fop.slice(3,6).map(id=>fx.app.core.core(eventId,id).uid);
     await fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:'NODE-001',coreUids:first3,operationId:'B06-IN-1'}});
     await fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:'NODE-002',coreUids:next3,operationId:'B06-IN-2'}});
+    await fx.call('/api/fop/deinstall',{method:'POST',token:fop.token,data:{nodeId:'NODE-002',operationId:'B06-OUT-2'}});
+    const loadout=await fx.call('/api/fop/loadout',{method:'POST',token:fop.token,data:{nodeId:'NODE-003'}});
+    assert.equal(loadout.transit.length,3);
+    assert.equal(fx.app.core.core(eventId,plan.resupply).owner_type,'HQ');
+    for(const id of plan.restoreReserve)assert.equal(fx.app.core.core(eventId,id).owner_type,'HQ');
+    const loadoutUids=loadout.transit.map(x=>fx.app.core.core(eventId,x.core_id).uid);
+    await fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:'NODE-003',coreUids:loadoutUids,operationId:'B06-IN-3'}});
     const take=fx.app.core.db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id='NODE-001' ORDER BY core_id LIMIT 1").get(eventId).core_id;
     fx.app.runtime.exchange({eventId,operationId:'B06-X1',pioneerId:'P9003',nodeId:'NODE-001',gives:[plan.p9003.coreId],takes:[take]});
     pv=await fx.call('/api/role/state',{token:p3.token});assert.equal(pv.restoreDispatch.eligible,true);assert.equal(pv.restoreDispatch.phase,1);
