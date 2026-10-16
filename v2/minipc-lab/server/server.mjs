@@ -216,6 +216,11 @@ export function createLabApp(config=labConfig()){
         return json(res,200,{ok:true,...runtime.evac.start.start({eventId:s.event_id,founderId:s.actor_id,operationId:b.operationId||('EVAC-START-'+randomUUID())})});
       }
 
+      if(req.method==='POST'&&u.pathname==='/api/founder/evac/complete'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
+        return json(res,200,{ok:true,...runtime.evac.completion.complete({eventId:s.event_id,founderId:s.actor_id,operationId:b.operationId||('EVAC-COMPLETE-'+randomUUID())})});
+      }
+
       if(req.method==='POST'&&u.pathname==='/api/lab/normalize-uid'){const b=await body(req);return json(res,200,{ok:true,uid:normalizeUid(b.uid)});}
       if(u.pathname.startsWith('/api/'))return json(res,404,{ok:false,error:'API_NOT_FOUND'});
       if(req.method==='GET')return serveStatic(req,res);
