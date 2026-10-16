@@ -166,7 +166,14 @@ export function createHqAccess(core,{upload}={}){
       const current=tx.prepare('SELECT actor_id,state,core_ids_json FROM hq_upload_orders WHERE event_id=? AND order_id=?').get(eventId,orderId);
       if(!current||current.actor_id!==pioneerId||current.core_ids_json!==JSON.stringify(coreIds)) throw new GameError('HQ_UPLOAD_ORDER_INVALID');
       if(!replay&&current.state!=='AUTHORIZED') throw new GameError('HQ_UPLOAD_ORDER_INVALID');
-      tx.prepare("UPDATE hq_upload_orders SET state='COMPLETED',operation_id=? WHERE event_id=? AND order_id=?").run(operationId,eventId,orderId);
+      tx.prepare("UPDATE hq_upload_orders SET state='COMPLETED' WHERE event_id=? AND order_id=?").run(eventId,orderId);
+      if(!replay){
+        const reservations=tx.prepare("SELECT reservation_id,payload_json FROM reservations WHERE event_id=? AND kind='SECURE_APPROACH' AND actor_id=?").all(eventId,pioneerId);
+        for(const reservation of reservations){
+          let payload=null; try{payload=JSON.parse(reservation.payload_json)}catch{}
+          if(payload?.bayId===order.bay_id) tx.prepare('DELETE FROM reservations WHERE event_id=? AND reservation_id=?').run(eventId,reservation.reservation_id);
+        }
+      }
     });
     const balance=db.prepare('SELECT secured_energy FROM balances WHERE event_id=? AND actor_id=?').get(eventId,pioneerId)?.secured_energy||0;
     return {...result,orderId,bayId:order.bay_id,securedEnergy:balance};
