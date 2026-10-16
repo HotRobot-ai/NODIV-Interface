@@ -69,7 +69,7 @@ function createBlock06Realtest(core,mode){
       const card=db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,id);
       if(a?.role!==role||a.active!==1||!card)blockers.push('CARD_REQUIRED:'+id);
     }
-    for(const id of ['NODE-001','NODE-002']){
+    for(const id of ['NODE-001','NODE-002','NODE-003','NODE-004']){
       const n=db.prepare('SELECT n.state,t.uid FROM nodes n LEFT JOIN lab_node_tags t ON t.event_id=n.event_id AND t.node_id=n.node_id WHERE n.event_id=? AND n.node_id=?').get(eventId,id);
       if(!n?.uid)blockers.push('NODE_REQUIRED:'+id);
       if(event.state==='READY'&&n?.state!=='AVAILABLE')blockers.push('NODE_NOT_AVAILABLE:'+id);
@@ -161,7 +161,37 @@ function createBlock06Realtest(core,mode){
       return {missionId,kind:s.kind,nodeId:s.candidate.nodeId,coreId:s.candidate.cargoId,replayed:false};
     }catch(e){db.exec('ROLLBACK');throw e}
   }
-  return {status,initialize,start,restoreStatus,assignRestore};
+  function fopLoadoutStatus(eventId,fopId,nodeId){
+    requireMode();
+    if(db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId)?.state!=='FIELD_ACTIVE')throw Error('EVENT_NOT_FIELD_ACTIVE');
+    const actor=db.prepare('SELECT role,active FROM actors WHERE event_id=? AND actor_id=?').get(eventId,fopId);
+    if(actor?.role!=='FOP'||actor.active!==1)throw Error('ROLE_DENIED');
+    const node=db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,nodeId);
+    if(!node||node.state==='INSTALLED')throw Error('INSTALL_NODE_UNAVAILABLE');
+    if(!db.prepare('SELECT 1 FROM lab_node_tags WHERE event_id=? AND node_id=?').get(eventId,nodeId))throw Error('NODE_TAG_REQUIRED');
+    const transit=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(eventId,fopId);
+    return {nodeId,transit,needsAssignment:transit.length<3};
+  }
+  function assignFopLoadout(eventId,fopId,nodeId){
+    const current=fopLoadoutStatus(eventId,fopId,nodeId);
+    if(current.transit.length>=3)return {...current,replayed:true};
+    if(current.transit.length!==0)throw Error('FOP_LOADOUT_PARTIAL_STATE');
+    const setup=receipt(eventId);if(!setup)throw Error('SETUP_RECEIPT_MISSING');
+    const protectedIds=new Set([...(setup.plan.restoreReserve||[]),setup.plan.resupply].filter(Boolean));
+    for(const m of db.prepare("SELECT core_id FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").all(eventId,core.clock()))protectedIds.add(m.core_id);
+    const candidates=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY core_id").all(eventId).filter(x=>!protectedIds.has(x.core_id));
+    if(candidates.length<3)throw Error('FOP_LOADOUT_UNAVAILABLE');
+    const chosen=candidates.slice(0,3);
+    db.exec('BEGIN IMMEDIATE');
+    try{
+      for(const x of chosen){
+        if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(fopId,eventId,x.core_id).changes!==1)throw Error('FOP_LOADOUT_CONFLICT');
+      }
+      core.assertIntegrity(eventId);db.exec('COMMIT');
+      return {nodeId,transit:chosen,needsAssignment:false,replayed:false};
+    }catch(e){db.exec('ROLLBACK');throw e}
+  }
+  return {status,initialize,start,restoreStatus,assignRestore,fopLoadoutStatus,assignFopLoadout};
 }
 
 export function createLabApp(config=labConfig()){
@@ -242,7 +272,12 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),node=store.nodeTarget(s,b.uid);
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length});
+        const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length,transit,canRequestLoadout:config.mode==='registration'&&action==='INSTALL'&&transit.length<3});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        return json(res,200,{ok:true,...realtest.assignFopLoadout(s.event_id,s.actor_id,b.nodeId)});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/core/check'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),c=store.coreTarget(s,b.uid);
