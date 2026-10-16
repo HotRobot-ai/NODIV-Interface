@@ -10,6 +10,7 @@ import { createLabStore, normalizeUid } from './lab-db.mjs';
 import { seedTestDatabase } from './seed.mjs';
 import { labConfig } from './config.mjs';
 import { createLabEvacNfc } from './evac-lab-nfc.mjs';
+import { createFounderRegistry } from './founder-registry.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const CLIENT=join(ROOT,'client');
@@ -48,6 +49,7 @@ export function createLabApp(config=labConfig()){
   const core=runtime.core;
   labEvacNfc=createLabEvacNfc(core);
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
+  const founderRegistry=createFounderRegistry(core.db);
   const handler=async(req,res)=>{
     const started=performance.now();
     try{
@@ -208,6 +210,11 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
         if(!runtime.evac.flow)throw Error('EVAC_NFC_VERIFIER_REQUIRED');
         return json(res,200,{ok:true,...runtime.evac.flow.upload({eventId:s.event_id,teamId:b.teamId,carrierId:s.actor_id,operationId:b.operationId,coreIds:b.coreIds,selectedCoreId:b.selectedCoreId,nfcProof:{id:b.proofId},nfcGrantId:b.nfcGrantId})});
+      }
+
+      if(req.method==='POST'&&u.pathname==='/api/founder/register'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
+        return json(res,200,{ok:true,...founderRegistry.register({eventId:s.event_id,...b})});
       }
 
       // Founder only. No event initialization/deployment endpoint exists in this Lab.
