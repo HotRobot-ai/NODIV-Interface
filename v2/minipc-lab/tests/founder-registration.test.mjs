@@ -9,6 +9,8 @@ import {createFounderRegistry} from '../server/founder-registry.mjs';
 
 test('registration lab: READY, empty N-Cores, persisted enrollment, no duplicate UIDs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'nodiv-reg-')),dbPath=join(dir,'reg.sqlite'),eventId='REG-TEST';
+ const previous=process.env.NODIV_UID_FOUNDER_CARD;
+ process.env.NODIV_UID_FOUNDER_CARD='04FADE0001';
  try{
   seedTestDatabase(dbPath,eventId,'registration');
   let rt=createV2GameplayRuntime(dbPath),db=rt.core.db;
@@ -33,5 +35,9 @@ test('registration lab: READY, empty N-Cores, persisted enrollment, no duplicate
   assert.equal(db.prepare('SELECT uid FROM hq_upload_bays WHERE event_id=?').get(eventId).uid,'04AABBD3');
   assert.equal(db.prepare('SELECT count(*) n FROM lab_access_cards').get().n,2);
   rt.close();
- }finally{rmSync(dir,{recursive:true,force:true})}
+ }finally{
+  if(previous===undefined)Reflect.deleteProperty(process.env,'NODIV_UID_FOUNDER_CARD');
+  else process.env.NODIV_UID_FOUNDER_CARD=previous;
+  rmSync(dir,{recursive:true,force:true});
+ }
 });
