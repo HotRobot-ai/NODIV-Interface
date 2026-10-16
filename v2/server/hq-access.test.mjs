@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createV2GameplayRuntime} from './gameplay-runtime.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
 function fixture(){
   let now=1000;
@@ -120,4 +123,24 @@ test('BLOCK05 HQ: full upload rolls back if mandatory RE-SUPPLY cannot be secure
     assert.equal(f.c.balance('E','P3'),0);
     assert.equal(f.c.db.prepare("SELECT COUNT(*) n FROM operations WHERE event_id='E' AND operation_id='FULL-NO-RS'").get().n,0);
   }finally{f.runtime.close()}
+});
+
+
+test('BLOCK05 HQ: Secure Approach state survives SQLite runtime restart without second debit',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'nodiv-v2-hq-restart-')),path=join(dir,'game.sqlite');let now=1000;
+  let r=createV2GameplayRuntime(path,{clock:()=>now});
+  try{
+    r.core.seedEvent('E');r.core.seedActor('E','P1','PIONEER',1);
+    r.core.db.prepare("UPDATE balances SET secured_energy=300 WHERE event_id='E' AND actor_id='P1'").run();
+    r.hq.seedBay('E',{id:'HQ-01',uid:'BAY1'});
+    const first=r.hq.activateSecureApproach({eventId:'E',pioneerId:'P1',requestId:'REQ-RESTART-123'});
+    assert.equal(first.securedEnergy,150);r.close();r=null;
+
+    r=createV2GameplayRuntime(path,{clock:()=>now});
+    const state=r.hq.terminalState({eventId:'E',pioneerId:'P1'});
+    assert.equal(state.state,'YELLOW');assert.equal(state.selected.ownReservation,true);
+    const replay=r.hq.activateSecureApproach({eventId:'E',pioneerId:'P1',requestId:'REQ-RESTART-123'});
+    assert.equal(replay.replayed,true);assert.equal(r.core.balance('E','P1'),150);
+    assert.equal(r.core.db.prepare("SELECT until_epoch FROM catch_ghost WHERE event_id='E' AND actor_id='P1'").get().until_epoch,1300);
+  }finally{try{r?.close()}catch{}rmSync(dir,{recursive:true,force:true})}
 });
