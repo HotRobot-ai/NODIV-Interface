@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {SqliteGameCore, GameError} from './sqlite-core.mjs';
 import {CatchTransaction} from './catch-transaction.mjs';
 import {createEvacTeamReservations} from './evac-team-reservations.mjs';
@@ -53,10 +54,43 @@ export function createV2GameplayRuntime(path=':memory:', {
     ]});
   }
 
+  function selectMandatoryResupply(db,eventId,pioneerId){
+    const now=core.clock();
+    const activeMission=db.prepare("SELECT mission_id FROM missions WHERE event_id=? AND actor_id=? AND state='ASSIGNED' AND expires_at>? LIMIT 1").get(eventId,pioneerId,now);
+    if(activeMission)throw new GameError('RESUPPLY_ASSIGNMENT_CONFLICT');
+    const reservations=db.prepare('SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?').all(eventId,now);
+    const reservedNodes=new Set(),reservedCores=new Set();
+    for(const row of reservations){
+      let p;try{p=JSON.parse(row.payload_json)}catch{throw new GameError('RESERVATION_UNVERIFIABLE')}
+      if(!p||typeof p!=='object'||Array.isArray(p))throw new GameError('RESERVATION_UNVERIFIABLE');
+      for(const id of [p.nodeId,p.node_id,...(Array.isArray(p.nodeIds)?p.nodeIds:[])])if(typeof id==='string'&&id)reservedNodes.add(id);
+      for(const id of [p.coreId,p.core_id,...(Array.isArray(p.coreIds)?p.coreIds:[])])if(typeof id==='string'&&id)reservedCores.add(id);
+    }
+    const locked=new Set(db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,pioneerId,now).map(x=>x.node_id));
+    const candidates=[];
+    for(const node of db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId)){
+      if(locked.has(node.node_id)||reservedNodes.has(node.node_id))continue;
+      if(db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>? LIMIT 1").get(eventId,node.node_id,now))continue;
+      const cores=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy ASC,core_id ASC").all(eventId,node.node_id);
+      if(cores.length!==3||cores.some(c=>c.status!=='DEPLOYED'||reservedCores.has(c.core_id)))continue;
+      candidates.push({nodeId:node.node_id,out:cores[0]});
+    }
+    if(!candidates.length)throw new GameError('RESUPPLY_ASSIGNMENT_UNAVAILABLE');
+    candidates.sort((a,b)=>a.out.visible_energy-b.out.visible_energy||a.nodeId.localeCompare(b.nodeId));
+    const last=db.prepare("SELECT node_id FROM missions WHERE event_id=? AND kind='RESUPPLY' AND state='COMPLETED' ORDER BY rowid DESC LIMIT 1").get(eventId);
+    const target=candidates.length>1&&last?candidates.find(c=>c.nodeId!==last.node_id)||candidates[0]:candidates[0];
+    const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy ASC,core_id ASC").all(eventId).filter(c=>!reservedCores.has(c.core_id));
+    if(!reserve.length)throw new GameError('RESUPPLY_ASSIGNMENT_UNAVAILABLE');
+    const cargo=reserve.find(c=>c.visible_energy>=target.out.visible_energy)||[...reserve].sort((a,b)=>b.visible_energy-a.visible_energy||a.core_id.localeCompare(b.core_id))[0];
+    return {target,cargo};
+  }
+
   function upload({eventId,operationId,pioneerId,coreIds},transactionHook=null){
     requiredStrings([eventId,operationId,pioneerId],'UPLOAD_CONTEXT_REQUIRED');uniqueStrings(coreIds,'UPLOAD_CORES_REQUIRED');
     if(coreIds.length>3)throw new GameError('UPLOAD_CORES_INVALID');
-    let energyCredit=0;
+    const actor=core.db.prepare('SELECT role,capacity FROM actors WHERE event_id=? AND actor_id=?').get(eventId,pioneerId);
+    const mandatoryFullUpload=actor?.role==='PIONEER'&&actor.capacity===3&&coreIds.length===3;
+    let energyCredit=0,mandatoryResupply=null;
     const moves=coreIds.map(id=>{
       const c=core.core(eventId,id);
       if(!c||c.owner_type!=='PIONEER'||c.owner_id!==pioneerId||c.status!=='FIELD')throw new GameError('UPLOAD_CORE_NOT_OWNED');
@@ -64,7 +98,29 @@ export function createV2GameplayRuntime(path=':memory:', {
       energyCredit+=c.actual_energy;
       return move(id,'PIONEER',pioneerId,'HQ','HQ','SECURED');
     });
-    return core.run({eventId,operationId,actorId:pioneerId,kind:'HQ_UPLOAD',moves,energyCredit},transactionHook);
+    const missionId='RS-'+operationId;
+    const hook=(db,{replay})=>{
+      if(mandatoryFullUpload){
+        if(replay){
+          const mission=db.prepare('SELECT mission_id,node_id,core_id,expires_at,state FROM missions WHERE event_id=? AND mission_id=?').get(eventId,missionId);
+          if(!mission)throw new GameError('RESUPPLY_RECEIPT_MISSING');
+          mandatoryResupply=mission;
+        }else{
+          const personal=db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,pioneerId).n;
+          if(personal!==0)throw new GameError('FULL_UPLOAD_REQUIRES_EMPTY_INVENTORY');
+          const {target,cargo}=selectMandatoryResupply(db,eventId,pioneerId);
+          const expiresAt=core.clock()+1800;
+          const changed=db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(pioneerId,eventId,cargo.core_id);
+          if(changed.changes!==1)throw new GameError('RESUPPLY_CARGO_CONFLICT');
+          db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,?,?)").run(eventId,missionId,pioneerId,'RESUPPLY',target.nodeId,cargo.core_id,'ASSIGNED',expiresAt);
+          core.assertIntegrity(eventId);
+          mandatoryResupply={mission_id:missionId,node_id:target.nodeId,core_id:cargo.core_id,expires_at:expiresAt,state:'ASSIGNED'};
+        }
+      }
+      if(transactionHook)transactionHook(db,{replay});
+    };
+    const result=core.run({eventId,operationId,actorId:pioneerId,kind:'HQ_UPLOAD',moves,energyCredit},hook);
+    return mandatoryResupply?{...result,mandatoryResupply:{id:mandatoryResupply.mission_id,nodeId:mandatoryResupply.node_id,coreId:mandatoryResupply.core_id,expiresAt:mandatoryResupply.expires_at}}:result;
   }
 
   function resupply({eventId,operationId,pioneerId,missionId,outCoreId}){
