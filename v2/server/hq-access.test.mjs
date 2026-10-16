@@ -82,3 +82,39 @@ test('BLOCK05 HQ: another Pioneer cannot claim a yellow or red bay',()=>{
     assert.throws(()=>f.runtime.hq.claim({eventId:'E',pioneerId:'P2',bayId:'HQ-01',operationId:'CLAIM-P2B'}),/UPLOAD_POINT_BUSY/);
   }finally{f.runtime.close()}
 });
+
+
+test('BLOCK05 HQ: 3/3 full upload atomically creates mandatory RE-SUPPLY with V1 target/core selection',()=>{
+  const f=fixture();
+  try{
+    f.c.seedActor('E','P3','PIONEER',3);
+    for(const [id,e] of [['P3A',110],['P3B',120],['P3C',130]])f.c.seedCore('E',{id,uid:'U'+id,energy:e,ownerType:'PIONEER',ownerId:'P3',status:'FIELD'});
+    for(const [node,values] of [['N1',[80,200,300]],['N2',[90,210,310]]]){
+      f.c.seedNode('E',node,'INSTALLED');
+      values.forEach((e,i)=>f.c.seedCore('E',{id:node+'C'+i,uid:'U'+node+i,energy:e,ownerType:'NODE',ownerId:node,status:'DEPLOYED'}));
+    }
+    f.c.seedCore('E',{id:'HQ-A',uid:'UHQ-A',energy:75,ownerType:'HQ',ownerId:'HQ',status:'RESERVE'});
+    f.c.seedCore('E',{id:'HQ-B',uid:'UHQ-B',energy:100,ownerType:'HQ',ownerId:'HQ',status:'RESERVE'});
+    const result=f.runtime.upload({eventId:'E',operationId:'FULL-1',pioneerId:'P3',coreIds:['P3A','P3B','P3C']});
+    assert.equal(result.mandatoryResupply.nodeId,'N1');
+    assert.equal(result.mandatoryResupply.coreId,'HQ-B');
+    const mission=f.c.db.prepare("SELECT * FROM missions WHERE event_id='E' AND mission_id=?").get(result.mandatoryResupply.id);
+    assert.equal(mission.kind,'RESUPPLY');
+    assert.equal(mission.state,'ASSIGNED');
+    assert.equal(f.c.core('E','HQ-B').owner_type,'TRANSIT');
+    assert.equal(f.c.core('E','HQ-B').owner_id,'P3');
+    assert.equal(f.c.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id='E' AND owner_type='PIONEER' AND owner_id='P3' AND status='FIELD'").get().n,0);
+  }finally{f.runtime.close()}
+});
+
+test('BLOCK05 HQ: full upload rolls back if mandatory RE-SUPPLY cannot be secured',()=>{
+  const f=fixture();
+  try{
+    f.c.seedActor('E','P3','PIONEER',3);
+    for(const [id,e] of [['P3A',110],['P3B',120],['P3C',130]])f.c.seedCore('E',{id,uid:'U'+id,energy:e,ownerType:'PIONEER',ownerId:'P3',status:'FIELD'});
+    assert.throws(()=>f.runtime.upload({eventId:'E',operationId:'FULL-NO-RS',pioneerId:'P3',coreIds:['P3A','P3B','P3C']}),/RESUPPLY_ASSIGNMENT_UNAVAILABLE/);
+    for(const id of ['P3A','P3B','P3C'])assert.equal(f.c.core('E',id).owner_id,'P3');
+    assert.equal(f.c.balance('E','P3'),0);
+    assert.equal(f.c.db.prepare("SELECT COUNT(*) n FROM operations WHERE event_id='E' AND operation_id='FULL-NO-RS'").get().n,0);
+  }finally{f.runtime.close()}
+});
