@@ -27,7 +27,7 @@ export class SqliteGameCore {
   seedEvent(eventId, state = 'FIELD_ACTIVE') { this.db.prepare('INSERT INTO events(event_id,state) VALUES (?,?)').run(eventId,state); }
   seedActor(eventId, actorId, role, capacity = 0) { this.db.prepare('INSERT INTO actors(event_id,actor_id,role,capacity) VALUES (?,?,?,?)').run(eventId,actorId,role,capacity); this.db.prepare('INSERT INTO balances(event_id,actor_id) VALUES (?,?)').run(eventId,actorId); }
   seedNode(eventId, nodeId, state = 'AVAILABLE') { this.db.prepare('INSERT INTO nodes(event_id,node_id,state) VALUES (?,?,?)').run(eventId,nodeId,state); }
-  seedCore(eventId, {id,uid,energy,actualEnergy=energy,ownerType,ownerId,status='FIELD'}) { this.db.prepare('INSERT INTO cores(event_id,core_id,uid,visible_energy,actual_energy,owner_type,owner_id,status) VALUES (?,?,?,?,?,?,?,?)').run(eventId,id,uid,energy,actualEnergy,ownerType,ownerId,status); }
+  seedCore(eventId, {id,uid,energy,actualEnergy=energy,ownerType,ownerId,status}) { const resolvedStatus=status??(ownerType==='NODE'?'DEPLOYED':ownerType==='TRANSIT'?'IN_TRANSIT':ownerType==='HQ'?'RESERVE':'FIELD'); this.db.prepare('INSERT INTO cores(event_id,core_id,uid,visible_energy,actual_energy,owner_type,owner_id,status) VALUES (?,?,?,?,?,?,?,?)').run(eventId,id,uid,energy,actualEnergy,ownerType,ownerId,resolvedStatus); }
   seedMission(eventId, {id,actorId,kind='RESUPPLY',nodeId,coreId,expiresAt}) { this.db.prepare('INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,?,?)').run(eventId,id,actorId,kind,nodeId,coreId,'ASSIGNED',expiresAt); }
   core(eventId,id) { return this.db.prepare('SELECT * FROM cores WHERE event_id=? AND core_id=?').get(eventId,id); }
   balance(eventId,actorId) { return this.db.prepare('SELECT secured_energy FROM balances WHERE event_id=? AND actor_id=?').get(eventId,actorId)?.secured_energy; }
@@ -147,6 +147,8 @@ export class SqliteGameCore {
         for(const m of moves){
           if(m.fromType!=='PIONEER'||m.fromId!==actorId||m.toType!=='HQ'||m.toId!=='HQ') this._fail('UPLOAD_INVALID_ROUTE');
           const c=this.core(eventId,m.id); if(!c) this._fail('CORE_UNKNOWN');
+          if(c.owner_type!==m.fromType||c.owner_id!==m.fromId) this._fail('OWNERSHIP_CHANGED');
+          if(c.status==='EVAC_CARGO') this._fail('EVAC_CARGO_PROTECTED');
           if(c.status!=='FIELD') this._fail('UPLOAD_CORE_NOT_FIELD');
           expected+=c.actual_energy;
         }

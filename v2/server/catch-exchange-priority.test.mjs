@@ -10,7 +10,7 @@ test('completed Exchange takes priority; Catch refreshes highest current Core',(
   for(let i=1;i<=3;i++)c.seedCore('E',{id:'N'+i,uid:'n'+i,energy:200+i,ownerType:'NODE',ownerId:'N'});
   const catchService=new CatchTransaction(c);
   const pending=catchService.preview({eventId:'E',catcherId:'L',targetId:'P'});
-  const move=(id,fromType,fromId,toType,toId)=>({id,fromType,fromId,toType,toId});
+  const move=(id,fromType,fromId,toType,toId)=>({id,fromType,fromId,toType,toId,status:toType==='NODE'?'DEPLOYED':toType==='PIONEER'?'FIELD':toType==='HQ'?'RESERVE':undefined});
   const exchange=c.run({eventId:'E',operationId:'EX1',actorId:'P',kind:'EXCHANGE',moves:[move('OLD','PIONEER','P','NODE','N'),move('N1','NODE','N','PIONEER','P')]});
   assert.equal(exchange.ok,true);
   assert.throws(()=>catchService.confirm({eventId:'E',previewId:pending.previewId,catcherId:'L'}),/CATCH_SNAPSHOT_CHANGED/);

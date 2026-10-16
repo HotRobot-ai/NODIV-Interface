@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createV2GameplayRuntime} from './gameplay-runtime.mjs';
 
 function seed(){
- const r=createV2GameplayRuntime(':memory:');const c=r.core;
+ let now=1000;const r=createV2GameplayRuntime(':memory:',{clock:()=>now});r.tick=(seconds)=>{now+=seconds};const c=r.core;
  c.seedEvent('E');c.seedActor('E','P1','PIONEER',1);c.seedActor('E','L1','LOCAL',1);c.seedActor('E','F1','FOP',0);c.seedActor('E','FO','FOUNDER',0);
  c.seedNode('E','N1','INSTALLED');c.seedNode('E','N2','AVAILABLE');
  c.seedCore('E',{id:'P0',uid:'UP0',energy:341,actualEnergy:341,ownerType:'PIONEER',ownerId:'P1',status:'FIELD'});
@@ -28,6 +28,7 @@ test('BLOCK03: Exchange -> Restore -> Upload -> RE-SUPPLY -> Catch share one aut
   r.upload({eventId:'E',operationId:'U',pioneerId:'P1',coreIds:['N1A','N1B']});
   assert.equal(c.balance('E','P1'),400);assert.equal(c.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id='E' AND owner_type='PIONEER' AND owner_id='P1'").get().n,0);
 
+  r.tick(3600); // V1 rule: executing Pioneer cannot use the RESTORE target for one hour.
   c.seedCore('E',{id:'RS',uid:'URS',energy:250,actualEnergy:250,ownerType:'TRANSIT',ownerId:'P1',status:'IN_TRANSIT'});
   c.seedMission('E',{id:'M',actorId:'P1',kind:'RESUPPLY',nodeId:'N1',coreId:'RS',expiresAt:c.clock()+600});
   const low=c.db.prepare("SELECT core_id FROM cores WHERE event_id='E' AND owner_type='NODE' AND owner_id='N1' ORDER BY visible_energy,core_id LIMIT 1").get().core_id;

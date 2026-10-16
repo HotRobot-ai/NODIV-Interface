@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {SqliteGameCore} from './sqlite-core.mjs';
 import {installNfcGrantSchema,issueNfcGrant} from './nfc-grants.mjs';
 import {runCoreWithNfcGrant} from './v2-core-nfc-adapter.mjs';
-const move=(id,fromType,fromId,toType,toId)=>({id,fromType,fromId,toType,toId});
+const move=(id,fromType,fromId,toType,toId)=>({id,fromType,fromId,toType,toId,status:toType==='NODE'?'DEPLOYED':toType==='PIONEER'?'FIELD':toType==='HQ'?'RESERVE':undefined});
 function setup(){
  const core=new SqliteGameCore();installNfcGrantSchema(core.db);
  core.seedEvent('E');core.seedActor('E','P','PIONEER',1);core.seedNode('E','N','INSTALLED');
