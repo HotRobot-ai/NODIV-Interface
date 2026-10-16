@@ -3,6 +3,7 @@ import {CatchTransaction} from './catch-transaction.mjs';
 import {createEvacTeamReservations} from './evac-team-reservations.mjs';
 import {createEvacFlowIntegration} from './evac-flow-integration.mjs';
 import {createEvacEventCompletion} from './evac-event-completion.mjs';
+import {createHqAccess} from './hq-access.mjs';
 
 const requiredStrings=(values,code)=>{if(values.some(v=>typeof v!=='string'||!v.trim()))throw new GameError(code);};
 const uniqueStrings=(values,code)=>{if(!Array.isArray(values)||!values.length||values.some(v=>typeof v!=='string'||!v.trim())||new Set(values).size!==values.length)throw new GameError(code);};
@@ -49,7 +50,7 @@ export function createV2GameplayRuntime(path=':memory:', {
     ]});
   }
 
-  function upload({eventId,operationId,pioneerId,coreIds}){
+  function upload({eventId,operationId,pioneerId,coreIds},transactionHook=null){
     requiredStrings([eventId,operationId,pioneerId],'UPLOAD_CONTEXT_REQUIRED');uniqueStrings(coreIds,'UPLOAD_CORES_REQUIRED');
     if(coreIds.length>3)throw new GameError('UPLOAD_CORES_INVALID');
     let energyCredit=0;
@@ -60,7 +61,7 @@ export function createV2GameplayRuntime(path=':memory:', {
       energyCredit+=c.actual_energy;
       return move(id,'PIONEER',pioneerId,'HQ','HQ','SECURED');
     });
-    return core.run({eventId,operationId,actorId:pioneerId,kind:'HQ_UPLOAD',moves,energyCredit});
+    return core.run({eventId,operationId,actorId:pioneerId,kind:'HQ_UPLOAD',moves,energyCredit},transactionHook);
   }
 
   function resupply({eventId,operationId,pioneerId,missionId,outCoreId}){
@@ -86,9 +87,11 @@ export function createV2GameplayRuntime(path=':memory:', {
     return core.run({eventId,operationId,actorId:fopId,kind:'DEINSTALL',moves:coreIds.map(id=>move(id,'NODE',nodeId,'HQ','HQ','RESERVE')),nodeChanges:[{id:nodeId,state:'DEINSTALLED'}]});
   }
 
+  const hq=createHqAccess(core,{upload});
+
   return {
     core,
-    exchange,restore,upload,resupply,
+    exchange,restore,upload,resupply,hq,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{teams:evacTeams,flow:evacFlow,completion:evacCompletion},
