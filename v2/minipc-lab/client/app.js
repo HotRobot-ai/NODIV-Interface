@@ -129,6 +129,17 @@ function renderFop(v){
   const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
   return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div></section>${evac}`;
 }
+function founderHardwareRows(v){
+  const h=v.hardware||{cards:[],nodes:[],cores:[],hq:[]};
+  const tail=uid=>String(uid||'').slice(-6);
+  const rows=[
+    ...h.cards.map(x=>`<div class="hardware-row"><span>${esc(ROLE_LABEL[x.role]||x.role)}</span><strong>${esc(x.id)}</strong><small>UID …${esc(tail(x.uid))}</small></div>`),
+    ...h.nodes.map(x=>`<div class="hardware-row"><span>NODE</span><strong>${esc(x.id)}</strong><small>UID …${esc(tail(x.uid))}</small></div>`),
+    ...h.cores.map(x=>`<div class="hardware-row"><span>N-CORE</span><strong>${esc(x.id)} · ${x.energy} E</strong><small>UID …${esc(tail(x.uid))}</small></div>`),
+    ...h.hq.map(x=>`<div class="hardware-row"><span>HQ</span><strong>${esc(x.id)}</strong><small>UID …${esc(tail(x.uid))}</small></div>`)
+  ];
+  return rows.length?rows.join(''):'<p class="empty-state">Noch keine zusätzliche Hardware registriert.</p>';
+}
 function renderFounder(v){
   const counts=Object.fromEntries((v.overview.roles||[]).map(x=>[x.role,x.count]));
   const nodes=Object.fromEntries((v.overview.nodes||[]).map(x=>[x.state,x.count]));
@@ -136,11 +147,29 @@ function renderFounder(v){
   const canComplete=v.allowedActions.includes('EVAC_COMPLETE');
   const rt=v.realtest;
   const es=v.evacSupport;
-  const blocker=x=>x.startsWith('CARD_REQUIRED:')?`Access Card fehlt: ${x.split(':')[1]}`:x.startsWith('NODE_REQUIRED:')?`Node-Tag fehlt: ${x.split(':')[1]}`:x==='HQ_REQUIRED'?'HQ-Uploadpunkt noch nicht registriert':x==='TWELVE_CORES_REQUIRED'?'12 reale N-Cores vollständig mit E-Wert registrieren':x==='FRESH_EVENT_REQUIRED'?'Testbestand enthält bereits Spielaktionen':x==='SECURE_APPROACH_150E_NOT_POSSIBLE'?'Für den Secure-Approach-Test fehlt im FOP-Feldloadout ein tauschbarer Core mit mindestens 150 E':x;
-  const hardware=v.event.state==='READY'?`<section class="card"><small>FOUNDER // HARDWARE</small><h3>NFC REGISTRIEREN</h3><p>Reale Tags eindeutig zuordnen. Für BLOCK 06 werden Founder, FOP, P9003, P9004, Local, Unbound, vier Nodes, HQ und 12 reale N-Cores benötigt.</p><label>TYP<select id="regKind"><option value="CORE">N-Core</option><option value="CARD">Access Card</option><option value="NODE">Node</option><option value="HQ">HQ-Uploadpunkt</option></select></label><label>KENNUNG<input id="regId" placeholder="NC-001 / P9004 / NODE-001" /></label><label>E-WERT (N-CORE)<input id="regEnergy" type="number" min="1" max="9999" placeholder="eingravierter Wert" /></label><button id="regScan" class="primary">NFC SCANNEN UND REGISTRIEREN</button><div id="regOut" class="feedback" role="status"></div></section>`:'';
-  const realtest=rt?`<section class="card"><small class="card-kicker">BLOCK 06 // REALTEST</small><h3>${rt.eventState==='READY'?'VORBEREITUNG':rt.eventState==='INITIALIZED'?'STARTFREIGABE':'TESTBESTAND'}</h3><div class="founder-grid"><div class="metric"><small>ACCESS CARDS</small><b>${rt.counts.cards}/6</b></div><div class="metric"><small>NODES</small><b>${rt.counts.nodes}/4</b></div><div class="metric"><small>N-CORES</small><b>${rt.counts.cores}/12</b></div><div class="metric"><small>HQ</small><b>${rt.counts.hq}/1</b></div></div><p>${rt.blockers?.length?rt.blockers.map(blocker).map(esc).join(' · '):'Alle erforderlichen Registrierungen sind serverseitig konsistent.'}</p>${rt.plan?`<p class="phase-note">P9003 Start: ${rt.plan.p9003?.energy??'—'} E · P9004 Start: ${rt.plan.p9004?.energy??'—'} E · FOP Transit: ${rt.plan.fop?.length??0} Cores (${(rt.plan.fopEnergies||[]).join(' / ')} E) · HQ-Reserve bleibt erhalten.</p>`:''}${rt.canInitialize?'<button id="founderInitialize" class="primary">TESTEVENT VORBEREITEN</button>':''}${rt.canStart?'<button id="founderStart" class="primary">EVENT STARTEN</button>':''}<div id="realtestOut" class="feedback"></div></section>`:'';
-  const evacSupport=es?`<section class="card evac"><small class="card-kicker">BLOCK 06 // EVAC SUPPORT</small><h3>${es.done?'SUPPORT VOLLSTÄNDIG':es.ready?'REALES TEAM BESTÄTIGT':'REALES TEAM ZUERST'}</h3><div class="founder-grid"><div class="metric"><small>REAL RECOVERY</small><b>${es.physicalRecoveries}/2</b></div><div class="metric"><small>REAL FINAL</small><b>${es.physicalUploads}/2</b></div><div class="metric"><small>GESAMT RECOVERY</small><b>${es.totalRecoveries}/10</b></div><div class="metric"><small>GESAMT FINAL</small><b>${es.totalUploads}/10</b></div></div><p>${es.done?'Alle fünf Teams haben die regulären EVAC-Runtime-Regeln erfüllt. Founder-Abschluss ist der nächste Schritt.':es.ready?'Das reale Team ist vollständig. Die vier nicht-physischen Support-Teams dürfen jetzt über denselben EVAC-Kern abgearbeitet werden.':'FOP + P9003 + P9004 müssen zuerst NODE-001/002 und beide Final Uploads real per NFC abschließen.'}</p>${es.ready?'<button id="founderEvacSupport" class="primary">SUPPORT-TEAMS DURCHLAUFEN</button>':''}<div id="evacSupportOut" class="feedback"></div></section>`:'';
-  return `${hardware}${realtest}${evacSupport}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+  const blocker=x=>x.startsWith('CARD_REQUIRED:')?`Access Card fehlt: ${x.split(':')[1]}`:x.startsWith('NODE_REQUIRED:')?`Node-Tag fehlt: ${x.split(':')[1]}`:x==='HQ_REQUIRED'?'HQ-Uploadpunkt noch nicht registriert':x==='TWELVE_CORES_REQUIRED'?'Mindestens 12 reale N-Cores mit E-Wert registrieren':x==='FRESH_EVENT_REQUIRED'?'Testbestand enthält bereits Spielaktionen':x==='SECURE_APPROACH_150E_NOT_POSSIBLE'?'Für den Secure-Approach-Test fehlt im FOP-Feldloadout ein tauschbarer Core mit mindestens 150 E':x;
+  const hardware=v.event.state==='READY'?`<section class="card founder-hardware"><small class="card-kicker">FOUNDER // HARDWARE</small><h3>HARDWARE EINRICHTEN</h3><p class="lead">Wähle nur aus, <b>was</b> du registrierst. Technische Kennungen werden soweit möglich vom System geführt.</p><div class="founder-register"><label>1 · HARDWARETYP<select id="regKind"><option value="CARD">Access Card</option><option value="NODE">Node</option><option value="CORE">N-Core</option><option value="HQ">HQ-Uploadpunkt</option></select></label><div id="regTargetWrap"></div><label id="regEnergyWrap" hidden>3 · EINGRAVIERTER E-WERT<input id="regEnergy" inputmode="numeric" type="number" min="1" max="9999" placeholder="z. B. 341" /></label><button id="regScan" class="primary founder-scan">NFC-TAG SCANNEN</button><div id="regOut" class="feedback" role="status"></div></div><details class="hardware-list"><summary>REGISTRIERTE HARDWARE ANZEIGEN</summary><div class="hardware-rows">${founderHardwareRows(v)}</div></details></section>`:'';
+  const realtest=rt?`<section class="card"><small class="card-kicker">BLOCK 06 // REALTEST</small><h3>${rt.eventState==='READY'?'VORBEREITUNG':rt.eventState==='INITIALIZED'?'STARTFREIGABE':'TESTBESTAND'}</h3><div class="founder-grid"><div class="metric"><small>TEST-ACCESS CARDS</small><b>${rt.counts.cards}/6</b></div><div class="metric"><small>NODES</small><b>${rt.counts.nodes}/4</b></div><div class="metric"><small>N-CORES</small><b>${rt.counts.cores}/12+</b></div><div class="metric"><small>HQ</small><b>${rt.counts.hq}/1</b></div></div><p>${rt.blockers?.length?rt.blockers.map(blocker).map(esc).join(' · '):'Alle erforderlichen Registrierungen sind serverseitig konsistent.'}</p><p class="phase-note"><b>Catch braucht keinen zweiten Pioneer.</b> Für Catch genügt 1 Pioneer + Local oder Unbound. Pioneer B wird in diesem vollständigen Test erst für den EVAC-Teamablauf benötigt.</p>${rt.plan?`<p class="phase-note">Pioneer A Start: ${rt.plan.p9003?.energy??'—'} E · Pioneer B Start: ${rt.plan.p9004?.energy??'—'} E · FOP Transit: ${rt.plan.fop?.length??0} Cores (${(rt.plan.fopEnergies||[]).join(' / ')} E) · HQ-Reserve bleibt erhalten.</p>`:''}${rt.canInitialize?'<button id="founderInitialize" class="primary">TESTEVENT VORBEREITEN</button>':''}${rt.canStart?'<button id="founderStart" class="primary">EVENT STARTEN</button>':''}<div id="realtestOut" class="feedback"></div></section>`:'';
+  const evacSupport=es?`<section class="card evac"><small class="card-kicker">BLOCK 06 // EVAC SUPPORT</small><h3>${es.done?'SUPPORT VOLLSTÄNDIG':es.ready?'REALES TEAM BESTÄTIGT':'REALES TEAM ZUERST'}</h3><div class="founder-grid"><div class="metric"><small>REAL RECOVERY</small><b>${es.physicalRecoveries}/2</b></div><div class="metric"><small>REAL FINAL</small><b>${es.physicalUploads}/2</b></div><div class="metric"><small>GESAMT RECOVERY</small><b>${es.totalRecoveries}/10</b></div><div class="metric"><small>GESAMT FINAL</small><b>${es.totalUploads}/10</b></div></div><p>${es.done?'Alle fünf Teams haben die regulären EVAC-Runtime-Regeln erfüllt. Founder-Abschluss ist der nächste Schritt.':es.ready?'Das reale Team ist vollständig. Die vier nicht-physischen Support-Teams dürfen jetzt über denselben EVAC-Kern abgearbeitet werden.':'FOP + Pioneer A + Pioneer B müssen zuerst NODE-001/002 und beide Final Uploads real per NFC abschließen.'}</p>${es.ready?'<button id="founderEvacSupport" class="primary">SUPPORT-TEAMS DURCHLAUFEN</button>':''}<div id="evacSupportOut" class="feedback"></div></section>`:'';
+  return `${hardware}${realtest}${evacSupport}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+}
+
+function updateFounderRegFields(){
+  const kind=$('regKind')?.value,wrap=$('regTargetWrap'),energy=$('regEnergyWrap');
+  if(!kind||!wrap)return;
+  const hw=view?.hardware||{cards:[],nodes:[],hq:[]};
+  const cards=new Set((hw.cards||[]).map(x=>x.id)),nodes=new Set((hw.nodes||[]).map(x=>x.id)),hq=new Set((hw.hq||[]).map(x=>x.id));
+  if(energy)energy.hidden=kind!=='CORE';
+  if(kind==='CARD'){
+    const targets=[['FOP-TEST','FOP · Field Operator'],['P9003','Pioneer A · Exchange / Catch-Ziel'],['P9004','Pioneer B · EVAC-Partner (nicht für Catch nötig)'],['LOCAL-TEST','Local · Catch'],['UNBOUND-TEST','Unbound · Catch'],['AUTO:FOP','+ weitere FOP-Karte'],['AUTO:PIONEER','+ weitere Pioneer-Karte'],['AUTO:LOCAL','+ weitere Local-Karte'],['AUTO:UNBOUND','+ weitere Unbound-Karte']];
+    wrap.innerHTML=`<label>2 · ROLLE / KARTE<select id="regTarget">${targets.map(([id,label])=>`<option value="${id}" ${cards.has(id)?'disabled':''}>${esc(label)}${cards.has(id)?' · registriert':''}</option>`).join('')}</select></label><p class="field-help">Founder ist bereits über den einmaligen Bootstrap gebunden. Zusätzliche Spieler-Karten sind nicht auf zwei Pioneer begrenzt.</p>`;
+  }else if(kind==='NODE'){
+    wrap.innerHTML=`<label>2 · NODE<select id="regTarget">${Array.from({length:10},(_,i)=>`NODE-${String(i+1).padStart(3,'0')}`).map(id=>`<option value="${id}" ${nodes.has(id)?'disabled':''}>${id}${nodes.has(id)?' · registriert':''}</option>`).join('')}</select></label>`;
+  }else if(kind==='CORE'){
+    wrap.innerHTML='<div class="auto-target"><small>2 · KENNUNG</small><strong>WIRD AUTOMATISCH VERGEBEN</strong><span>Du erfasst nur UID und den eingravierten E-Wert.</span></div>';
+  }else{
+    wrap.innerHTML=`<div class="auto-target"><small>2 · UPLOADPUNKT</small><strong>HQ-01</strong><span>${hq.has('HQ-01')?'Bereits registriert':'Bereit für NFC-Registrierung'}</span></div>`;
+  }
 }
 
 function bindRole(){
@@ -152,6 +181,7 @@ function bindRole(){
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
   $('regScan')?.addEventListener('click',registerFounderHardware);
+  if($('regKind')){updateFounderRegFields();$('regKind').addEventListener('change',updateFounderRegFields);}
   $('founderInitialize')?.addEventListener('click',initializeRealtest);
   $('founderStart')?.addEventListener('click',startRealtest);
   $('founderEvacStart')?.addEventListener('click',startFounderEvac);
@@ -403,14 +433,21 @@ async function confirmEvacFinal(){
 }
 
 async function registerFounderHardware(){
-  const kind=$('regKind')?.value,id=$('regId')?.value?.trim().toUpperCase(),energy=Number($('regEnergy')?.value);
+  const kind=$('regKind')?.value,target=$('regTarget')?.value||'',energy=Number($('regEnergy')?.value);
   try{
-    if(!id)throw Error('KENNUNG_FEHLT');
+    let id='',actorRole='';
+    if(kind==='CARD'){
+      if(!target)throw Error('ROLLE_FEHLT');
+      if(target.startsWith('AUTO:'))actorRole=target.split(':')[1];else id=target;
+    }
+    if(kind==='NODE'){if(!target)throw Error('NODE_FEHLT');id=target;}
+    if(kind==='HQ')id='HQ-01';
     if(kind==='CORE'&&(!Number.isInteger(energy)||energy<1))throw Error('E_WERT_FEHLT');
-    const uid=await nfc('HARDWARE '+kind);
-    const result=await api('/api/founder/register',{method:'POST',data:{role:kind,id,uid,...(kind==='CORE'?{energy}:{})}});
-    setFeedback('regOut',`Registriert: ${result.id} // ${result.uid}${kind==='CORE'?` // ${result.energy} E`:''}`);
-    phase('success','Hardware erfolgreich registriert.');await refreshRole({quiet:true});
+    const uid=await nfc(kind==='CARD'?'ACCESS CARD':kind==='CORE'?'N-CORE':kind);
+    phase('check','UID erkannt. Zuordnung wird serverseitig geprüft.');
+    const result=await api('/api/founder/register',{method:'POST',data:{role:kind,id,uid,...(actorRole?{actorRole}:{}),...(kind==='CORE'?{energy}:{})}});
+    setFeedback('regOut',`Registriert: ${result.actorRole?`${ROLE_LABEL[result.actorRole]} · `:''}${result.id}${kind==='CORE'?` · ${result.energy} E`:''}`);
+    phase('success','Hardware eindeutig gespeichert.');await refreshRole({quiet:true});
   }catch(e){setFeedback('regOut',friendly(e),true);phase('error',friendly(e));}
 }
 
@@ -468,4 +505,7 @@ function percentile(sorted,p){return sorted[Math.min(sorted.length-1,Math.max(0,
 $('btnLatency').onclick=async()=>{const b=$('btnLatency');b.disabled=true;setFeedback('latencyOut','3 Warmups + 25 HTTPS-Roundtrips …');try{for(let i=0;i<3;i++)await api(`/health?warmup=${Date.now()}-${i}`,{auth:false});const values=[];for(let i=0;i<25;i++){const t=performance.now();await api(`/health?block02=${Date.now()}-${i}`,{auth:false});values.push(performance.now()-t);}const sorted=[...values].sort((a,b)=>a-b),avg=values.reduce((a,b)=>a+b,0)/values.length;setFeedback('latencyOut',`25/25 · MIN ${sorted[0].toFixed(1)} ms · Ø ${avg.toFixed(1)} ms · P50 ${percentile(sorted,.5).toFixed(1)} ms · P95 ${percentile(sorted,.95).toFixed(1)} ms · MAX ${sorted.at(-1).toFixed(1)} ms`);}catch(e){setFeedback('latencyOut',friendly(e),true)}finally{b.disabled=false}};
 
 function tickClock(){$('clock').textContent=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}
-refreshHealth();tickClock();setInterval(tickClock,15000);setInterval(refreshHealth,30000);setInterval(()=>{if(token)refreshRole({quiet:true})},10000);
+$('roleContent').addEventListener('input',()=>{$('roleContent').dataset.userEditing='1'});
+$('roleContent').addEventListener('change',()=>{$('roleContent').dataset.userEditing='1'});
+$('roleContent').addEventListener('focusin',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))$('roleContent').dataset.userEditing='1'});
+refreshHealth();tickClock();setInterval(tickClock,15000);setInterval(refreshHealth,30000);setInterval(()=>{if(token)refreshRole({quiet:true,passive:true})},10000);
