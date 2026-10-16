@@ -1,13 +1,12 @@
-import {installNfcGrantSchema, consumeNfcGrant} from './nfc-grants.mjs';
-/**
- * EVAC FOP node recovery: one installed reserved node, three exact NFC-scanned
- * cores, atomic transfer to protected pioneer cargo. No partial recovery.
- */
-export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
- if(typeof verifyNfcProof !== 'function') throw Error('EVAC_NFC_VERIFIER_REQUIRED');
+import {installEvacDeployments,recordEvacRecoveryDeployments} from './evac-deployments.mjs';
+import {installNfcGrantSchema,consumeNfcGrant} from './nfc-grants.mjs';
+/** EVAC node recovery, isolated SQLite module. */
+export function createEvacNodeRecovery(core,{verifyNfcProof}={}) {
+ if(typeof verifyNfcProof!=='function')throw Error('EVAC_NFC_VERIFIER_REQUIRED');
  const db=core?.db;
  if(!db?.prepare)throw Error('EVAC_CORE_REQUIRED');
  installNfcGrantSchema(db);
+ installEvacDeployments(db);
  db.exec(`CREATE TABLE IF NOT EXISTS evac_recoveries (
  event_id TEXT NOT NULL, node_id TEXT NOT NULL, team_id TEXT NOT NULL,
  carrier_id TEXT NOT NULL, fop_id TEXT NOT NULL, operation_id TEXT NOT NULL,
@@ -18,11 +17,7 @@ export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
    if(!eventId||!teamId||!nodeId||!fopId||!operationId||scannedNodeId!==nodeId||
       !Array.isArray(scannedCoreUids)||scannedCoreUids.length!==3||
       new Set(scannedCoreUids).size!==3)throw Error('EVAC_SCAN_INVALID');
-   // The verifier is a trusted server-side adapter. Client-supplied UID strings alone
-   // never authorize a recovery. A production adapter must validate scan provenance,
-   // actor/session binding, node/core tags, expiration and one-time proof consumption.
-   if(!nfcProof || !nfcGrantId || verifyNfcProof({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof}) !== true)
-    throw Error('EVAC_NFC_PROOF_DENIED');
+   if(!nfcProof || !nfcGrantId || verifyNfcProof({eventId,teamId,nodeId,fopId,scannedNodeId,scannedCoreUids,operationId,nfcProof})!==true) throw Error('EVAC_NFC_PROOF_DENIED');
    db.exec('BEGIN IMMEDIATE');
    try {
     if(db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state!=='STARTED')throw Error('EVAC_NOT_STARTED');
@@ -49,6 +44,7 @@ export function createEvacNodeRecovery(core, {verifyNfcProof} = {}) {
      const changed=db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='EVAC_CARGO',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='NODE' AND owner_id=? AND version=?").run(assignment.carrier_id,eventId,c.core_id,nodeId,c.version);
      if(changed.changes!==1)throw Error('EVAC_OWNERSHIP_CHANGED');
     }
+    recordEvacRecoveryDeployments(db,{eventId,nodeId,teamId,carrierId:assignment.carrier_id,operationId,coreIds:current.map(c=>c.core_id)});
     db.prepare("UPDATE nodes SET state='DEINSTALLED' WHERE event_id=? AND node_id=?").run(eventId,nodeId);
     db.prepare('INSERT INTO evac_recoveries(event_id,node_id,team_id,carrier_id,fop_id,operation_id) VALUES (?,?,?,?,?,?)').run(eventId,nodeId,teamId,assignment.carrier_id,fopId,operationId);
     db.exec('COMMIT');
