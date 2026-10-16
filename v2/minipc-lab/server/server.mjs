@@ -9,6 +9,7 @@ import { createV2GameplayRuntime } from '../../server/gameplay-runtime.mjs';
 import { createLabStore, normalizeUid } from './lab-db.mjs';
 import { seedTestDatabase } from './seed.mjs';
 import { labConfig } from './config.mjs';
+import { createLabEvacNfc } from './evac-lab-nfc.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const CLIENT=join(ROOT,'client');
@@ -39,8 +40,13 @@ function lowestNodeCore(db,eventId,nodeId){
 
 export function createLabApp(config=labConfig()){
   seedTestDatabase(config.dbPath,config.eventId);
-  const runtime=createV2GameplayRuntime(config.dbPath);
+  let labEvacNfc=null;
+  const runtime=createV2GameplayRuntime(config.dbPath,{
+    verifyRecoveryNfcProof:ctx=>labEvacNfc?.verifyRecovery(ctx)===true,
+    verifyUploadNfcProof:ctx=>labEvacNfc?.verifyUpload(ctx)===true
+  });
   const core=runtime.core;
+  labEvacNfc=createLabEvacNfc(core);
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
   const handler=async(req,res)=>{
     const started=performance.now();
@@ -140,6 +146,68 @@ export function createLabApp(config=labConfig()){
         if(mission.kind==='RESUPPLY')return json(res,200,runtime.resupply({eventId:s.event_id,operationId:b.operationId||('RS-'+randomUUID()),pioneerId:s.actor_id,missionId:mission.mission_id,outCoreId:out.core_id}));
         const phase=mission.kind==='RESTORE_2'?2:mission.kind==='RESTORE_1'?1:0;if(!phase)throw Error('MISSION_KIND_INVALID');
         return json(res,200,runtime.restore({eventId:s.event_id,operationId:b.operationId||('REST-'+randomUUID()),pioneerId:s.actor_id,nodeId:node.node_id,cargoCoreId:cargo.core_id,outCoreId:out.core_id,phase,missionId:mission.mission_id}));
+      }
+
+      // EVAC Lab adapter: browser scans are accepted only in this isolated Lab.
+      // Production EVAC modules still require their original single-use NFC grant.
+      if(req.method==='GET'&&u.pathname==='/api/evac/state'){
+        const s=store.session(bearer(req));
+        const state=core.db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(s.event_id)?.state||null;
+        if(s.role==='FOP'){
+          const team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND fop_id=?').get(s.event_id,s.actor_id)||null;
+          const assignments=team?core.db.prepare('SELECT sequence,node_id,carrier_id FROM evac_assignments WHERE event_id=? AND team_id=? ORDER BY sequence').all(s.event_id,team.team_id).map(a=>({...a,recovered:!!core.db.prepare('SELECT 1 FROM evac_recoveries WHERE event_id=? AND node_id=?').get(s.event_id,a.node_id)})):[];
+          return json(res,200,{ok:true,state,role:'FOP',team:team?{id:team.team_id,pioneers:[team.pioneer_a,team.pioneer_b]}:null,assignments});
+        }
+        if(s.role==='PIONEER'){
+          const team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND (pioneer_a=? OR pioneer_b=?)').get(s.event_id,s.actor_id,s.actor_id)||null;
+          const assignment=team?core.db.prepare('SELECT sequence,node_id,carrier_id FROM evac_assignments WHERE event_id=? AND team_id=? AND carrier_id=?').get(s.event_id,team.team_id,s.actor_id):null;
+          const recovered=assignment?!!core.db.prepare('SELECT 1 FROM evac_recoveries WHERE event_id=? AND node_id=? AND carrier_id=?').get(s.event_id,assignment.node_id,s.actor_id):false;
+          const uploaded=assignment?!!core.db.prepare('SELECT 1 FROM evac_final_uploads WHERE event_id=? AND carrier_id=?').get(s.event_id,s.actor_id):false;
+          const cargo=recovered&&!uploaded?core.db.prepare("SELECT core_id,uid,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO' ORDER BY core_id").all(s.event_id,s.actor_id).map(c=>({id:c.core_id,energy:c.visible_energy})):[];
+          return json(res,200,{ok:true,state,role:'PIONEER',team:team?{id:team.team_id,fopId:team.fop_id}:null,assignment,recovered,uploaded,cargo});
+        }
+        return json(res,200,{ok:true,state,role:s.role});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/evac/team'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        const a=store.accessTarget(s,b.pioneerAUid),p=store.accessTarget(s,b.pioneerBUid);
+        if(a.role!=='PIONEER'||p.role!=='PIONEER'||a.actor_id===p.actor_id)throw Error('EVAC_TEAM_INVALID');
+        const nodes=core.db.prepare(`SELECT o.node_id FROM evac_original_nodes o JOIN nodes n ON n.event_id=o.event_id AND n.node_id=o.node_id
+          LEFT JOIN evac_assignments a ON a.event_id=o.event_id AND a.node_id=o.node_id
+          WHERE o.event_id=? AND n.state='INSTALLED' AND a.node_id IS NULL ORDER BY o.node_id LIMIT 2`).all(s.event_id).map(x=>x.node_id);
+        if(nodes.length!==2)throw Error('EVAC_NODE_UNAVAILABLE');
+        return json(res,200,{ok:true,...runtime.evac.teams.reserve({eventId:s.event_id,fopId:s.actor_id,pioneerA:a.actor_id,pioneerB:p.actor_id,nodeIds:nodes})});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/evac/recovery/check'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        if(!Array.isArray(b.coreUids)||b.coreUids.length!==3||new Set(b.coreUids.map(normalizeUid)).size!==3)throw Error('EVAC_SCAN_INVALID');
+        const node=store.nodeTarget(s,b.nodeUid),assignment=core.db.prepare('SELECT * FROM evac_assignments WHERE event_id=? AND team_id=? AND node_id=?').get(s.event_id,b.teamId,node.node_id);
+        if(!assignment)throw Error('EVAC_NODE_NOT_RESERVED');
+        const snapshot=JSON.parse(assignment.core_snapshot),scanned=b.coreUids.map(uid=>store.coreTarget(s,uid));
+        if(scanned.some(c=>c.owner_type!=='NODE'||c.owner_id!==node.node_id)||snapshot.some(c=>!scanned.some(x=>x.core_id===c.core_id)))throw Error('EVAC_CORE_SCAN_MISMATCH');
+        const operationId=b.operationId||('EVAC-REC-'+randomUUID());
+        const proof=labEvacNfc.issue({eventId:s.event_id,actorId:s.actor_id,command:'EVAC_NODE_RECOVERY',targetType:'NODE',targetId:node.node_id,operationId});
+        return json(res,200,{ok:true,teamId:b.teamId,nodeId:node.node_id,operationId,scannedCoreUids:scanned.map(c=>normalizeUid(core.db.prepare('SELECT uid FROM cores WHERE event_id=? AND core_id=?').get(s.event_id,c.core_id).uid)),...proof});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/evac/recovery/confirm'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        if(!runtime.evac.flow)throw Error('EVAC_NFC_VERIFIER_REQUIRED');
+        return json(res,200,{ok:true,...runtime.evac.flow.recover({eventId:s.event_id,teamId:b.teamId,nodeId:b.nodeId,fopId:s.actor_id,scannedNodeId:b.nodeId,scannedCoreUids:b.scannedCoreUids,operationId:b.operationId,nfcProof:{id:b.proofId},nfcGrantId:b.nfcGrantId})});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/evac/final/check'){
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
+        const team=core.db.prepare('SELECT * FROM evac_teams WHERE event_id=? AND team_id=? AND (pioneer_a=? OR pioneer_b=?)').get(s.event_id,b.teamId,s.actor_id,s.actor_id);
+        if(!team)throw Error('EVAC_CARRIER_NOT_ASSIGNED');
+        const cargo=core.db.prepare("SELECT core_id,uid,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO' ORDER BY core_id").all(s.event_id,s.actor_id);
+        if(cargo.length!==3)throw Error('EVAC_CARGO_OWNERSHIP_CHANGED');
+        const uid=normalizeUid(b.selectedCoreUid),selected=cargo.find(c=>normalizeUid(c.uid)===uid);if(!selected)throw Error('EVAC_FINAL_CORE_SET_MISMATCH');
+        const operationId=b.operationId||('EVAC-UP-'+randomUUID()),proof=labEvacNfc.issue({eventId:s.event_id,actorId:s.actor_id,command:'EVAC_FINAL_UPLOAD',targetType:'HQ',targetId:'HQ',operationId});
+        return json(res,200,{ok:true,teamId:b.teamId,operationId,coreIds:cargo.map(c=>c.core_id),selectedCoreId:selected.core_id,selectedEnergy:selected.visible_energy,...proof});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/evac/final/confirm'){
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
+        if(!runtime.evac.flow)throw Error('EVAC_NFC_VERIFIER_REQUIRED');
+        return json(res,200,{ok:true,...runtime.evac.flow.upload({eventId:s.event_id,teamId:b.teamId,carrierId:s.actor_id,operationId:b.operationId,coreIds:b.coreIds,selectedCoreId:b.selectedCoreId,nfcProof:{id:b.proofId},nfcGrantId:b.nfcGrantId})});
       }
 
       // Founder only. No event initialization/deployment endpoint exists in this Lab.
