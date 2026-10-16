@@ -117,7 +117,7 @@ function renderFounder(v){
   const nodes=Object.fromEntries((v.overview.nodes||[]).map(x=>[x.state,x.count]));
   const canEvac=v.allowedActions.includes('EVAC_START');
   const canComplete=v.allowedActions.includes('EVAC_COMPLETE');
-  return `<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+  return `${['READY','INITIALIZED'].includes(v.event.state)?`<section class="card"><small>FOUNDER // HARDWARE</small><h3>NFC REGISTRIEREN</h3><p>Tag scannen und eindeutig zuordnen. N-Cores starten im HQ-Bestand.</p><label>TYP<select id="regKind"><option value="CORE">N-Core</option><option value="CARD">Access Card</option><option value="NODE">Node</option><option value="HQ">HQ-Uploadpunkt</option></select></label><label>KENNUNG<input id="regId" placeholder="NC-001 / P9003 / NODE-001" /></label><label>E-WERT (N-CORE)<input id="regEnergy" type="number" min="1" max="9999" placeholder="Laserwert" /></label><button id="regScan" class="primary">NFC SCANNEN UND REGISTRIEREN</button><div id="regOut" class="feedback" role="status"></div></section>`:''}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
 }
 
 function bindRole(){
@@ -127,6 +127,7 @@ function bindRole(){
   $('catchScan')?.addEventListener('click',scanCatch);
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
+  $('regScan')?.addEventListener('click',registerFounderHardware);
   $('founderEvacStart')?.addEventListener('click',startFounderEvac);
   $('founderEvacComplete')?.addEventListener('click',completeFounderEvac);
   $('evacFopOpen')?.addEventListener('click',openFopEvac);
@@ -356,6 +357,18 @@ async function confirmEvacFinal(){
     const r=await api('/api/evac/final/confirm',{method:'POST',data:{teamId:evacFlow.teamId,operationId:evacFlow.operationId,coreIds:evacFlow.coreIds,selectedCoreId:evacFlow.selectedCoreId,proofId:evacFlow.proofId,nfcGrantId:evacFlow.nfcGrantId}});
     sessionStorage.removeItem('nodiv-v2-evac-final-op');phase('success',`Final Upload abgeschlossen // ${r.energy} E gesichert.`);await refreshRole({quiet:true});await openPioneerEvac();
   }catch(e){phase('error',friendly(e));}
+}
+
+async function registerFounderHardware(){
+  const kind=$('regKind')?.value,id=$('regId')?.value?.trim().toUpperCase(),energy=Number($('regEnergy')?.value);
+  try{
+    if(!id)throw Error('KENNUNG_FEHLT');
+    if(kind==='CORE'&&(!Number.isInteger(energy)||energy<1))throw Error('E_WERT_FEHLT');
+    const uid=await nfc('HARDWARE '+kind);
+    const result=await api('/api/founder/register',{method:'POST',data:{role:kind,id,uid,...(kind==='CORE'?{energy}:{})}});
+    setFeedback('regOut',`Registriert: ${result.id} // ${result.uid}${kind==='CORE'?` // ${result.energy} E`:''}`);
+    phase('success','Hardware erfolgreich registriert.');
+  }catch(e){setFeedback('regOut',friendly(e),true);phase('error',friendly(e));}
 }
 
 async function startFounderEvac(){
