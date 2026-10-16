@@ -48,6 +48,7 @@ Neu `v2/server/hq-access.mjs`:
 - Claim → serverseitige Auswahlprüfung → Commit.
 - Request-/Upload-Replay ohne Doppelabbuchung.
 - verlorene Confirm-Antwort kann mit derselben Operation sicher wiederholt werden.
+- Secure-Approach-/HQ-Zustand bleibt über SQLite-Runtime-Neustart erhalten, ohne zweite Abbuchung.
 - Reservierung wird nach erfolgreichem Upload atomar freigegeben.
 
 ### Voll-Upload → Pflicht-RE-SUPPLY
@@ -120,8 +121,8 @@ Rollenführung:
 
 ## Automatisierte Nachweise
 
-GitHub Actions Run `38936768430` auf Commit `e64b108cdc027bf826b99e35d9f0f4c406026c4f`:
-- Server regression: **141/141 bestanden**.
+GitHub Actions Run `38937224957` auf Commit `b19637fc9146f6e45077d8f51773554003608cd9`:
+- Server regression: **142/142 bestanden**.
 - Mini-PC lab regression: **9/9 bestanden**.
 - Browser client syntax: **bestanden**.
 
