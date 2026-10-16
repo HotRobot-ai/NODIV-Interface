@@ -66,6 +66,9 @@ test('BLOCK05 HQ: claim -> authorize -> upload commits on one SQLite truth and f
     assert.equal(f.c.core('E','P1B').owner_type,'HQ');
     assert.equal(f.runtime.hq.terminalState({eventId:'E',pioneerId:'P1'}).state,'GREEN');
     assert.equal(f.c.db.prepare("SELECT COUNT(*) n FROM reservations WHERE event_id='E' AND kind='SECURE_APPROACH'").get().n,0);
+    const uploadReplay=f.runtime.hq.confirm({eventId:'E',pioneerId:'P1',orderId:claim.orderId,operationId:'UPLOAD-1'});
+    assert.equal(uploadReplay.replayed,true);
+    assert.equal(f.c.balance('E','P1'),850);
 
     const claimReplay=f.runtime.hq.claim({eventId:'E',pioneerId:'P1',bayId:'HQ-01',operationId:'CLAIM-1'});
     assert.equal(claimReplay.replayed,true);
