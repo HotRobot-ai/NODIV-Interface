@@ -8,7 +8,7 @@ Dieses Paket ist für den ersten zusammenhängenden BLOCK-06-Durchlauf auf Gamin
 
 Nicht die alten Ersttest-Skripte verwenden. Der verbindliche Einstieg ist:
 
-`NODIV-V2-STARTER.cmd`
+im Release zuerst `NODIV-V2-BLOCK06A-STARTEN.cmd` (ruft intern `NODIV-V2-STARTER.cmd` auf)
 
 Der Starter bietet:
 
@@ -21,9 +21,9 @@ Der Starter bietet:
 - Node.js 24
 - Tailscale auf Gaming-PC und Smartphone
 - Android/Chrome mit Web NFC
-- reale Access Cards für Founder, FOP, zwei Pioneer, Local und Unbound
+- reale Access Cards für Founder, FOP, Pioneer, Local und Unbound; ein zweiter Pioneer wird nur für den repräsentativen EVAC-Teamtest benötigt, nicht für Catch
 - vier reale Node-Tags für den kompakten 1/2/3-Exchange-Durchlauf
-- zwölf reale N-Cores mit ihren tatsächlich eingravierten E-Werten
+- mindestens zwölf reale N-Cores für diesen Test mit ihren tatsächlich eingravierten E-Werten; die Founder-Verwaltung selbst ist nicht auf zwölf begrenzt
 - realer HQ-Upload-Tag
 
 ## Datenhaltung
@@ -42,6 +42,7 @@ Synthetische EVAC-Supportdaten existieren ausschließlich dort und niemals im re
 
 ## Wichtig
 
+- Founder-Hardware wird rollen- und scanorientiert registriert; technische Core-Kennungen werden automatisch vergeben.\n- Passive Statusupdates dürfen aktive Formulare, Auswahl oder Fokus nicht zerstören.\n
 - Keine erfundenen UIDs oder E-Werte eintragen.
 - Bei einem Fehler die SQLite-Datei nicht löschen.
 - Fehlermeldung und vorherige Aktion festhalten und den bestehenden Zustand erhalten.
