@@ -11,6 +11,7 @@ import { seedTestDatabase } from './seed.mjs';
 import { labConfig } from './config.mjs';
 import { createLabEvacNfc } from './evac-lab-nfc.mjs';
 import { createFounderRegistry } from './founder-registry.mjs';
+import { createDesktopTest } from './desktop-test.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const CLIENT=join(ROOT,'client');
@@ -48,7 +49,7 @@ function createBlock06Realtest(core,mode){
     started_at INTEGER
   )`);
   const required=[['FOUNDER-TEST','FOUNDER'],['FOP-TEST','FOP'],['P9003','PIONEER'],['P9004','PIONEER'],['LOCAL-TEST','LOCAL'],['UNBOUND-TEST','UNBOUND']];
-  const requireMode=()=>{if(mode!=='registration')throw Error('REALTEST_REGISTRATION_MODE_REQUIRED')};
+  const requireMode=()=>{if(!['registration','desktop'].includes(mode))throw Error('REALTEST_REGISTRATION_MODE_REQUIRED')};
   const receipt=eventId=>{
     const r=db.prepare('SELECT * FROM lab_block06_setup WHERE event_id=?').get(eventId);
     if(!r)return null;
@@ -176,8 +177,12 @@ function createBlock06Realtest(core,mode){
     const current=fopLoadoutStatus(eventId,fopId,nodeId);
     if(current.transit.length>=3)return {...current,replayed:true};
     if(current.transit.length!==0)throw Error('FOP_LOADOUT_PARTIAL_STATE');
-    const setup=receipt(eventId);if(!setup)throw Error('SETUP_RECEIPT_MISSING');
-    const protectedIds=new Set([...(setup.plan.restoreReserve||[]),setup.plan.resupply].filter(Boolean));
+    const setup=receipt(eventId);
+    if(mode==='registration'&&!setup)throw Error('SETUP_RECEIPT_MISSING');
+    const protectedIds=new Set();
+    if(mode==='registration'&&setup){
+      for(const id of [...(setup.plan.restoreReserve||[]),setup.plan.resupply].filter(Boolean))protectedIds.add(id);
+    }
     for(const m of db.prepare("SELECT core_id FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").all(eventId,core.clock()))protectedIds.add(m.core_id);
     const candidates=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY core_id").all(eventId).filter(x=>!protectedIds.has(x.core_id));
     if(candidates.length<3)throw Error('FOP_LOADOUT_UNAVAILABLE');
@@ -204,8 +209,9 @@ export function createLabApp(config=labConfig()){
   const core=runtime.core;
   labEvacNfc=createLabEvacNfc(core);
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
-  const founderRegistry=createFounderRegistry(core.db);
+  const founderRegistry=createFounderRegistry(core.db,{mode:config.mode});
   const realtest=createBlock06Realtest(core,config.mode);
+  const desktopTest=createDesktopTest(core,config.mode);
 
   function evacSupportState(eventId){
     if(config.mode!=='evac')return null;
@@ -260,7 +266,7 @@ export function createLabApp(config=labConfig()){
     const started=performance.now();
     try{
       const u=new URL(req.url,'http://local');
-      if(req.method==='GET'&&u.pathname==='/health') return json(res,200,{ok:true,service:'NODIV-V2-MINIPC-LAB',eventId:config.eventId,db:'sqlite',uptimeSec:Math.round(process.uptime()),secure:req.socket.encrypted===true});
+      if(req.method==='GET'&&u.pathname==='/health') return json(res,200,{ok:true,service:'NODIV-V2-MINIPC-LAB',mode:config.mode,eventId:config.eventId,db:'sqlite',uptimeSec:Math.round(process.uptime()),secure:req.socket.encrypted===true});
       if(req.method==='GET'&&u.pathname==='/api/state'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.state(s)});}
       if(req.method==='GET'&&u.pathname==='/api/role/state'){
         const s=store.session(bearer(req)),view=runtime.roles.view({eventId:s.event_id,actorId:s.actor_id});
@@ -270,7 +276,15 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='READY')view.nextAction={code:'REALTEST_PREFLIGHT',label:view.realtest.canInitialize?'EVENT VORBEREITEN':'HARDWARE VERVOLLSTÄNDIGEN',detail:view.realtest.canInitialize?'Registrierung vollständig. Initialisierung kann gesichert werden.':'Registriere die noch fehlenden Access Cards, Nodes, N-Cores und den HQ-Tag.'};
           if(view.event.state==='INITIALIZED')view.nextAction={code:'REALTEST_START',label:view.realtest.canStart?'EVENT STARTEN':'START BLOCKIERT',detail:view.realtest.canStart?'Vorbereitung gespeichert. Feldbetrieb kann aktiviert werden.':'Start ist noch blockiert. Prüfe die Hardwareübersicht und den gespeicherten Teststand.'};
         }
-        if(config.mode==='registration'&&s.role==='PIONEER'&&!view.mission){view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(config.mode==='desktop'&&s.role==='FOUNDER'){
+          view.hardware=founderRegistry.list(s.event_id);
+          view.desktopTest=desktopTest.status(s.event_id);
+          if(view.event.state==='READY')view.nextAction={code:'DESKTOP_TEST_PREP',label:'TESTSPIEL VORBEREITEN',detail:'Der aktuelle reale Hardwarebestand wird verwendet. Fehlende Rollen oder Hardware werden nicht erfunden.'};
+          if(view.event.state==='INITIALIZED')view.nextAction={code:'DESKTOP_TEST_START',label:'TESTSPIEL STARTEN',detail:'Der vorbereitete Bestand kann jetzt in den Feldbetrieb wechseln.'};
+          if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
+          if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Es wurde kein EVAC-Abschluss erzeugt.'};
+        }
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
       }
@@ -325,7 +339,7 @@ export function createLabApp(config=labConfig()){
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length,transit,canRequestLoadout:config.mode==='registration'&&action==='INSTALL'&&transit.length<3});
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
@@ -447,6 +461,19 @@ export function createLabApp(config=labConfig()){
       }
       if(req.method==='POST'&&u.pathname==='/api/founder/realtest/start'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...realtest.start(s.event_id)});
+      }
+
+      if(req.method==='GET'&&u.pathname==='/api/founder/test/status'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.status(s.event_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/initialize'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.initialize(s.event_id,s.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/start'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.start(s.event_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/end'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.end(s.event_id,s.actor_id)});
       }
       if(req.method==='POST'&&u.pathname==='/api/mission/assign-next'){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');return json(res,200,{ok:true,...realtest.assignRestore(s.event_id,s.actor_id)});
