@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {Worker} from 'node:worker_threads';
 import {SqliteGameCore} from './sqlite-core.mjs';
 import {createV2GameplayRuntime} from './gameplay-runtime.mjs';
 
@@ -123,4 +124,52 @@ test('BLOCK04: integrity checker rejects orphan ownership instead of normalizing
   c.seedEvent('E');c.seedCore('E',{id:'ORPHAN',uid:'UO',energy:100,ownerType:'PIONEER',ownerId:'MISSING',status:'FIELD'});
   assert.throws(()=>c.assertIntegrity('E'),/EVENT_INTEGRITY_VIOLATION/);
  }finally{c.close()}
+});
+
+
+test('BLOCK04: simultaneous SQLite writers serialize; exactly one conflicting Exchange commits',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'nodiv-b04-race-'));const db=join(dir,'game.sqlite');
+ let core=new SqliteGameCore(db,()=>1000);
+ try{
+  core.seedEvent('E');core.seedActor('E','P1','PIONEER',1);core.seedActor('E','P2','PIONEER',1);seedNode(core,'E','N');
+  core.seedCore('E',{id:'A',uid:'UA',energy:250,ownerType:'PIONEER',ownerId:'P1',status:'FIELD'});
+  core.seedCore('E',{id:'B',uid:'UB',energy:260,ownerType:'PIONEER',ownerId:'P2',status:'FIELD'});
+  core.close();core=null;
+  const gate=new SharedArrayBuffer(4),view=new Int32Array(gate);
+  const operation=(actorId,operationId,give,take)=>({eventId:'E',operationId,actorId,kind:'EXCHANGE',moves:[
+   {id:give,fromType:'PIONEER',fromId:actorId,toType:'NODE',toId:'N',status:'DEPLOYED'},
+   {id:take,fromType:'NODE',fromId:'N',toType:'PIONEER',toId:actorId,status:'FIELD'}
+  ]});
+  const workers=[
+   new Worker(new URL('./block04-concurrency-worker.mjs',import.meta.url),{workerData:{path:db,gate,operation:operation('P1','RACE-1','A','NC1')}}),
+   new Worker(new URL('./block04-concurrency-worker.mjs',import.meta.url),{workerData:{path:db,gate,operation:operation('P2','RACE-2','B','NC2')}})
+  ];
+  const ready=w=>new Promise((resolve,reject)=>{const on=m=>{if(m?.ready){w.off('message',on);resolve()}};w.on('message',on);w.once('error',reject)});
+  await Promise.all(workers.map(ready));
+  const result=w=>new Promise((resolve,reject)=>{w.once('message',resolve);w.once('error',reject)});
+  const results=workers.map(result);Atomics.store(view,0,1);Atomics.notify(view,0,2);
+  const done=await Promise.all(results);
+  assert.equal(done.filter(x=>x.ok).length,1,JSON.stringify(done));
+  assert.deepEqual(done.filter(x=>!x.ok).map(x=>x.error),['NODE_EXCHANGE_COOLDOWN']);
+  core=new SqliteGameCore(db,()=>1000);assert.equal(core.db.prepare("SELECT COUNT(*) n FROM operations WHERE kind='EXCHANGE'").get().n,1);
+  assert.equal(core.db.prepare("SELECT COUNT(*) n FROM cores WHERE owner_type='NODE' AND owner_id='N'").get().n,3);
+  assert.equal(core.assertIntegrity('E').ok,true);
+ }finally{try{core?.close()}catch{}rmSync(dir,{recursive:true,force:true})}
+});
+
+test('BLOCK04: interrupted file-backed transaction rolls back cleanly and can be retried after restart',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'nodiv-b04-interrupt-'));const db=join(dir,'game.sqlite');
+ let core=new SqliteGameCore(db,()=>1000);
+ const op={eventId:'E',operationId:'INT-X',actorId:'P1',kind:'EXCHANGE',moves:[
+  {id:'A',fromType:'PIONEER',fromId:'P1',toType:'NODE',toId:'N',status:'DEPLOYED'},
+  {id:'NC1',fromType:'NODE',fromId:'N',toType:'PIONEER',toId:'P1',status:'FIELD'}
+ ]};
+ try{
+  core.seedEvent('E');core.seedActor('E','P1','PIONEER',1);seedNode(core,'E','N');core.seedCore('E',{id:'A',uid:'UA',energy:250,ownerType:'PIONEER',ownerId:'P1',status:'FIELD'});
+  assert.throws(()=>core.run(op,()=>{throw Error('SIMULATED_INTERRUPTION')}),/SIMULATED_INTERRUPTION/);
+  core.close();core=new SqliteGameCore(db,()=>1000);
+  assert.equal(core.core('E','A').owner_id,'P1');assert.equal(core.core('E','NC1').owner_id,'N');
+  assert.equal(core.db.prepare("SELECT COUNT(*) n FROM operations WHERE operation_id='INT-X'").get().n,0);
+  assert.equal(core.run(op).replayed,false);assert.equal(core.assertIntegrity('E').ok,true);
+ }finally{try{core?.close()}catch{}rmSync(dir,{recursive:true,force:true})}
 });

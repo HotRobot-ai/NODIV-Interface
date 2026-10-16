@@ -164,8 +164,8 @@ export class SqliteGameCore {
         if(this.db.prepare('SELECT state FROM nodes WHERE event_id=? AND node_id=?').get(eventId,nodeId)?.state!=='INSTALLED') this._fail('NODE_NOT_INSTALLED');
         const nodeCores=this.db.prepare("SELECT core_id,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=?").all(eventId,nodeId);
         if(nodeCores.length!==3||nodeCores.some(c=>c.status!=='DEPLOYED')) this._fail('NODE_REQUIRES_THREE_CORES');
-        for(const m of incoming){const c=this.core(eventId,m.id);if(!c||c.status!=='FIELD')this._fail('EXCHANGE_PERSONAL_CORE_INVALID')}
-        for(const m of outgoing){const c=this.core(eventId,m.id);if(!c||c.status!=='DEPLOYED')this._fail('EXCHANGE_NODE_CORE_INVALID')}
+        for(const m of incoming){const c=this.core(eventId,m.id);if(!c)this._fail('CORE_UNKNOWN');if(c.owner_type!==m.fromType||c.owner_id!==m.fromId)this._fail('OWNERSHIP_CHANGED');if(c.status!=='FIELD')this._fail('EXCHANGE_PERSONAL_CORE_INVALID')}
+        for(const m of outgoing){const c=this.core(eventId,m.id);if(!c)this._fail('CORE_UNKNOWN');if(c.owner_type!==m.fromType||c.owner_id!==m.fromId)this._fail('OWNERSHIP_CHANGED');if(c.status!=='DEPLOYED')this._fail('EXCHANGE_NODE_CORE_INVALID')}
         this._assertNodeUnlocked(eventId,actorId,nodeId);
         this._assertMissionFree(eventId,nodeId);
         this._assertReservationFree(eventId,operationId,actorId,nodeId,moves.map(m=>m.id));
