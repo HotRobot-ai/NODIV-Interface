@@ -24,9 +24,9 @@ export function createEvacFinalUpload(core,{verifyNfcProof}={}) {
    if(!db.prepare('SELECT 1 FROM evac_recoveries WHERE event_id=? AND node_id=? AND carrier_id=?').get(eventId,a.node_id,carrierId))throw Error('EVAC_NODE_NOT_RECOVERED');
    const expected=JSON.parse(a.core_snapshot).map(c=>c.core_id).sort();
    if(ids!==JSON.stringify(expected))throw Error('EVAC_FINAL_CORE_SET_MISMATCH');
-   const cargo=db.prepare("SELECT core_id,actual_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO' ORDER BY core_id").all(eventId,carrierId);
+   const cargo=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO' ORDER BY core_id").all(eventId,carrierId);
    if(cargo.length!==3||JSON.stringify(cargo.map(c=>c.core_id))!==ids)throw Error('EVAC_CARGO_OWNERSHIP_CHANGED');
-   const energy=cargo.find(c=>c.core_id===selectedCoreId)?.actual_energy;
+   const energy=cargo.find(c=>c.core_id===selectedCoreId)?.visible_energy;
    if(!Number.isSafeInteger(energy)||energy<=0)throw Error('EVAC_FINAL_ENERGY_INVALID');
    consumeNfcGrant(db,{id:nfcGrantId,eventId,actorId:carrierId,command:'EVAC_FINAL_UPLOAD',targetType:'HQ',targetId:'HQ',operationId});
    for(const c of cargo){
