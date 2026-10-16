@@ -13,6 +13,7 @@ export function createFounderRegistry(db){
     const kind=String(role||'').toUpperCase();
     if(!['CARD','NODE','CORE','HQ'].includes(kind))reject('REGISTRATION_INVALID');
     if(kind==='CORE'&&(!Number.isInteger(energy)||energy<1||energy>9999))reject('REGISTRATION_ENERGY_INVALID');
+    if(kind==='CARD'&&key==='FOUNDER-TEST')reject('REGISTRATION_FOUNDER_BOOTSTRAP_PROTECTED');
     const existing=[
       db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND uid=?').get(eventId,tag),
       db.prepare('SELECT 1 FROM lab_node_tags WHERE event_id=? AND uid=?').get(eventId,tag),
