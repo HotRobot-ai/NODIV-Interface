@@ -485,7 +485,8 @@ async function registerFounderHardware(){
     const uid=await nfc(kind==='CARD'?'ACCESS CARD':kind==='CORE'?'N-CORE':kind);
     phase('check','UID erkannt. Zuordnung wird serverseitig geprüft.');
     const result=await api('/api/founder/register',{method:'POST',data:{role:kind,id,uid,...(actorRole?{actorRole}:{}),...(kind==='CORE'?{energy}:{})}});
-    setFeedback('regOut',`Registriert: ${result.actorRole?`${ROLE_LABEL[result.actorRole]} · `:''}${result.id}${kind==='CORE'?` · ${result.energy} E`:''}`);
+    const late=result.latePioneer?.assigned?` · Start-Core ${result.latePioneer.coreId} (${result.latePioneer.energy} E) zugewiesen`:result.latePioneer?.reason==='NO_REAL_RESERVE_CORE'?' · keine reale HQ-Reserve für Start-Core vorhanden':'';
+    setFeedback('regOut',`Registriert: ${result.actorRole?`${ROLE_LABEL[result.actorRole]} · `:''}${result.id}${kind==='CORE'?` · ${result.energy} E`:''}${late}`);
     phase('success','Hardware eindeutig gespeichert.');await refreshRole({quiet:true});
   }catch(e){setFeedback('regOut',friendly(e),true);phase('error',friendly(e));}
 }
