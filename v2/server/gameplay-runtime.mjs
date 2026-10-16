@@ -3,6 +3,7 @@ import {CatchTransaction} from './catch-transaction.mjs';
 import {createEvacTeamReservations} from './evac-team-reservations.mjs';
 import {createEvacFlowIntegration} from './evac-flow-integration.mjs';
 import {createEvacEventCompletion} from './evac-event-completion.mjs';
+import {createEvacFounderStart} from './evac-founder-start.mjs';
 import {createHqAccess} from './hq-access.mjs';
 import {createRoleViews} from './role-views.mjs';
 
@@ -26,6 +27,7 @@ export function createV2GameplayRuntime(path=':memory:', {
   const catchTransaction=new CatchTransaction(core);
   const evacTeams=createEvacTeamReservations(core);
   const evacCompletion=createEvacEventCompletion(core);
+  const evacStart=createEvacFounderStart(core);
   const evacFlow=(typeof verifyRecoveryNfcProof==='function'&&typeof verifyUploadNfcProof==='function')
     ? createEvacFlowIntegration(core,{verifyRecoveryNfcProof,verifyUploadNfcProof})
     : null;
@@ -96,7 +98,7 @@ export function createV2GameplayRuntime(path=':memory:', {
     exchange,restore,upload,resupply,hq,roles,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
-    evac:{teams:evacTeams,flow:evacFlow,completion:evacCompletion},
+    evac:{start:evacStart,teams:evacTeams,flow:evacFlow,completion:evacCompletion},
     maintenance:{recoverExpiredMissions:(eventId)=>core.recoverExpiredMissions(eventId),assertIntegrity:(eventId)=>core.assertIntegrity(eventId)},
     close:()=>core.close(),
   };
