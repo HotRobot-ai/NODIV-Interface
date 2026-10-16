@@ -13,11 +13,13 @@ export function loadDotEnv(path=resolve(process.cwd(),'.env')) {
 
 export function labConfig(){
   loadDotEnv();
+  const mode=process.env.NODIV_LAB_MODE||'legacy';
   return {
+    mode,
     host:process.env.NODIV_HOST||'127.0.0.1',
     port:Number(process.env.NODIV_PORT||8787),
-    dbPath:resolve(process.env.NODIV_DB_PATH||'./data/nodiv-v2-test.sqlite'),
-    eventId:process.env.NODIV_TEST_EVENT||'TEST-V2',
+    dbPath:resolve(process.env.NODIV_DB_PATH||(mode==='registration'?'./data/nodiv-v2-registration.sqlite':'./data/nodiv-v2-test.sqlite')),
+    eventId:process.env.NODIV_TEST_EVENT||(mode==='registration'?'REG-V2':'TEST-V2'),
     tlsKey:process.env.NODIV_TLS_KEY||'',
     tlsCert:process.env.NODIV_TLS_CERT||'',
     sessionTtl:Number(process.env.NODIV_SESSION_TTL||3600),
