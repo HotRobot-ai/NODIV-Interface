@@ -100,13 +100,44 @@ export function createDesktopTest(core, mode){
     return {roles,pioneers,fops,hunters,nodes:nodes.map(x=>x.id),hq:hq.map(x=>x.id),pioneerAssignments,fopAssignments,afterStartReserve,playable};
   }
 
+  function currentCapabilities(eventId){
+    const enrolled=cards(eventId), roles=byRole(enrolled);
+    const registeredPioneers=new Set(enrolled.filter(x=>x.role==='PIONEER').map(x=>x.id));
+    const registeredFops=new Set(enrolled.filter(x=>x.role==='FOP').map(x=>x.id));
+    const pioneerField=db.prepare("SELECT owner_id,COUNT(*) count FROM cores WHERE event_id=? AND owner_type='PIONEER' AND status='FIELD' GROUP BY owner_id").all(eventId)
+      .filter(x=>registeredPioneers.has(x.owner_id)).reduce((sum,x)=>sum+x.count,0);
+    const fopTransit=db.prepare("SELECT owner_id,COUNT(*) count FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND status='IN_TRANSIT' GROUP BY owner_id").all(eventId)
+      .filter(x=>registeredFops.has(x.owner_id)).reduce((sum,x)=>sum+x.count,0);
+    const nodes=nodeTags(eventId);
+    const installed=nodes.filter(x=>x.state==='INSTALLED').length;
+    const reserve=reserveCores(eventId).length;
+    const hq=hqRows(eventId).length;
+    const canBuildNode=installed>0||(roles.FOP>0&&nodes.length>0&&(fopTransit>=3||reserve>=3));
+    const exchange=pioneerField>0&&canBuildNode;
+    let evacState=null;
+    try{evacState=db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state||null}catch{}
+    return [
+      {code:'ROLE_LOGIN',available:enrolled.length>1,detail:enrolled.length>1?'Registrierte Rollen können sich mit ihren echten Access Cards anmelden.':'Noch keine zusätzliche Rollenkarte registriert.'},
+      {code:'FOP_NODE',available:canBuildNode,detail:canBuildNode?'FOP kann einen real registrierten Node mit exakt drei echten Cores betreiben.':'Benötigt FOP, mindestens einen registrierten Node und drei reale Transit-/Reserve-Cores.'},
+      {code:'EXCHANGE',available:exchange,detail:exchange?'Pioneer-Exchange ist mit dem realen Bestand erreichbar.':'Benötigt Pioneer mit realem FIELD-Core und einen installierten oder installierbaren 3-Core-Node.'},
+      {code:'CATCH',available:pioneerField>0&&(roles.LOCAL>0||roles.UNBOUND>0),detail:pioneerField>0&&(roles.LOCAL>0||roles.UNBOUND>0)?'Catch ist mit Pioneer + Local oder Unbound erreichbar.':'Benötigt Pioneer mit realem Core und Local oder Unbound.'},
+      {code:'HQ_UPLOAD',available:pioneerField>0&&hq>0,detail:pioneerField>0&&hq>0?'HQ Upload ist mit realem HQ-Tag erreichbar.':'Benötigt Pioneer mit realem Core und registrierten HQ-Tag.'},
+      {code:'RESTORE',available:exchange&&reserve>0,detail:exchange&&reserve>0?'RESTORE kann nach der bestehenden Pioneer-Qualifikation aus echter HQ-Reserve zugewiesen werden.':'Benötigt Exchange-fähigen Aufbau plus mindestens einen echten Reserve-Core.'},
+      {code:'RE_SUPPLY',available:exchange&&hq>0&&reserve>0,detail:exchange&&hq>0&&reserve>0?'RE-SUPPLY bleibt über den bestehenden Voll-Upload-Pfad erreichbar.':'Benötigt Exchange/HQ sowie echte Reserve für den Pflichtauftrag.'},
+      {code:'SECURE_APPROACH',available:pioneerField>0&&hq>0,detail:pioneerField>0&&hq>0?'Secure Approach bleibt unverändert; Aktivierung erst bei mindestens 150 E gesicherter Energie.':'Benötigt Pioneer mit realem Core und registrierten HQ-Tag.'},
+      {code:'EVAC',available:['PRE_EVAC_READY','STARTED'].includes(evacState),detail:['PRE_EVAC_READY','STARTED'].includes(evacState)?'Die unveränderten regulären EVAC-Gates sind serverseitig erreicht.':'EVAC wird im TESTMODUS nicht simuliert oder freigeschaltet.'}
+    ];
+  }
+
   function status(eventId){
     requireMode();
     const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
     if(!event) reject('EVENT_UNKNOWN');
     const enrolled=cards(eventId), nodes=nodeTags(eventId), cores=db.prepare('SELECT COUNT(*) n FROM cores WHERE event_id=?').get(eventId).n, hq=hqRows(eventId);
     const roles=byRole(enrolled), saved=receipt(eventId);
-    const plan=saved?.plan||makePlan(eventId);
+    const basePlan=saved?.plan||makePlan(eventId);
+    const playable=currentCapabilities(eventId);
+    const plan={...basePlan,playable};
     return {
       mode:'TESTMODUS',
       eventState:event.state,
@@ -116,7 +147,7 @@ export function createDesktopTest(core, mode){
       canEnd:['READY','INITIALIZED','FIELD_ACTIVE'].includes(event.state),
       ended:event.state==='TEST_ENDED',
       counts:{cards:enrolled.length,nodes:nodes.length,cores,hq:hq.length,roles},
-      playable:plan.playable||[],
+      playable,
       plan,
       endSnapshot:saved?.endSnapshot||null
     };
@@ -215,5 +246,24 @@ export function createDesktopTest(core, mode){
     }catch(error){db.exec('ROLLBACK');throw error}
   }
 
-  return {status,initialize,start,end};
+  function attachLatePioneer(eventId,actorId){
+    requireMode();
+    const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
+    if(!event||!['INITIALIZED','FIELD_ACTIVE'].includes(event.state))return {assigned:false,reason:'TEST_NOT_PREPARED'};
+    const actor=db.prepare('SELECT role,capacity,active FROM actors WHERE event_id=? AND actor_id=?').get(eventId,actorId);
+    if(actor?.role!=='PIONEER'||actor.active!==1)return {assigned:false,reason:'PIONEER_REQUIRED'};
+    if(db.prepare("SELECT 1 FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD' LIMIT 1").get(eventId,actorId))return {assigned:false,reason:'ALREADY_HAS_FIELD_CORE'};
+    const activeMissionIds=new Set(db.prepare("SELECT core_id FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").all(eventId,core.clock()).map(x=>x.core_id));
+    const candidate=reserveCores(eventId).find(x=>!activeMissionIds.has(x.id));
+    if(!candidate)return {assigned:false,reason:'NO_REAL_RESERVE_CORE'};
+    db.exec('BEGIN IMMEDIATE');
+    try{
+      const changed=db.prepare("UPDATE cores SET owner_type='PIONEER',owner_id=?,status='FIELD',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,candidate.id).changes;
+      if(changed!==1)reject('DESKTOP_TEST_CORE_CHANGED');
+      core.assertIntegrity(eventId);db.exec('COMMIT');
+      return {assigned:true,coreId:candidate.id,energy:candidate.energy};
+    }catch(error){db.exec('ROLLBACK');throw error}
+  }
+
+  return {status,initialize,start,end,attachLatePioneer};
 }
