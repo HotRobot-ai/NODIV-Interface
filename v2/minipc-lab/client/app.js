@@ -22,6 +22,8 @@ const ERROR_TEXT={
   MISSION_NODE_MISMATCH:'Falscher Ziel-Node. Prüfe deinen Auftrag.',
   MISSION_CORE_MISMATCH:'Dieser N-Core gehört nicht zu deinem aktuellen Auftrag.',
   MISSION_SCAN_MISMATCH:'Die Scans passen nicht mehr zum aktuellen Serverzustand.',
+  EVAC_COMPLETION_BLOCKED:'Eventabschluss noch nicht freigegeben. EVAC vollständig fortsetzen.',
+  EVAC_PENDING_OPERATIONS:'Eventabschluss wartet noch auf offene serverseitige Vorgänge.',
   INSTALL_CARGO_INVALID:'Dieser N-Core gehört nicht zu deinem aktuellen FOP-Loadout.',
   FOP_THREE_CORES_REQUIRED:'Für die Installation werden exakt drei N-Cores benötigt.',
   EVAC_NORMAL_ACTION_FROZEN:'Normale Feldaktionen sind während EVAC gesperrt.',
@@ -114,7 +116,8 @@ function renderFounder(v){
   const counts=Object.fromEntries((v.overview.roles||[]).map(x=>[x.role,x.count]));
   const nodes=Object.fromEntries((v.overview.nodes||[]).map(x=>[x.state,x.count]));
   const canEvac=v.allowedActions.includes('EVAC_START');
-  return `<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+  const canComplete=v.allowedActions.includes('EVAC_COMPLETE');
+  return `<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div><p>Keine Simulation: angezeigt werden ausschließlich Zustände aus SQLite.</p></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Keine anderen Eventänderungen werden angeboten.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Erst jetzt kann das Event abgeschlossen werden.</p><button id="founderEvacComplete" class="danger">EVENT ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
 }
 
 function bindRole(){
@@ -125,6 +128,7 @@ function bindRole(){
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
   $('founderEvacStart')?.addEventListener('click',startFounderEvac);
+  $('founderEvacComplete')?.addEventListener('click',completeFounderEvac);
   $('evacFopOpen')?.addEventListener('click',openFopEvac);
   $('evacPioneerOpen')?.addEventListener('click',openPioneerEvac);
 }
@@ -356,6 +360,11 @@ async function confirmEvacFinal(){
 
 async function startFounderEvac(){
   try{phase('commit','EVAC-Start wird gegen alle Server-Guards geprüft.');const r=await api('/api/founder/evac/start',{method:'POST',data:{operationId:op('EVAC-START')}});setFeedback('founderOut','Evakuierung gestartet.');phase('success','EVAC aktiv.');await refreshRole({quiet:true});}
+  catch(e){setFeedback('founderOut',friendly(e),true);phase('error',friendly(e));}
+}
+
+async function completeFounderEvac(){
+  try{phase('commit','Eventabschluss wird gegen alle EVAC-Nachweise geprüft.');const r=await api('/api/founder/evac/complete',{method:'POST',data:{operationId:op('EVAC-COMPLETE')}});setFeedback('founderOut','Event abgeschlossen.');phase('success','MISSION WÜRZBURG // EVENT COMPLETED');await refreshRole({quiet:true});}
   catch(e){setFeedback('founderOut',friendly(e),true);phase('error',friendly(e));}
 }
 
