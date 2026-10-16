@@ -26,7 +26,8 @@ test('BLOCK06 registration flow persists start and exposes RESTORE only after qu
     const founder=await fx.login('04FADE0001');
     const register=(role,id,uid,energy)=>fx.call('/api/founder/register',{method:'POST',token:founder.token,data:{role,id,uid,...(energy?{energy}:{})}});
     for(const [id,uid] of [['FOP-TEST','04AA0002'],['P9003','04AA0003'],['P9004','04AA0004'],['LOCAL-TEST','04AA0005'],['UNBOUND-TEST','04AA0006']])await register('CARD',id,uid);
-    await register('NODE','NODE-001','04BB0001');await register('NODE','NODE-002','04BB0002');await register('HQ','HQ-01','04CC0001');
+    for(const [id,uid] of [['NODE-001','04BB0001'],['NODE-002','04BB0002'],['NODE-003','04BB0003'],['NODE-004','04BB0004']])await register('NODE',id,uid);
+    await register('HQ','HQ-01','04CC0001');
     const energies=[500,480,460,400,350,330,310,290,270,250,230,210];
     for(let i=0;i<12;i++)await register('CORE','NC-'+String(i+1).padStart(3,'0'),'04DD'+String(i+1).padStart(4,'0'),energies[i]);
 
