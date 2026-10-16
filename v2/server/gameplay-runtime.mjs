@@ -46,9 +46,9 @@ export function createV2GameplayRuntime(path=':memory:', {
   function restore({eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId,phase,missionId}){
     requiredStrings([eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId,missionId],'RESTORE_CONTEXT_REQUIRED');
     if(![1,2].includes(phase))throw new GameError('RESTORE_PHASE_INVALID');
-    const outgoing=phase===1
-      ? move(outCoreId,'NODE',nodeId,'PIONEER',pioneerId,'FIELD')
-      : move(outCoreId,'NODE',nodeId,'HQ','HQ','RESERVE');
+    // Both RESTORE phases advance the Pioneer by one carried Core.
+    // #1 fills slot 2; #2 fills slot 3. Capacity is increased in the same transaction.
+    const outgoing=move(outCoreId,'NODE',nodeId,'PIONEER',pioneerId,'FIELD');
     return core.run({eventId,operationId,actorId:pioneerId,kind:`RESTORE_${phase}`,missionId,capacityChange:1,moves:[
       move(cargoCoreId,'TRANSIT',pioneerId,'NODE',nodeId,'DEPLOYED'),outgoing,
     ]});

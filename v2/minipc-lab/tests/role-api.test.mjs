@@ -97,5 +97,9 @@ test('BLOCK05 API: EVAC appears only after STARTED and Lab scans still consume V
     const uploaded=await f.call('/api/evac/final/confirm',{method:'POST',token:pioneer.token,data:{teamId:team.teamId,operationId:finalCheck.operationId,coreIds:finalCheck.coreIds,selectedCoreId:finalCheck.selectedCoreId,proofId:finalCheck.proofId,nfcGrantId:finalCheck.nfcGrantId}});
     assert.equal(uploaded.energy,105);
     assert.equal(c.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='HQ' AND status='SECURED' AND core_id IN ('NC-N-001','NC-N-002','NC-N-003')").get(eventId).n,3);
+    await assert.rejects(
+      ()=>f.call('/api/founder/evac/complete',{method:'POST',token:founder.token,data:{operationId:'EVAC-COMPLETE-TOO-EARLY'}}),
+      /EVAC_COMPLETION_BLOCKED/
+    );
   }finally{await f.close()}
 });

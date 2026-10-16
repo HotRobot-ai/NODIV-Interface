@@ -27,22 +27,22 @@ test('restore #1 rejects unavailable node without mutating ownership',()=>{const
 test('restore #1 rejects a transit core assigned to another pioneer',()=>{const g=setup();g.seedActor('E1','P2','PIONEER',1);g.seedCore('E1',{id:'H',uid:'UH',energy:400,ownerType:'TRANSIT',ownerId:'P2',status:'IN_TRANSIT'});qualifyRestore(g,1,'MR1','H');assert.throws(()=>g.run({eventId:'E1',operationId:'bad-transit',actorId:'P1',kind:'RESTORE_1',missionId:'MR1',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N1','NODE','N1','PIONEER','P1')],capacityChange:1}),/RESTORE_TRANSIT_NOT_ASSIGNED/);g.close();});
 
 
-test('restore #2 moves lowest node core to HQ and unlocks third slot atomically',()=>{
+test('restore #2 gives the lowest node core to the Pioneer and fills the third slot atomically',()=>{
  const g=setup();g.db.prepare("UPDATE actors SET capacity=2 WHERE event_id='E1' AND actor_id='P1'").run();
  g.seedCore('E1',{id:'H',uid:'UH',energy:450,ownerType:'TRANSIT',ownerId:'P1',status:'IN_TRANSIT'});qualifyRestore(g,2,'MR2','H');
- const op={eventId:'E1',operationId:'r2',actorId:'P1',kind:'RESTORE_2',missionId:'MR2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N1','NODE','N1','HQ','HQ')],capacityChange:1};
+ const op={eventId:'E1',operationId:'r2',actorId:'P1',kind:'RESTORE_2',missionId:'MR2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N1','NODE','N1','PIONEER','P1')],capacityChange:1};
  assert.equal(g.run(op).replayed,false);assert.equal(g.run(op).replayed,true);
- assert.equal(g.core('E1','N1').owner_type,'HQ');assert.equal(g.core('E1','H').owner_id,'N1');
+ assert.equal(g.core('E1','N1').owner_type,'PIONEER');assert.equal(g.core('E1','N1').owner_id,'P1');assert.equal(g.core('E1','H').owner_id,'N1');
  assert.equal(g.db.prepare("SELECT capacity FROM actors WHERE actor_id='P1'").get().capacity,3);g.close();
 });
 test('restore #2 rejects incorrect Pioneer progression without mutations',()=>{
  const g=setup();g.seedCore('E1',{id:'H',uid:'UH',energy:450,ownerType:'TRANSIT',ownerId:'P1'});
- assert.throws(()=>g.run({eventId:'E1',operationId:'r2bad',actorId:'P1',kind:'RESTORE_2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N1','NODE','N1','HQ','HQ')],capacityChange:1}),/RESTORE_2_INVALID_SHAPE/);
+ assert.throws(()=>g.run({eventId:'E1',operationId:'r2bad',actorId:'P1',kind:'RESTORE_2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N1','NODE','N1','PIONEER','P1')],capacityChange:1}),/RESTORE_2_INVALID_SHAPE/);
  assert.equal(g.core('E1','H').owner_type,'TRANSIT');g.close();
 });
 test('restore #2 rejects a higher-energy displaced core',()=>{
  const g=setup();g.db.prepare("UPDATE actors SET capacity=2 WHERE actor_id='P1'").run();g.seedCore('E1',{id:'H',uid:'UH',energy:450,ownerType:'TRANSIT',ownerId:'P1',status:'IN_TRANSIT'});qualifyRestore(g,2,'MR2','H');
- assert.throws(()=>g.run({eventId:'E1',operationId:'r2wrong',actorId:'P1',kind:'RESTORE_2',missionId:'MR2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N2','NODE','N1','HQ','HQ')],capacityChange:1}),/RESTORE_MUST_DISPLACE_LOWEST/);
+ assert.throws(()=>g.run({eventId:'E1',operationId:'r2wrong',actorId:'P1',kind:'RESTORE_2',missionId:'MR2',moves:[move('H','TRANSIT','P1','NODE','N1'),move('N2','NODE','N1','PIONEER','P1')],capacityChange:1}),/RESTORE_MUST_DISPLACE_LOWEST/);
  assert.equal(g.core('E1','H').owner_type,'TRANSIT');g.close();
 });
 
