@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createV2GameplayRuntime } from '../../server/gameplay-runtime.mjs';
 import { installLabSchema, normalizeUid } from './lab-db.mjs';
+import { seedEvacRealtestDatabase } from './evac-realtest-fixture.mjs';
 
 export const DEFAULT_UIDS={
   pioneerAccess:'TESTACCESS9003',
@@ -20,8 +21,9 @@ DEFAULT_UIDS.access=DEFAULT_UIDS.pioneerAccess;
 
 function envUid(name,fallback){return normalizeUid(process.env[name]||fallback);}
 
-export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV_LAB_MODE||'legacy'){
-  if(!['legacy','registration'].includes(mode))throw Error('LAB_MODE_INVALID');
+export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV_LAB_MODE||'legacy',sourceDbPath,sourceEventId){
+  if(!['legacy','registration','evac'].includes(mode))throw Error('LAB_MODE_INVALID');
+  if(mode==='evac') return seedEvacRealtestDatabase(dbPath,sourceDbPath,eventId,sourceEventId);
   mkdirSync(dirname(dbPath),{recursive:true});
   const runtime=createV2GameplayRuntime(dbPath);
   const core=runtime.core;
