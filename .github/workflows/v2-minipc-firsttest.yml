@@ -1,0 +1,21 @@
+name: V2 Mini-PC Firsttest
+
+on:
+  push:
+    branches: [feature/v2-minipc-firsttest]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2/minipc-lab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --version
+      - run: npm test
+      - run: npm run precheck
