@@ -86,7 +86,7 @@ function createBlock06Realtest(core,mode){
       if(plan&&plan.p9004.energy<150)blockers.push('SECURE_APPROACH_150E_NOT_POSSIBLE');
     }
     if(event.state==='INITIALIZED'&&!plan)blockers.push('SETUP_RECEIPT_MISSING');
-    return {eventState:event.state,blockers:[...new Set(blockers)],canInitialize:event.state==='READY'&&!blockers.length,canStart:event.state==='INITIALIZED'&&!blockers.length,counts:{cards:6-blockers.filter(x=>x.startsWith('CARD_REQUIRED:')).length,cores:coreCount,hq:hq?.uid&&!String(hq.uid).startsWith('PENDING-')?1:0},plan};
+    return {eventState:event.state,blockers:[...new Set(blockers)],canInitialize:event.state==='READY'&&!blockers.length,canStart:event.state==='INITIALIZED'&&!blockers.length,counts:{cards:6-blockers.filter(x=>x.startsWith('CARD_REQUIRED:')).length,nodes:4-blockers.filter(x=>x.startsWith('NODE_REQUIRED:')).length,cores:coreCount,hq:hq?.uid&&!String(hq.uid).startsWith('PENDING-')?1:0},plan};
   }
   function initialize(eventId,founderId){
     requireMode();
