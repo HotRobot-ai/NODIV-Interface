@@ -27,13 +27,26 @@ test('registration lab: READY, empty N-Cores, persisted enrollment, no duplicate
   registry.register({eventId,role:'CARD',id:'P9003',uid:'04AABBD1'});
   registry.register({eventId,role:'NODE',id:'NODE-001',uid:'04AABBD2'});
   registry.register({eventId,role:'HQ',id:'HQ-01',uid:'04AABBD3'});
+  const dynamicPioneer=registry.register({eventId,role:'CARD',uid:'04AABBD4',actorRole:'PIONEER'});
+  assert.equal(dynamicPioneer.actorRole,'PIONEER');
+  assert.match(dynamicPioneer.id,/^P\d{4}$/);
+  const dynamicLocal=registry.register({eventId,role:'CARD',uid:'04AABBD5',actorRole:'LOCAL'});
+  assert.equal(dynamicLocal.actorRole,'LOCAL');
+  const autoCore=registry.register({eventId,role:'CORE',uid:'04AABBD6',energy:222});
+  assert.equal(autoCore.id,'NC-002');
+  assert.equal(autoCore.energy,222);
+  const inventory=registry.list(eventId);
+  assert.equal(inventory.cards.some(x=>x.id===dynamicPioneer.id&&x.role==='PIONEER'),true);
+  assert.equal(inventory.cards.some(x=>x.id===dynamicLocal.id&&x.role==='LOCAL'),true);
+  assert.equal(inventory.cores.some(x=>x.id==='NC-002'&&x.energy===222),true);
   assert.equal(db.prepare('SELECT uid FROM hq_upload_bays WHERE event_id=?').get(eventId).uid,'04AABBD3');
   rt.close();
   seedTestDatabase(dbPath,eventId,'registration');
   rt=createV2GameplayRuntime(dbPath);db=rt.core.db;
   assert.equal(db.prepare('SELECT visible_energy FROM cores WHERE core_id=?').get('NC-001').visible_energy,341);
+  assert.equal(db.prepare('SELECT visible_energy FROM cores WHERE core_id=?').get('NC-002').visible_energy,222);
   assert.equal(db.prepare('SELECT uid FROM hq_upload_bays WHERE event_id=?').get(eventId).uid,'04AABBD3');
-  assert.equal(db.prepare('SELECT count(*) n FROM lab_access_cards').get().n,2);
+  assert.equal(db.prepare('SELECT count(*) n FROM lab_access_cards').get().n,4);
   rt.close();
  }finally{
   if(previous===undefined)Reflect.deleteProperty(process.env,'NODIV_UID_FOUNDER_CARD');

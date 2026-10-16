@@ -1,4 +1,4 @@
-# NODIV V2 – BLOCK 06: vollständiger Realtest
+# NODIV V2 – BLOCK 06: vollständiger Realtest nach BLOCK 06A
 
 Stand: 16.10.2026  
 Umgebung: Gaming-PC + Smartphone + NFC + isolierte SQLite-Datenbanken  
@@ -13,7 +13,7 @@ Bereits bestandene BLOCK-01/02-Grundlagen werden nicht pauschal wiederholt. Fehl
 
 ## 2. Start
 
-Windows-Starter: `NODIV V2 Starter.cmd`
+Release-Starter: `NODIV-V2-BLOCK06A-STARTEN.cmd`\n\nDer Root-Starter ruft ausschließlich den geprüften `v2/minipc-lab/NODIV-V2-STARTER.cmd` auf.
 
 ### Erstmalig
 
@@ -31,13 +31,17 @@ Mit der Founder Access Card anmelden und folgende Hardware registrieren:
 
 ### Access Cards
 
-- `FOP-TEST`
-- `P9003`
-- `P9004`
-- `LOCAL-TEST`
-- `UNBOUND-TEST`
+In der Founder-Oberfläche die reale Karte nach **Rolle** registrieren:
 
-Die Founder-Karte ist bereits durch den Bootstrap vorhanden.
+- FOP – Field Operator
+- Pioneer A – für Exchange/Catch-Ziel im repräsentativen Ablauf
+- Pioneer B – nur als zusätzlicher EVAC-Partner im vollständigen BLOCK-06-Test
+- Local – Catch
+- Unbound – Catch
+
+Die Founder-Karte ist bereits durch den Bootstrap vorhanden. Zusätzliche FOP-, Pioneer-, Local- und Unbound-Karten können ebenfalls registriert werden; das System ist nicht auf zwei Pioneer begrenzt.
+
+**Catch-Regel:** Ein Catch benötigt genau einen Pioneer als Ziel und einen Local oder Unbound als ausführende Rolle. Ein zweiter Pioneer ist keine Catch-Voraussetzung.
 
 ### Nodes
 
@@ -52,14 +56,14 @@ Weitere vorbereitete Node-IDs bis `NODE-010` sind zulässig, aber für BLOCK 06 
 
 ### N-Cores
 
-Genau die vorhandenen zwölf Test-Cores als:
-
-- `NC-001` bis `NC-012`
+Für diesen Realtest werden die vorhandenen zwölf physischen Test-Cores benötigt. Die Founder-Verwaltung selbst ist nicht auf zwölf Cores begrenzt.
 
 Für jeden Core:
-1. eingravierten sichtbaren E-Wert eingeben,
+1. den eingravierten sichtbaren E-Wert eingeben,
 2. genau diesen Core per NFC scannen,
-3. erfolgreiche Registrierung abwarten.
+3. die automatisch vergebene N-Core-Kennung und die erfolgreiche Speicherung abwarten.
+
+Technische Core-IDs müssen nicht manuell eingetippt werden.
 
 ### HQ
 
@@ -70,11 +74,25 @@ Für jeden Core:
 Anzeige:
 - Access Cards **6/6**
 - Nodes **4/4**
-- N-Cores **12/12**
+- N-Cores **mindestens 12**
 - HQ **1/1**
 - keine Preflight-Blocker.
 
 Doppelte UIDs, doppelte Zielzuordnungen und ungültige Core-E-Werte müssen blockiert werden.
+
+### 3.1 Oberflächen-PASS vor dem physischen Spielablauf
+
+Vor der Eventinitialisierung:
+
+1. Founder-Registrierungsformular öffnen.
+2. Hardwaretyp bzw. Rollenwahl treffen und das aktive Feld mindestens **60 Sekunden** fokussiert lassen.
+3. Während der laufenden Statusaktualisierung weiter eingeben bzw. Auswahl ändern.
+4. PASS nur, wenn Wert, Auswahl und Fokus erhalten bleiben.
+5. NFC-Scan starten, einmal kontrolliert abbrechen und einmal einen simulierten Leer-/Fehlscan prüfen.
+6. PASS nur, wenn die NODIV-Oberfläche selbst eindeutig zwischen **Tag erkannt / UID geprüft / Fehler** unterscheidet.
+7. Smartphoneansicht ohne Zoom prüfen: große Touchflächen, keine überlagerte Access-Anmeldung, eine erkennbare nächste Handlung.
+
+Automatisierte NFC-Simulationen prüfen nur Browser-/Serverpfade. Sie ersetzen **nicht** den anschließenden realen Android-/NFC-Test.
 
 ## 4. Persistenz vor Spielstart
 
@@ -233,6 +251,8 @@ PASS:
 - Mission ist abgeschlossen.
 
 ## 10. Catch + Ghost-Schutz
+
+Dieser Abschnitt benötigt **einen Pioneer plus Local oder Unbound**. P9004 oder ein zweiter Pioneer ist dafür nicht erforderlich.
 
 Mit Local oder Unbound:
 
