@@ -109,6 +109,13 @@ function renderRole({passive=false}={}){
   host.dataset.userEditing='0';
   bindRole();
 }
+function eventActionBlocked(v){
+  if(v.event?.state==='FIELD_ACTIVE')return '';
+  const title=v.event?.state==='TEST_ENDED'?'TESTSPIEL BEENDET':'TESTSPIEL NOCH NICHT AKTIV';
+  const detail=v.event?.state==='TEST_ENDED'?'Dieser Teststand ist kontrolliert beendet. Es werden keine weiteren Feldaktionen angenommen.':'Founder muss den Testbestand vorbereiten und das TESTSPIEL starten.';
+  return `<section class="card"><small class="card-kicker">NODIV // TESTMODUS</small><h3>${title}</h3><p>${detail}</p><div class="status-pill warn">${esc(v.event?.state||'UNKNOWN')}</div></section>`;
+}
+
 function renderSlots(v){
   const fields=v.inventory.cores.filter(c=>c.status==='FIELD');
   return Array.from({length:3},(_,i)=>{
@@ -122,6 +129,7 @@ function renderMission(v){
   return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(v.mission.nodeId)}</h3><p>${v.mission.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${v.mission.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(v.mission.remainingSeconds)}</b></div></div><button id="missionStart" class="primary">AUFTRAG AUSFÜHREN</button><div id="missionProgress" class="feedback"></div></section>`;
 }
 function renderPioneer(v){
+  if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
@@ -129,11 +137,13 @@ function renderPioneer(v){
   return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${dispatch}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary">HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
+  if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const role=v.actor.role;
   const evac=v.event.evacState==='STARTED';
   return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>`;
 }
 function renderFop(v){
+  if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
   return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div></section>${evac}`;
 }
