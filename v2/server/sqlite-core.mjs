@@ -7,7 +7,7 @@ export class GameError extends Error {
 
 const SCHEMA = `
 PRAGMA foreign_keys=ON;
-CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK(state IN ('READY','INITIALIZED','FIELD_ACTIVE','COMPLETED')));
+CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK(state IN ('READY','INITIALIZED','FIELD_ACTIVE','COMPLETED','TEST_ENDED')));
 CREATE TABLE IF NOT EXISTS actors (event_id TEXT NOT NULL, actor_id TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('FOUNDER','FOP','PIONEER','LOCAL','UNBOUND')), capacity INTEGER NOT NULL DEFAULT 0 CHECK(capacity BETWEEN 0 AND 3), active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), PRIMARY KEY(event_id,actor_id), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE TABLE IF NOT EXISTS nodes (event_id TEXT NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('AVAILABLE','INSTALLED','DEINSTALLED')), PRIMARY KEY(event_id,node_id), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE TABLE IF NOT EXISTS cores (event_id TEXT NOT NULL, core_id TEXT NOT NULL, uid TEXT NOT NULL, visible_energy INTEGER NOT NULL CHECK(visible_energy > 0), actual_energy INTEGER NOT NULL CHECK(actual_energy > 0), owner_type TEXT NOT NULL CHECK(owner_type IN ('HQ','PIONEER','NODE','TRANSIT')), owner_id TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(event_id,core_id), UNIQUE(event_id,uid), FOREIGN KEY(event_id) REFERENCES events(event_id));
