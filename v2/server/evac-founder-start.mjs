@@ -14,6 +14,8 @@ export function createEvacFounderStart(core) {
   return {
     start({ eventId, founderId, operationId }) {
       if (![eventId, founderId, operationId].every(x => typeof x === 'string' && x.length)) throw Error('EVAC_START_INVALID');
+      // Expired normal mission cargo is durably returned before EVAC admission checks.
+      core.recoverExpiredMissions(eventId);
       db.exec('BEGIN IMMEDIATE');
       try {
         const actor = db.prepare('SELECT role,active FROM actors WHERE event_id=? AND actor_id=?').get(eventId, founderId);
@@ -28,7 +30,7 @@ export function createEvacFounderStart(core) {
         }
         if (state !== 'PRE_EVAC_READY') throw Error('EVAC_NOT_READY');
         if (db.prepare('SELECT 1 FROM reservations WHERE event_id=? AND expires_at>? LIMIT 1').get(eventId, core.clock())) throw Error('EVAC_OPERATION_CONFLICT');
-        if (db.prepare("SELECT 1 FROM missions WHERE event_id=? AND state='ASSIGNED' LIMIT 1").get(eventId)) throw Error('EVAC_OPERATION_CONFLICT');
+        if (db.prepare("SELECT 1 FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>? LIMIT 1").get(eventId, core.clock())) throw Error('EVAC_OPERATION_CONFLICT');
         const originals = db.prepare('SELECT node_id FROM evac_original_nodes WHERE event_id=? ORDER BY node_id').all(eventId);
         if (originals.length !== 10) throw Error('EVAC_ORIGINAL_NODE_MANIFEST_REQUIRED');
         const installed = db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);

@@ -20,7 +20,8 @@ test('BLOCK03: Exchange -> Restore -> Upload -> RE-SUPPLY -> Catch share one aut
   r.exchange({eventId:'E',operationId:'X',pioneerId:'P1',nodeId:'N1',gives:['P0'],takes:['N1B']});
   assert.equal(c.core('E','P0').owner_id,'N1');assert.equal(c.core('E','N1B').owner_id,'P1');
 
-  r.restore({eventId:'E',operationId:'R',pioneerId:'P1',nodeId:'N1',cargoCoreId:'R1',outCoreId:'N1A',phase:1});
+  c.seedMission('E',{id:'MR1',actorId:'P1',kind:'RESTORE_1',nodeId:'N1',coreId:'R1',expiresAt:c.clock()+600});
+  r.restore({eventId:'E',operationId:'R',pioneerId:'P1',nodeId:'N1',cargoCoreId:'R1',outCoreId:'N1A',phase:1,missionId:'MR1'});
   assert.equal(c.db.prepare("SELECT capacity FROM actors WHERE event_id='E' AND actor_id='P1'").get().capacity,2);
   assert.equal(c.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id='E' AND owner_type='NODE' AND owner_id='N1'").get().n,3);
 

@@ -1,0 +1,21 @@
+name: V2 Block04 Integrity
+
+on:
+  push:
+    branches: [feature/v2-block04-integrity]
+  workflow_dispatch:
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Server regression
+        working-directory: v2/server
+        run: node --test *.test.mjs
+      - name: Mini-PC lab regression
+        working-directory: v2/minipc-lab
+        run: npm test

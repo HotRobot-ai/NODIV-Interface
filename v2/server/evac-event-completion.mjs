@@ -12,6 +12,7 @@ export function createEvacEventCompletion(core) {
  return {
   complete({eventId,founderId,operationId}) {
    if(![eventId,founderId,operationId].every(x=>typeof x==='string'&&x.trim())) throw Error('EVAC_COMPLETION_CONTEXT_REQUIRED');
+   core.recoverExpiredMissions(eventId);
    db.exec('BEGIN IMMEDIATE');
    try {
     const prior=db.prepare('SELECT * FROM evac_completion_receipts WHERE event_id=?').get(eventId);
@@ -25,8 +26,8 @@ export function createEvacEventCompletion(core) {
     const preflight=checkEvacCompletionFromSqlite(db,eventId);
     if(!preflight.eligible){const err=Error('EVAC_COMPLETION_BLOCKED');err.blockers=preflight.blockers;throw err;}
     // Prevent closing while a normal operation remains pending, regardless of type.
-    const openMissions=db.prepare("SELECT count(*) AS n FROM missions WHERE event_id=? AND state='ASSIGNED'").get(eventId)?.n;
-    const openReservations=db.prepare('SELECT count(*) AS n FROM reservations WHERE event_id=?').get(eventId)?.n;
+    const openMissions=db.prepare("SELECT count(*) AS n FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,core.clock())?.n;
+    const openReservations=db.prepare('SELECT count(*) AS n FROM reservations WHERE event_id=? AND expires_at>?').get(eventId,core.clock())?.n;
     if(openMissions||openReservations)throw Error('EVAC_PENDING_OPERATIONS');
     if(db.prepare("UPDATE events SET state='COMPLETED' WHERE event_id=? AND state='FIELD_ACTIVE'").run(eventId).changes!==1)throw Error('EVAC_EVENT_STATE_CHANGED');
     db.prepare('INSERT INTO evac_completion_receipts(event_id,operation_id,founder_id) VALUES (?,?,?)').run(eventId,operationId,founderId);

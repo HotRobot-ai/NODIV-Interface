@@ -47,7 +47,8 @@ export function createEvacNodeRecovery(core,{verifyNfcProof}={}) {
     recordEvacRecoveryDeployments(db,{eventId,nodeId,teamId,carrierId:assignment.carrier_id,operationId,coreIds:current.map(c=>c.core_id)});
     db.prepare("UPDATE nodes SET state='DEINSTALLED' WHERE event_id=? AND node_id=?").run(eventId,nodeId);
     db.prepare('INSERT INTO evac_recoveries(event_id,node_id,team_id,carrier_id,fop_id,operation_id) VALUES (?,?,?,?,?,?)').run(eventId,nodeId,teamId,assignment.carrier_id,fopId,operationId);
-    db.exec('COMMIT');
+    core.assertIntegrity(eventId);
+     db.exec('COMMIT');
     return {eventId,nodeId,carrierId:assignment.carrier_id,coreIds:current.map(c=>c.core_id),replayed:false};
    }catch(e){db.exec('ROLLBACK');throw e;}
   }

@@ -19,6 +19,8 @@ export function createV2GameplayRuntime(path=':memory:', {
   verifyUploadNfcProof,
 }={}) {
   const core=new SqliteGameCore(path,clock);
+  // Durable startup recovery: expired mission cargo returns to HQ before gameplay resumes.
+  for(const e of core.db.prepare("SELECT event_id FROM events WHERE state='FIELD_ACTIVE'").all()) core.recoverExpiredMissions(e.event_id);
   const catchTransaction=new CatchTransaction(core);
   const evacTeams=createEvacTeamReservations(core);
   const evacCompletion=createEvacEventCompletion(core);
@@ -36,13 +38,13 @@ export function createV2GameplayRuntime(path=':memory:', {
     ]});
   }
 
-  function restore({eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId,phase}){
-    requiredStrings([eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId],'RESTORE_CONTEXT_REQUIRED');
+  function restore({eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId,phase,missionId}){
+    requiredStrings([eventId,operationId,pioneerId,nodeId,cargoCoreId,outCoreId,missionId],'RESTORE_CONTEXT_REQUIRED');
     if(![1,2].includes(phase))throw new GameError('RESTORE_PHASE_INVALID');
     const outgoing=phase===1
       ? move(outCoreId,'NODE',nodeId,'PIONEER',pioneerId,'FIELD')
       : move(outCoreId,'NODE',nodeId,'HQ','HQ','RESERVE');
-    return core.run({eventId,operationId,actorId:pioneerId,kind:`RESTORE_${phase}`,capacityChange:1,moves:[
+    return core.run({eventId,operationId,actorId:pioneerId,kind:`RESTORE_${phase}`,missionId,capacityChange:1,moves:[
       move(cargoCoreId,'TRANSIT',pioneerId,'NODE',nodeId,'DEPLOYED'),outgoing,
     ]});
   }
@@ -90,6 +92,7 @@ export function createV2GameplayRuntime(path=':memory:', {
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{teams:evacTeams,flow:evacFlow,completion:evacCompletion},
+    maintenance:{recoverExpiredMissions:(eventId)=>core.recoverExpiredMissions(eventId),assertIntegrity:(eventId)=>core.assertIntegrity(eventId)},
     close:()=>core.close(),
   };
 }

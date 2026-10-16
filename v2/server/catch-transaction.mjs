@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS catch_previews(event_id TEXT NOT NULL,preview_id TEXT
  check(db,eventId,catcherId,targetId){
   const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
   if(event?.state!=='FIELD_ACTIVE')throw new GameError('EVENT_NOT_FIELD_ACTIVE');
+  const ec=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evac_control'").get();
+  if(ec&&db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state==='STARTED')throw new GameError('EVAC_NORMAL_ACTION_FROZEN');
   const catcher=db.prepare('SELECT * FROM actors WHERE event_id=? AND actor_id=?').get(eventId,catcherId);
   const target=db.prepare('SELECT * FROM actors WHERE event_id=? AND actor_id=?').get(eventId,targetId);
   if(!catcher?.active||!['LOCAL','UNBOUND'].includes(catcher.role))throw new GameError('CATCH_ACCESS_DENIED');
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS catch_previews(event_id TEXT NOT NULL,preview_id TEXT
   return eligible[0];
  }
  preview({eventId,catcherId,targetId}){
+  this.core.recoverExpiredMissions(eventId);
   const db=this.core.db;db.exec('BEGIN IMMEDIATE');try{
    const core=this.check(db,eventId,catcherId,targetId),previewId='CAT-'+randomUUID(),expiresAt=this.core.clock()+300;
    db.prepare('INSERT INTO catch_previews VALUES (?,?,?,?,?,?,?)').run(eventId,previewId,catcherId,targetId,core.core_id,this.snapshot(db,eventId,catcherId,targetId),expiresAt);
@@ -50,6 +53,7 @@ CREATE TABLE IF NOT EXISTS catch_previews(event_id TEXT NOT NULL,preview_id TEXT
   }catch(e){db.exec('ROLLBACK');throw e;}
  }
  confirm({eventId,previewId,catcherId},transactionHook=null){
+  this.core.recoverExpiredMissions(eventId);
   const db=this.core.db;db.exec('BEGIN IMMEDIATE');try{
    const prior=db.prepare('SELECT response_json,actor_id FROM operations WHERE event_id=? AND operation_id=? AND kind=?').get(eventId,previewId,'CATCH');
    if(prior){if(prior.actor_id!==catcherId)throw new GameError('CATCH_SESSION_MISMATCH');if(transactionHook)transactionHook(db,{replay:true});db.exec('COMMIT');return {...JSON.parse(prior.response_json),replayed:true};}
@@ -60,6 +64,7 @@ CREATE TABLE IF NOT EXISTS catch_previews(event_id TEXT NOT NULL,preview_id TEXT
    if(core.core_id!==p.core_id||this.snapshot(db,eventId,catcherId,p.target_id)!==p.inventory_hash)throw new GameError('CATCH_SNAPSHOT_CHANGED');
    const transfer=db.prepare("UPDATE cores SET owner_id=?,version=version+1 WHERE event_id=? AND core_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").run(catcherId,eventId,core.core_id,p.target_id);
    if(transfer.changes!==1)throw new GameError('CATCH_TRANSFER_CONFLICT');
+   this.core.assertIntegrity(eventId);
    const ghostUntil=this.core.clock()+300;
    db.prepare('INSERT INTO catch_ghost(event_id,actor_id,until_epoch) VALUES (?,?,?) ON CONFLICT(event_id,actor_id) DO UPDATE SET until_epoch=excluded.until_epoch').run(eventId,p.target_id,ghostUntil);
    const receipt={status:'CATCH_COMPLETE',catchId:previewId,target:p.target_id,core:{id:core.core_id,energy:core.visible_energy},ghostUntil:new Date(ghostUntil*1000).toISOString(),replayed:false};

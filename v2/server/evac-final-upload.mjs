@@ -39,7 +39,8 @@ export function createEvacFinalUpload(core,{verifyNfcProof}={}) {
    if(db.prepare('UPDATE balances SET secured_energy=secured_energy+? WHERE event_id=? AND actor_id=?').run(energy,eventId,carrierId).changes!==1)throw Error('EVAC_BALANCE_MISSING');
    db.prepare('INSERT INTO evac_energy_ledger(event_id,operation_id,actor_id,energy) VALUES (?,?,?,?)').run(eventId,operationId,carrierId,energy);
    db.prepare('INSERT INTO evac_final_uploads(event_id,carrier_id,team_id,node_id,operation_id,selected_core_id,energy,core_ids_json) VALUES (?,?,?,?,?,?,?,?)').run(eventId,carrierId,teamId,a.node_id,operationId,selectedCoreId,energy,ids);
-   db.exec('COMMIT');return {eventId,carrierId,energy,coreIds:expected,replayed:false};
+   core.assertIntegrity(eventId);
+    db.exec('COMMIT');return {eventId,carrierId,energy,coreIds:expected,replayed:false};
   }catch(e){db.exec('ROLLBACK');throw e;}
  }};
 }
