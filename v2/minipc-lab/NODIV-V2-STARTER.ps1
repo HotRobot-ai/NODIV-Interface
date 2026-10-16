@@ -8,8 +8,9 @@ if (-not (Test-Path '.env')) { Copy-Item 'config.example.env' '.env' }
 Write-Host 'NODIV V2 - BLOCK 06 REALTEST' -ForegroundColor Cyan
 Write-Host '1 = Founder Access Card einmalig einrichten'
 Write-Host '2 = BLOCK 06 Haupttest starten'
-$choice = Read-Host 'Auswahl (1/2)'
-if ($choice -notin @('1','2')) { Write-Host 'Abgebrochen.'; exit }
+Write-Host '3 = EVAC Realtest (separate Kopie aus Haupttest)'
+$choice = Read-Host 'Auswahl (1/2/3)'
+if ($choice -notin @('1','2','3')) { Write-Host 'Abgebrochen.'; exit }
 
 if ($choice -eq '1') {
   $port = 8790
@@ -45,6 +46,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Tailscale Serve fehlgeschlagen.' }
 Write-Host 'HTTPS-Adresse auf dem Smartphone in Chrome oeffnen.' -ForegroundColor Green
 if ($choice -eq '2') {
   Write-Host 'Keine Datenbank loeschen oder neu initialisieren. Fehler werden im bestehenden Testbestand nachverfolgt.' -ForegroundColor Yellow
+}
+if ($choice -eq '3') {
+  Write-Host 'EVAC arbeitet in einer separaten SQLite-Datei. Der Haupttestbestand bleibt unveraendert.' -ForegroundColor Yellow
 }
 Write-Host 'Dieses Fenster offen lassen. Beenden mit Strg+C.'
 try {
