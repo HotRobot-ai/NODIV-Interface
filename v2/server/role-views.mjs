@@ -1,4 +1,5 @@
 import {GameError} from './sqlite-core.mjs';
+import {checkEvacCompletionFromSqlite} from './evac-sqlite-gate.mjs';
 
 function tableExists(db,name){return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name)}
 function iso(epoch){return Number.isFinite(epoch)?new Date(epoch*1000).toISOString():null}
@@ -77,8 +78,21 @@ export function createRoleViews(runtime){
     const cores=db.prepare("SELECT owner_type,status,COUNT(*) count FROM cores WHERE event_id=? GROUP BY owner_type,status").all(eventId);
     const allowed=[];
     if(base.event.evacState==='PRE_EVAC_READY') allowed.push('EVAC_START');
-    if(base.event.evacState==='STARTED') allowed.push('EVAC_MONITOR');
-    return {...base,overview:{nodes,roles,cores},allowedActions:allowed,nextAction:{code:allowed[0]||'MONITOR',label:allowed[0]==='EVAC_START'?'EVAKUIERUNG STARTEN':'EVENTSTATUS PRÜFEN',detail:'Nur serverseitig zulässige Founder-Aktionen werden angeboten.'}};
+    if(base.event.evacState==='STARTED'){
+      let completeReady=false;
+      try{
+        const gate=checkEvacCompletionFromSqlite(db,eventId);
+        const pendingMissions=db.prepare("SELECT COUNT(*) n FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,core.clock())?.n||0;
+        const pendingReservations=db.prepare("SELECT COUNT(*) n FROM reservations WHERE event_id=? AND expires_at>?").get(eventId,core.clock())?.n||0;
+        completeReady=gate.eligible&&pendingMissions===0&&pendingReservations===0;
+      }catch{}
+      allowed.push(completeReady?'EVAC_COMPLETE':'EVAC_MONITOR');
+    }
+    let next={code:'MONITOR',label:'EVENTSTATUS PRÜFEN',detail:'Nur serverseitig zulässige Founder-Aktionen werden angeboten.'};
+    if(allowed[0]==='EVAC_START') next={code:'EVAC_START',label:'EVAKUIERUNG STARTEN',detail:'Alle Startbedingungen sind serverseitig erfüllt.'};
+    if(allowed[0]==='EVAC_MONITOR') next={code:'EVAC_MONITOR',label:'EVAKUIERUNG ÜBERWACHEN',detail:'Der Abschluss bleibt gesperrt, bis alle EVAC-Nachweise vollständig sind.'};
+    if(allowed[0]==='EVAC_COMPLETE') next={code:'EVAC_COMPLETE',label:'EVENT ABSCHLIESSEN',detail:'Alle EVAC-Nachweise sind vollständig. Founder-Abschluss ist freigegeben.'};
+    return {...base,overview:{nodes,roles,cores},allowedActions:allowed,nextAction:next};
   }
 
   function view({eventId,actorId}){
