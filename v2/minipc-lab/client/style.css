@@ -52,3 +52,15 @@ select:focus,input:focus,textarea:focus{border-color:var(--role-accent,#79e8ff);
 @media(max-width:350px){.founder-grid{grid-template-columns:1fr}.brand{font-size:29px;letter-spacing:.18em}}
 
 [hidden]{display:none!important}
+
+/* BLOCK 07 — playable desktop TESTMODUS. */
+.desktop-test{border-color:#8b7641;background:radial-gradient(circle at 85% 0,#d6b85d12,transparent 38%),linear-gradient(180deg,#14130d,#071116)}
+.desktop-test>h3{font-size:clamp(26px,7vw,34px);letter-spacing:.06em}
+.capability-list{display:grid;gap:8px;margin:12px 0 18px}
+.capability{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;padding:12px;border:1px solid #29414a;border-radius:9px;background:#050d12}
+.capability>span{font-size:20px;line-height:1;color:#708892}.capability.on{border-color:#376850;background:#07140f}.capability.on>span{color:var(--ok)}
+.capability.off{opacity:.78}.capability b,.capability small{display:block}.capability b{font-size:13px;letter-spacing:.06em}.capability small{margin-top:5px;color:#91a8b1;font-size:12px;line-height:1.45}
+.test-ended{margin-top:15px;padding:15px;border:1px solid #5d6946;border-radius:10px;background:#10130b}.test-ended b{color:#dbeaa4;letter-spacing:.1em}.test-ended p{margin:7px 0}.test-ended small{color:#91a8b1;line-height:1.5}
+#roleShell[data-role="FOUNDER"] .desktop-test button.primary{border-color:#e5cb78;background:linear-gradient(180deg,#4a3f1c,#29230f)}
+#roleShell[data-role="FOUNDER"] .desktop-test button.danger{min-height:70px;margin-top:16px}
+@media(max-width:430px){.capability{grid-template-columns:24px 1fr;padding:11px 10px}.capability b{font-size:12px}.capability small{font-size:11px}}
