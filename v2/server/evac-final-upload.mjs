@@ -1,3 +1,4 @@
+import {installEvacDeployments,deliverEvacDeployments} from './evac-deployments.mjs';
 import {installNfcGrantSchema,consumeNfcGrant} from './nfc-grants.mjs';
 
 // Dedicated EVAC route; normal HQ_UPLOAD must never accept EVAC_CARGO.
@@ -5,6 +6,7 @@ export function createEvacFinalUpload(core,{verifyNfcProof}={}) {
  if(typeof verifyNfcProof!=='function')throw Error('EVAC_NFC_VERIFIER_REQUIRED');
  const db=core?.db;if(!db?.prepare)throw Error('EVAC_CORE_REQUIRED');
  installNfcGrantSchema(db);
+ installEvacDeployments(db);
  db.exec(`CREATE TABLE IF NOT EXISTS evac_final_uploads(event_id TEXT NOT NULL,carrier_id TEXT NOT NULL,team_id TEXT NOT NULL,node_id TEXT NOT NULL,operation_id TEXT NOT NULL,selected_core_id TEXT NOT NULL,energy INTEGER NOT NULL,core_ids_json TEXT NOT NULL,PRIMARY KEY(event_id,carrier_id),UNIQUE(event_id,operation_id));
  CREATE TABLE IF NOT EXISTS evac_energy_ledger(event_id TEXT NOT NULL,operation_id TEXT NOT NULL,actor_id TEXT NOT NULL,energy INTEGER NOT NULL,PRIMARY KEY(event_id,operation_id));`);
  return {upload({eventId,teamId,carrierId,operationId,coreIds,selectedCoreId,nfcProof,nfcGrantId}){
@@ -33,6 +35,7 @@ export function createEvacFinalUpload(core,{verifyNfcProof}={}) {
     const changed=db.prepare("UPDATE cores SET owner_type='HQ',owner_id='HQ',status='SECURED',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='EVAC_CARGO'").run(eventId,c.core_id,carrierId);
     if(changed.changes!==1)throw Error('EVAC_CARGO_OWNERSHIP_CHANGED');
    }
+   deliverEvacDeployments(db,{eventId,nodeId:a.node_id,teamId,carrierId,operationId,coreIds:cargo.map(c=>c.core_id)});
    if(db.prepare('UPDATE balances SET secured_energy=secured_energy+? WHERE event_id=? AND actor_id=?').run(energy,eventId,carrierId).changes!==1)throw Error('EVAC_BALANCE_MISSING');
    db.prepare('INSERT INTO evac_energy_ledger(event_id,operation_id,actor_id,energy) VALUES (?,?,?,?)').run(eventId,operationId,carrierId,energy);
    db.prepare('INSERT INTO evac_final_uploads(event_id,carrier_id,team_id,node_id,operation_id,selected_core_id,energy,core_ids_json) VALUES (?,?,?,?,?,?,?,?)').run(eventId,carrierId,teamId,a.node_id,operationId,selectedCoreId,energy,ids);
