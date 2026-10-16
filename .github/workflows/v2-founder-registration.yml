@@ -2,7 +2,7 @@ name: V2 Founder Registration CI
 
 on:
   push:
-    branches: [feature/v2-founder-registration]
+    branches: [feature/v2-founder-registration, feature/v2-block06a-test-prep]
   pull_request:
     branches: [feature/v2-block06-full-flow]
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out="NODIV-V2-BLOCK06-REALTEST-RELEASE"
+          out="NODIV-V2-BLOCK06A-REALTEST-RELEASE"
           mkdir -p "$out/v2"
           cp -R v2/minipc-lab "$out/v2/minipc-lab"
           cp -R v2/server "$out/v2/server"
@@ -37,14 +37,14 @@ jobs:
           find "$out/v2/server" -type f -name '*.test.mjs' -delete
           rm -f "$out/v2/minipc-lab/START-TEST.cmd" "$out/v2/minipc-lab/RESET-TEST.cmd"
           find "$out" -type f \( -name '.env' -o -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' \) -delete
-          printf '@echo off\r\ncall "%%~dp0v2\\minipc-lab\\NODIV-V2-STARTER.cmd"\r\n' > "$out/NODIV-V2-BLOCK06-STARTEN.cmd"
+          printf '@echo off\r\nif /I "%%~1"=="--smoke" (\r\n  if not exist "%%~dp0v2\\minipc-lab\\NODIV-V2-STARTER.cmd" exit /b 11\r\n  if not exist "%%~dp0v2\\server\\gameplay-runtime.mjs" exit /b 12\r\n  echo NODIV BLOCK06A STARTER SMOKE PASS\r\n  exit /b 0\r\n)\r\ncall "%%~dp0v2\\minipc-lab\\NODIV-V2-STARTER.cmd"\r\n' > "$out/NODIV-V2-BLOCK06A-STARTEN.cmd"
           printf 'GitHub commit: %s\nBranch: %s\nCI run: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > "$out/SOURCE.txt"
       - name: Smoke test BLOCK 06 package
         shell: bash
         run: |
           set -euo pipefail
-          out="NODIV-V2-BLOCK06-REALTEST-RELEASE"
-          test -f "$out/NODIV-V2-BLOCK06-STARTEN.cmd"
+          out="NODIV-V2-BLOCK06A-REALTEST-RELEASE"
+          test -f "$out/NODIV-V2-BLOCK06A-STARTEN.cmd"
           test -f "$out/v2/minipc-lab/NODIV-V2-STARTER.cmd"
           test -f "$out/v2/server/gameplay-runtime.mjs"
           test ! -e "$out/v2/minipc-lab/RESET-TEST.cmd"
@@ -60,7 +60,28 @@ jobs:
       - name: Upload BLOCK 06 realtest package
         uses: actions/upload-artifact@v4
         with:
-          name: NODIV-V2-BLOCK06-REALTEST
-          path: NODIV-V2-BLOCK06-REALTEST-RELEASE
+          name: NODIV-V2-BLOCK06A-REALTEST
+          path: NODIV-V2-BLOCK06A-REALTEST-RELEASE
           if-no-files-found: error
           retention-days: 14
+
+
+  package-windows-smoke:
+    needs: registration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NODIV-V2-BLOCK06A-REALTEST
+          path: package
+      - name: Windows starter path smoke
+        shell: cmd
+        run: package\NODIV-V2-BLOCK06A-STARTEN.cmd --smoke
+      - name: Windows package import smoke
+        shell: pwsh
+        run: |
+          Set-Location package\v2\minipc-lab
+          node -e "import('./server/server.mjs').then(()=>console.log('BLOCK06A Windows package import PASS'))"
