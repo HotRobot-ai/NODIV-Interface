@@ -1,0 +1,1 @@
+import {rmSync} from 'node:fs';import {labConfig} from '../server/config.mjs';const {dbPath}=labConfig();for(const p of [dbPath,dbPath+'-wal',dbPath+'-shm'])rmSync(p,{force:true});console.log('TEST DB entfernt:',dbPath);
