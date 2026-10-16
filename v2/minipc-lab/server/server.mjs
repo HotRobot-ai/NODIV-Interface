@@ -58,7 +58,7 @@ function createBlock06Realtest(core,mode){
     const cores=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy DESC,core_id").all(eventId);
     if(cores.length<12)return null;
     const c=cores.slice(0,12);
-    return {restoreReserve:c.slice(0,3).map(x=>x.core_id),p9004:{coreId:c[3].core_id,energy:c[3].visible_energy},p9003:{coreId:c[4].core_id,energy:c[4].visible_energy},fop:c.slice(5,11).map(x=>x.core_id),resupply:c[11].core_id};
+    return {restoreReserve:c.slice(0,3).map(x=>x.core_id),p9004:{coreId:c[3].core_id,energy:c[3].visible_energy},p9003:{coreId:c[4].core_id,energy:c[4].visible_energy},fop:c.slice(5,11).map(x=>x.core_id),fopEnergies:c.slice(5,11).map(x=>x.visible_energy),resupply:c[11].core_id};
   };
   function status(eventId){
     requireMode();
@@ -83,7 +83,7 @@ function createBlock06Realtest(core,mode){
       if(coreCount<12||hqCount<12)blockers.push('TWELVE_CORES_REQUIRED');
       if(db.prepare('SELECT 1 FROM operations WHERE event_id=? LIMIT 1').get(eventId))blockers.push('FRESH_EVENT_REQUIRED');
       plan=makePlan(eventId);
-      if(plan&&plan.p9004.energy<150)blockers.push('SECURE_APPROACH_150E_NOT_POSSIBLE');
+      if(plan&&Math.max(...plan.fopEnergies)<150)blockers.push('SECURE_APPROACH_150E_NOT_POSSIBLE');
     }
     if(event.state==='INITIALIZED'&&!plan)blockers.push('SETUP_RECEIPT_MISSING');
     return {eventState:event.state,blockers:[...new Set(blockers)],canInitialize:event.state==='READY'&&!blockers.length,canStart:event.state==='INITIALIZED'&&!blockers.length,counts:{cards:6-blockers.filter(x=>x.startsWith('CARD_REQUIRED:')).length,nodes:4-blockers.filter(x=>x.startsWith('NODE_REQUIRED:')).length,cores:coreCount,hq:hq?.uid&&!String(hq.uid).startsWith('PENDING-')?1:0},plan};
