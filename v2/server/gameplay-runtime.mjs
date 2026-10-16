@@ -4,6 +4,7 @@ import {createEvacTeamReservations} from './evac-team-reservations.mjs';
 import {createEvacFlowIntegration} from './evac-flow-integration.mjs';
 import {createEvacEventCompletion} from './evac-event-completion.mjs';
 import {createHqAccess} from './hq-access.mjs';
+import {createRoleViews} from './role-views.mjs';
 
 const requiredStrings=(values,code)=>{if(values.some(v=>typeof v!=='string'||!v.trim()))throw new GameError(code);};
 const uniqueStrings=(values,code)=>{if(!Array.isArray(values)||!values.length||values.some(v=>typeof v!=='string'||!v.trim())||new Set(values).size!==values.length)throw new GameError(code);};
@@ -88,10 +89,11 @@ export function createV2GameplayRuntime(path=':memory:', {
   }
 
   const hq=createHqAccess(core,{upload});
+  const roles=createRoleViews({core,hq});
 
   return {
     core,
-    exchange,restore,upload,resupply,hq,
+    exchange,restore,upload,resupply,hq,roles,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{teams:evacTeams,flow:evacFlow,completion:evacCompletion},
