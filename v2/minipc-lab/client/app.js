@@ -155,7 +155,7 @@ function renderSlots(v){
 function renderMission(v){
   if(!v.mission)return '';
   const name=v.mission.kind==='RESUPPLY'?'RE-SUPPLY':v.mission.kind.replace('_',' #');
-  return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(v.mission.nodeId)}</h3><p>${v.mission.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${v.mission.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(v.mission.remainingSeconds)}</b></div></div><button id="missionStart" class="primary">AUFTRAG AUSFÜHREN</button><div id="missionProgress" class="feedback"></div></section>`;
+  return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(v.mission.nodeId)}</h3><p>${v.mission.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${v.mission.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(v.mission.remainingSeconds)}</b></div></div><p class="phase-note"><strong>AM ZIEL-NODE:</strong> Drücke die Schaltfläche unten und halte deine Access Card nicht an den Node – scanne den NFC-Tag des Ziel-Nodes.</p><button id="missionStart" class="primary">1. ZIEL-NODE JETZT SCANNEN</button><div id="missionProgress" class="feedback"></div></section>`;
 }
 function renderPioneer(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
