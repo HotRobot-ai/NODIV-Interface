@@ -18,7 +18,7 @@ function seedPioneerWorld(runtime,{eventId='E',pioneerId='P1',capacity=1,nodes=[
  return c;
 }
 
-test('BLOCK04: 5-minute Exchange cooldown and idempotent replay survive DB restart',()=>{
+test('BLOCK04: 8-minute Exchange cooldown and idempotent replay survive DB restart',()=>{
  let now=1000;const dir=mkdtempSync(join(tmpdir(),'nodiv-b04-'));const db=join(dir,'game.sqlite');
  let r=createV2GameplayRuntime(db,{clock:()=>now});
  try{
