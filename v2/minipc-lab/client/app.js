@@ -112,7 +112,7 @@ async function refreshHealth(){
 function roleInteractionActive(){
   const host=$('roleContent'),active=document.activeElement;
   const formFocused=!!(host&&active&&host.contains(active)&&['INPUT','SELECT','TEXTAREA'].includes(active.tagName));
-  return !!(scanActive||exchange||catchPreview||fopFlow||missionFlow||hqFlow||evacFlow||host?.dataset.userEditing==='1'||formFocused);
+  return !!(scanActive||exchange||(nodeCooldownUntil&&nodeCooldownUntil>Date.now()/1000)||catchPreview||fopFlow||missionFlow||hqFlow||evacFlow||host?.dataset.userEditing==='1'||formFocused);
 }
 async function refreshRole({quiet=false,passive=false}={}){
   if(!token)return;
