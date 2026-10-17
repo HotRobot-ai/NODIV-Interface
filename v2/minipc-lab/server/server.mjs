@@ -375,7 +375,8 @@ export function createLabApp(config=labConfig()){
         const uid=normalizeUid(b.uid),node=core.db.prepare('SELECT node_id FROM lab_node_tags WHERE event_id=? AND uid=?').get(s.event_id,uid);
         if(node){
           if(node.node_id!==mission.node_id)throw Error('MISSION_NODE_MISMATCH');
-          return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id});
+          const lowest=lowestNodeCore(core.db,s.event_id,mission.node_id);
+          return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id,lowestCoreEnergy:lowest?.visible_energy??null});
         }
         const scanned=store.coreTarget(s,uid);
         if(scanned.core_id===mission.core_id)return json(res,200,{ok:true,kind:'MISSION_CARGO',coreId:scanned.core_id,energy:scanned.visible_energy});
