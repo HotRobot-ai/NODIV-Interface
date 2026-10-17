@@ -90,7 +90,12 @@ document.addEventListener('click',event=>{
   // corresponding async action settles, rather than using a fixed timeout.
   const handler=button.onclick;
   button.onclick=null;
-  Promise.resolve().then(()=>handler.call(button,event)).catch(e=>phase('error',friendly(e))).finally(()=>{
+  // Invoke synchronously inside the trusted click event: Web NFC requires
+  // transient user activation and may reject a deferred scan() call.
+  let result;
+  try{result=handler.call(button,event);}
+  catch(e){result=Promise.reject(e);}
+  Promise.resolve(result).catch(e=>phase('error',friendly(e))).finally(()=>{
     if(button.isConnected){button.disabled=false;button.textContent=button.dataset.originalLabel;button.dataset.actionState='ready';button.removeAttribute('aria-busy');button.onclick=handler;}
     activeActionButton=null;
   });
