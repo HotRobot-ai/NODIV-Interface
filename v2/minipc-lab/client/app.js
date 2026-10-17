@@ -259,6 +259,15 @@ function bindRole(){
 }
 
 const EXCHANGE_KEY='nodiv-v2-exchange-pending';
+let nodeCooldownUntil=0;
+function showNodeCooldown(){
+  const el=$('exchangeWork');
+  if(!el||!nodeCooldownUntil||exchange?.exchangeId)return;
+  const left=Math.max(0,Math.ceil(nodeCooldownUntil-Date.now()/1000));
+  if(left===0){nodeCooldownUntil=0;el.innerHTML='<div class="feedback ok">NODE WIEDER FREI // Für einen neuen Tausch Node erneut scannen.</div>';return;}
+  el.innerHTML='<div class="feedback">NODE-SPERRE AKTIV // '+fmt(left)+'</div>';
+}
+setInterval(showNodeCooldown,1000);
 function exchangeControls(){
   const count=exchange.count;
   $('exchangeWork').innerHTML=`<div class="code"><span>ACCESS CODE</span><b>${esc(exchange.accessCode)}</b></div><p>Node ${esc(exchange.nodeId)} · Scanne ${count} eigene und ${count} Node-Cores.</p><div id="exchangeProgress" class="feedback">EIGEN ${exchange.inCount}/${count} · NODE ${exchange.outCount}/${count}</div><button id="exchangeCoreScan" class="primary" ${exchange.ready?'hidden':''}>N-CORE SCANNEN</button><button id="exchangeConfirm" class="primary" ${exchange.ready?'':'hidden'}>EXCHANGE BESTÄTIGEN</button><div id="exchangeTime" class="feedback"></div>`;
@@ -279,7 +288,7 @@ async function startExchange(){
     exchange=null;const uid=await nfc('NODE');
     phase('check','Node wird serverseitig geprüft.');
     const grant=await api('/api/scan',{method:'POST',data:{uid}});
-    if(grant.cooldownUntil&&grant.cooldownUntil>view.serverNow){phase('error',`Node noch ${fmt(grant.cooldownUntil-view.serverNow)} gesperrt.`);return;}
+    if(grant.cooldownUntil&&grant.cooldownUntil>Math.floor(Date.now()/1000)){nodeCooldownUntil=grant.cooldownUntil;showNodeCooldown();phase('error','Node-Sperre aktiv. Kein neuer Tausch möglich.');return;}
     const max=Math.min(3,view.inventory.used,view.actor.capacity);
     if(max<1)throw Error('PIONEER_CORE_REQUIRED');
     exchange={grantId:grant.grantId,nodeId:grant.nodeId,max};
@@ -309,7 +318,7 @@ async function scanExchangeCore(){
   }catch(e){phase('error',friendly(e));}
 }
 async function confirmExchange(){
-  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});phase('success',`Exchange abgeschlossen. Node-Sperre 05:00 aktiv.`);exchange=null;sessionStorage.removeItem(EXCHANGE_KEY);await refreshRole({quiet:true});}
+  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});nodeCooldownUntil=Number(r.cooldownUntil||0);phase('success','Exchange abgeschlossen. Node-Sperre aktiv.');exchange=null;sessionStorage.removeItem(EXCHANGE_KEY);await refreshRole({quiet:true});showNodeCooldown();}
   catch(e){phase('error',friendly(e));}
 }
 
