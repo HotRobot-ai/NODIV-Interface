@@ -210,7 +210,8 @@ export class SqliteGameCore {
         if(nodeCores.length!==3||nodeCores.some(c=>c.status!=='DEPLOYED')) this._fail('NODE_REQUIRES_THREE_CORES');
         if(outgoing.id!==nodeCores[0].core_id) this._fail('RESUPPLY_MUST_DISPLACE_LOWEST');
         const personal=this.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,actorId).n;
-        if(personal!==0) this._fail('RESUPPLY_REQUIRES_EMPTY_INVENTORY');
+        const capacity=this.db.prepare("SELECT capacity FROM actors WHERE event_id=? AND actor_id=? AND role='PIONEER'").get(eventId,actorId)?.capacity;
+        if(!Number.isInteger(capacity)||personal>=capacity) this._fail('RESUPPLY_REQUIRES_FREE_SLOT');
       }else if(kind==='INSTALL'){
         if(energyCredit||capacityChange||eventState||moves.length!==3||nodeChanges.length!==1) this._fail('INSTALL_INVALID_SHAPE');
         const change=nodeChanges[0]; if(!change?.id||change.state!=='INSTALLED') this._fail('INSTALL_INVALID_NODE_CHANGE');
