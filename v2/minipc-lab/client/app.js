@@ -401,7 +401,7 @@ async function scanFopNode(){
     fopFlow={coreUids:[]};const uid=await nfc('NODE');phase('check','Node und zulässige FOP-Aktion werden geprüft.');
     const r=await api('/api/fop/scan',{method:'POST',data:{uid}});fopFlow={...fopFlow,nodeId:r.nodeId,action:r.action,mechanicalCode:r.mechanicalCode};
     if(r.action==='DEINSTALL'){
-      $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Server bestätigt: 3/3-Node. Deinstallation führt alle drei Cores zurück zur Reserve.</p><button id="fopCommit" class="primary">DEINSTALLATION BESTÄTIGEN</button>`;
+      $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><div class="code"><span>SCHLOSS AUF PRIMARY EINSTELLEN</span><b>${esc(r.mechanicalCode)}</b></div><p>Server bestätigt: 3/3-Node. Deinstallation führt alle drei Cores zurück zur Reserve.</p><button id="fopCommit" class="primary">DEINSTALLATION BESTÄTIGEN</button>`;
       $('fopCommit').onclick=commitFop;phase('success','Deinstallation zulässig. Noch keine Umbuchung.');
     }else{
       const energies=(r.transit||[]).map(x=>x.visible_energy+' E').join(' · ');
