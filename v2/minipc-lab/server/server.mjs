@@ -135,7 +135,7 @@ function createBlock06Realtest(core,mode){
     const p=phase(eventId,actorId);if(!p)return {eligible:false};
     const setup=receipt(eventId),reserved=setup?.plan?.resupply||'';
     const cargo=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' AND core_id<>? ORDER BY visible_energy ASC,core_id").all(eventId,reserved);
-    const locks=new Set(db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND kind='RESTORE' AND until_epoch>?").all(eventId,actorId,core.clock()).map(x=>x.node_id));
+    const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,core.clock()).map(x=>x.node_id):[]);
     const candidates=[];
     for(const n of db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId)){
       if(locks.has(n.node_id))continue;
@@ -212,7 +212,7 @@ function assignResupply(core,eventId,actorId){
  try{
   const offer=resupplyOffer(db,eventId,actorId,now);
   if(!offer.eligible)throw Error('RESUPPLY_NOT_ELIGIBLE');
-  const locks=new Set(db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id));
+  const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
   const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
   const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
   const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
@@ -239,7 +239,8 @@ export function createLabApp(config=labConfig()){
   let labEvacNfc=null;
   const runtime=createV2GameplayRuntime(config.dbPath,{
     verifyRecoveryNfcProof:ctx=>labEvacNfc?.verifyRecovery(ctx)===true,
-    verifyUploadNfcProof:ctx=>labEvacNfc?.verifyUpload(ctx)===true
+    verifyUploadNfcProof:ctx=>labEvacNfc?.verifyUpload(ctx)===true,
+    enforceNodeLocks:!['desktop','registration'].includes(config.mode)
   });
   const core=runtime.core;
   labEvacNfc=createLabEvacNfc(core);
