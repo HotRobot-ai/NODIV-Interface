@@ -243,6 +243,10 @@ export function createLabApp(config=labConfig()){
     enforceNodeLocks:!['desktop','registration'].includes(config.mode)
   });
   const core=runtime.core;
+  core.db.exec('CREATE TABLE IF NOT EXISTS pioneer_known_nodes (event_id TEXT NOT NULL, actor_id TEXT NOT NULL, node_id TEXT NOT NULL, discovered_at INTEGER NOT NULL, PRIMARY KEY(event_id,actor_id,node_id))');
+  function isKnownNode(eventId,actorId,nodeId){return !!core.db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId)}
+  function rememberNode(eventId,actorId,nodeId){core.db.prepare('INSERT OR IGNORE INTO pioneer_known_nodes(event_id,actor_id,node_id,discovered_at) VALUES (?,?,?,?)').run(eventId,actorId,nodeId,core.clock())}
+
   labEvacNfc=createLabEvacNfc(core);
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
   const founderRegistry=createFounderRegistry(core.db,{mode:config.mode});
