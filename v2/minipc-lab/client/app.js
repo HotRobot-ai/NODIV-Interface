@@ -281,10 +281,27 @@ function showNodeCooldown(){
   if(left===0){cooldownNodeId=null;nodeCooldownUntil=0;}
 }
 setInterval(showNodeCooldown,1000);
+function showExchangeTimer(){
+  const display=$('exchangeTime');
+  if(!display||!exchange?.exchangeId)return;
+  const expiry=Number(exchange.expiresAt||exchange.expires_at||0);
+  if(!expiry){display.textContent='EXCHANGE AKTIV · Ablaufzeit wird vom Server geprüft.';return;}
+  const left=Math.max(0,Math.ceil(expiry-Date.now()/1000));
+  display.textContent=left?('EXCHANGE AKTIV // RESTZEIT '+fmt(left)): 'EXCHANGE-ZEIT ABGELAUFEN · STATUS PRÜFEN';
+  if(left===0){
+    const scan=$('exchangeCoreScan'),confirm=$('exchangeConfirm');
+    if(scan)scan.disabled=true;
+    if(confirm)confirm.disabled=true;
+    let retry=$('exchangeStatusRetry');
+    if(!retry){retry=document.createElement('button');retry.id='exchangeStatusRetry';retry.textContent='STATUS PRÜFEN';display.after(retry);retry.onclick=recoverExchange;}
+  }
+}
+setInterval(showExchangeTimer,1000);
 function exchangeControls(){
   const count=exchange.count;
   $('exchangeWork').innerHTML=`<div class="code"><span>ACCESS CODE</span><b>${esc(exchange.accessCode)}</b></div><p>Node ${esc(exchange.nodeId)} · Scanne ${count} eigene und ${count} Node-Cores.</p><div id="exchangeProgress" class="feedback">EIGEN ${exchange.inCount}/${count} · NODE ${exchange.outCount}/${count}</div><button id="exchangeCoreScan" class="primary" ${exchange.ready?'hidden':''}>N-CORE SCANNEN</button><button id="exchangeConfirm" class="primary" ${exchange.ready?'':'hidden'}>EXCHANGE BESTÄTIGEN</button><div id="exchangeTime" class="feedback"></div>`;
   $('exchangeCoreScan').onclick=scanExchangeCore;$('exchangeConfirm').onclick=confirmExchange;
+  showExchangeTimer();
 }
 async function recoverExchange(){
   const raw=sessionStorage.getItem(EXCHANGE_KEY);if(!raw||!view||view.actor.role!=='PIONEER')return;
