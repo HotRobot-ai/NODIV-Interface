@@ -22,3 +22,26 @@ test('two-core Exchange uses one atomic operation and preserves three Node cores
   assert.equal(f.core.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id='TEST-V2' AND owner_type='NODE' AND owner_id='NODE-001'").get().n,3);
   assert.equal(f.core.db.prepare("SELECT COUNT(*) n FROM operations WHERE event_id='TEST-V2' AND kind='EXCHANGE'").get().n,1);
 }finally{f.close()}});
+
+test('exchange recovery reports persisted scan progress and rejects cross-role access',()=>{const f=fixture();try{
+  const session=f.store.session(f.store.startSession('TEST-V2',DEFAULT_UIDS.pioneerAccess).token);
+  const grant=f.store.issueNodeGrant(session,DEFAULT_UIDS.node),prep=f.store.prepareExchange(session,{grantId:grant.grantId,count:1});
+  assert.deepEqual([f.store.exchangeStatus(session,{exchangeId:prep.exchangeId}).inCount,f.store.exchangeStatus(session,{exchangeId:prep.exchangeId}).outCount],[0,0]);
+  f.store.scanExchangeCore(session,{exchangeId:prep.exchangeId,uid:DEFAULT_UIDS.pioneerCore});
+  const saved=f.store.exchangeStatus(session,{exchangeId:prep.exchangeId});assert.equal(saved.state,'PREPARED');assert.equal(saved.inCount,1);assert.equal(saved.outCount,0);assert.equal(saved.ready,false);
+  const fop=f.store.session(f.store.startSession('TEST-V2',DEFAULT_UIDS.fopAccess).token);
+  assert.throws(()=>f.store.exchangeStatus(fop,{exchangeId:prep.exchangeId}),/PIONEER_REQUIRED/);
+  f.store.scanExchangeCore(session,{exchangeId:prep.exchangeId,uid:DEFAULT_UIDS.node1});
+  assert.equal(f.store.exchangeStatus(session,{exchangeId:prep.exchangeId}).ready,true);
+  f.store.confirmExchange(session,{exchangeId:prep.exchangeId,accessCode:prep.accessCode});
+  assert.equal(f.store.exchangeStatus(session,{exchangeId:prep.exchangeId}).state,'CONFIRMED');
+}finally{f.close()}});
+test('exchange recovery reports expiry without extending or committing intent',()=>{const f=fixture();try{
+  const session=f.store.session(f.store.startSession('TEST-V2',DEFAULT_UIDS.pioneerAccess).token);
+  const grant=f.store.issueNodeGrant(session,DEFAULT_UIDS.node),prep=f.store.prepareExchange(session,{grantId:grant.grantId,count:1});
+  f.core.db.prepare('UPDATE lab_exchange_intents SET expires_at=0 WHERE exchange_id=?').run(prep.exchangeId);
+  const status=f.store.exchangeStatus(session,{exchangeId:prep.exchangeId});
+  assert.equal(status.state,'EXPIRED');assert.equal(status.ready,false);
+  assert.throws(()=>f.store.confirmExchange(session,{exchangeId:prep.exchangeId,accessCode:prep.accessCode}),/EXCHANGE_INTENT_EXPIRED/);
+  assert.equal(f.core.db.prepare("SELECT COUNT(*) n FROM operations WHERE event_id='TEST-V2' AND kind='EXCHANGE'").get().n,0);
+}finally{f.close()}});
