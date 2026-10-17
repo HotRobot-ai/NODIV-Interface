@@ -57,6 +57,7 @@ test('BLOCK06 registration flow persists start and exposes RESTORE only after qu
     await fx.call('/api/scan',{method:'POST',token:p3.token,data:{uid:'04BB0001'}});
     fx.app.runtime.exchange({eventId,operationId:'B06-X1',pioneerId:'P9003',nodeId:'NODE-001',gives:[plan.p9003.coreId],takes:[take]});
     // A personal lock excludes a discovered Node; an unknown installed Node is never a fallback.
+    fx.app.core.enforceNodeLocks=true;
     fx.app.core.db.prepare("INSERT INTO actor_node_locks(event_id,actor_id,node_id,kind,until_epoch,operation_id) VALUES (?,?,?,'RESTORE',?,?)").run(eventId,'P9003','NODE-001',fx.app.core.clock()+3600,'B06-LOCK');
     pv=await fx.call('/api/role/state',{token:p3.token});assert.equal(pv.restoreDispatch.eligible,false);
     await assert.rejects(()=>fx.call('/api/mission/assign-next',{method:'POST',token:p3.token}),/RESTORE_ASSIGNMENT_UNAVAILABLE/);
@@ -64,6 +65,7 @@ test('BLOCK06 registration flow persists start and exposes RESTORE only after qu
     pv=await fx.call('/api/role/state',{token:p3.token});assert.equal(pv.restoreDispatch.eligible,true);
     assert.equal(pv.restoreDispatch.candidate.nodeId,'NODE-003');
     fx.app.core.db.prepare('DELETE FROM actor_node_locks WHERE event_id=? AND actor_id=? AND node_id=?').run(eventId,'P9003','NODE-001');
+    fx.app.core.enforceNodeLocks=false;
     pv=await fx.call('/api/role/state',{token:p3.token});assert.equal(pv.restoreDispatch.eligible,true);assert.equal(pv.restoreDispatch.phase,1);
     const knownBefore=fx.app.core.db.prepare('SELECT node_id FROM pioneer_known_nodes WHERE event_id=? AND actor_id=?').all(eventId,'P9003').map(x=>x.node_id);
     assert.deepEqual(knownBefore,['NODE-001','NODE-003']);
