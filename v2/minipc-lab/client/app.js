@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let token='',session=null,view=null;
-let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,evacFlow=null,scanActive=false;
+let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,hqPanelOpen=false,evacFlow=null,scanActive=false;
 
 const ROLE_LABEL={FOUNDER:'FOUNDER',FOP:'FIELD OPERATOR',PIONEER:'PIONEER',LOCAL:'LOCAL',UNBOUND:'UNBOUND'};
 const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'CYAN FIELD CHANNEL',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
@@ -112,7 +112,7 @@ async function refreshHealth(){
 function roleInteractionActive(){
   const host=$('roleContent'),active=document.activeElement;
   const formFocused=!!(host&&active&&host.contains(active)&&['INPUT','SELECT','TEXTAREA'].includes(active.tagName));
-  return !!(scanActive||exchange||(cooldownNodeId&&nodeCooldownUntil>Date.now()/1000)||catchPreview||fopFlow||missionFlow||hqFlow||evacFlow||host?.dataset.userEditing==='1'||formFocused);
+  return !!(scanActive||exchange||(cooldownNodeId&&nodeCooldownUntil>Date.now()/1000)||catchPreview||fopFlow||missionFlow||hqFlow||hqPanelOpen||evacFlow||host?.dataset.userEditing==='1'||formFocused);
 }
 async function refreshRole({quiet=false,passive=false}={}){
   if(!token)return;
@@ -365,13 +365,15 @@ async function confirmCatch(){
   catch(e){phase('error',friendly(e));}
 }
 
+function closeHq(){hqPanelOpen=false;hqFlow=null;const host=$('hqWork');if(host)host.innerHTML='<p class="phase-note">HQ-Zugang geschlossen. Bei Bedarf erneut öffnen.</p>';phase('idle','HQ-Zugang geschlossen.');}
 function hqHtml(hq){
   const points=(hq.points||[]).map(p=>`<div class="hq-point" data-state="${p.state}"><span>${esc(p.bayId)}</span><b>${p.state}</b></div>`).join('');
   const own=(hq.points||[]).some(p=>p.ownReservation);
-  return `<div class="hq-state">${points||'<div class="hq-point">KEINE PUNKTE</div>'}</div><p>${own?'Dein Uploadpunkt ist reserviert. Scanne jetzt die reale HQ-NFC-Fläche.':'Normaler Upload ist kostenlos. Secure Approach kostet 150 E und reserviert 05:00 inklusive Catch-Schutz.'}</p><button id="hqSecure" class="secondary" ${hq.available<1||view.securedEnergy<150||own?'disabled':''}>SECURE APPROACH // 150 E</button><button id="hqScanBay" class="primary">UPLOADPUNKT NFC SCANNEN</button><div id="hqOut" class="feedback"></div>`;
+  return `<div class="hq-state">${points||'<div class="hq-point">KEINE PUNKTE</div>'}</div><p>${own?'Dein Uploadpunkt ist reserviert. Scanne jetzt die reale HQ-NFC-Fläche.':'Normaler Upload ist kostenlos. Secure Approach kostet 150 E und reserviert 05:00 inklusive Catch-Schutz.'}</p><button id="hqSecure" class="secondary" ${hq.available<1||view.securedEnergy<150||own?'disabled':''}>SECURE APPROACH // 150 E</button><button id="hqScanBay" class="primary">UPLOADPUNKT NFC SCANNEN</button><button id="hqClose" class="secondary">SCHLIESSEN</button><div id="hqOut" class="feedback"></div>`;
 }
 async function openHq(){
-  try{phase('check','HQ-Status wird vom Server geladen.');const hq=await api('/api/hq/state');view.hq=hq;$('hqWork').innerHTML=hqHtml(hq);$('hqSecure').onclick=activateSecure;$('hqScanBay').onclick=claimHq;phase('success','HQ-Status aktuell.');}
+  hqPanelOpen=true;
+  try{phase('check','HQ-Status wird vom Server geladen.');const hq=await api('/api/hq/state');view.hq=hq;$('hqWork').innerHTML=hqHtml(hq);$('hqSecure').onclick=activateSecure;$('hqScanBay').onclick=claimHq;$('hqClose').onclick=closeHq;phase('success','HQ-Status aktuell.');}
   catch(e){phase('error',friendly(e));}
 }
 async function activateSecure(){
@@ -410,7 +412,7 @@ async function confirmHq(){
     let operationId=sessionStorage.getItem(key);if(!operationId){operationId=op('UPLOAD');sessionStorage.setItem(key,operationId);}
     phase('commit','Core-Besitz, Energie und ggf. RE-SUPPLY werden gemeinsam gebucht.');
     const r=await api('/api/hq/confirm',{method:'POST',data:{orderId:hqFlow.orderId,operationId}});
-    sessionStorage.removeItem(key);hqFlow=null;
+    sessionStorage.removeItem(key);hqFlow=null;hqPanelOpen=false;
     phase('success',r.mandatoryResupply?`Upload gesichert // ${r.energyCredit} E. RE-SUPPLY ist verbindlich zugewiesen.`:`Upload gesichert // ${r.energyCredit} E.`);
     await refreshRole({quiet:true});
   }catch(e){phase('error',friendly(e));}
@@ -616,7 +618,7 @@ $('btnAuth').onclick=async()=>{
     await refreshRole({quiet:true});await recoverExchange();phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
   }catch(e){setFeedback('authOut',friendly(e),true);phase('error',friendly(e));}
 };
-$('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=evacFlow=null;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
+$('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=evacFlow=null;hqPanelOpen=false;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
 
 const BLOCK02_KEY='nodiv-v2-block02-before-v1';
 function canonicalState(s){return {eventId:s.eventId,actor:s.actor,personal:(s.personal||[]).map(x=>({core_id:x.core_id,uid:x.uid,visible_energy:x.visible_energy,status:x.status})),nodes:(s.nodes||[]).map(n=>({node_id:n.node_id,state:n.state,cores:(n.cores||[]).map(x=>({core_id:x.core_id,uid:x.uid,visible_energy:x.visible_energy,status:x.status}))})),recent:(s.recent||[]).map(x=>({operation_id:x.operation_id,kind:x.kind,created_at:x.created_at,response:x.response}))};}
