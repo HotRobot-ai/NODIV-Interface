@@ -54,6 +54,7 @@ test('BLOCK06 registration flow persists start and exposes RESTORE only after qu
     const loadoutUids=loadout.transit.map(x=>fx.app.core.core(eventId,x.core_id).uid);
     await fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:'NODE-003',coreUids:loadoutUids,operationId:'B06-IN-3'}});
     const take=fx.app.core.db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id='NODE-001' ORDER BY core_id LIMIT 1").get(eventId).core_id;
+    await fx.call('/api/scan',{method:'POST',token:p3.token,data:{uid:'04BB0001'}});
     fx.app.runtime.exchange({eventId,operationId:'B06-X1',pioneerId:'P9003',nodeId:'NODE-001',gives:[plan.p9003.coreId],takes:[take]});
     pv=await fx.call('/api/role/state',{token:p3.token});assert.equal(pv.restoreDispatch.eligible,true);assert.equal(pv.restoreDispatch.phase,1);
     const mission=await fx.call('/api/mission/assign-next',{method:'POST',token:p3.token});
