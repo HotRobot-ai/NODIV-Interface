@@ -101,7 +101,7 @@ function fmt(seconds){seconds=Math.max(0,Math.ceil(Number(seconds)||0));return `
 function op(prefix){return `${prefix}-${crypto.randomUUID()}`;}
 
 async function refreshHealth(){
-  try{const h=await api('/health',{auth:false});$('health').textContent=h.secure?'ONLINE // HTTPS':'ONLINE // HTTP · NFC GESPERRT';}
+  try{const h=await api('/health',{auth:false});$('health').textContent=window.isSecureContext&&location.protocol==='https:'?'ONLINE // HTTPS · NFC BEREIT':(window.isSecureContext?'ONLINE // SICHERER KONTEXT':'ONLINE // HTTP · NFC GESPERRT');}
   catch{$('health').textContent='SERVER NICHT ERREICHBAR';}
 }
 function roleInteractionActive(){
