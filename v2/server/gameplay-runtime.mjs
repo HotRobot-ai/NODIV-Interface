@@ -89,7 +89,8 @@ export function createV2GameplayRuntime(path=':memory:', {
     requiredStrings([eventId,operationId,pioneerId],'UPLOAD_CONTEXT_REQUIRED');uniqueStrings(coreIds,'UPLOAD_CORES_REQUIRED');
     if(coreIds.length>3)throw new GameError('UPLOAD_CORES_INVALID');
     const actor=core.db.prepare('SELECT role,capacity FROM actors WHERE event_id=? AND actor_id=?').get(eventId,pioneerId);
-    const mandatoryFullUpload=actor?.role==='PIONEER'&&actor.capacity===3&&coreIds.length===3;
+    const ownedBefore=core.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,pioneerId).n;
+    const mandatoryFullUpload=actor?.role==='PIONEER'&&ownedBefore===coreIds.length;
     let energyCredit=0,mandatoryResupply=null;
     const moves=coreIds.map(id=>{
       const c=core.core(eventId,id);
