@@ -149,6 +149,13 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
       }catch(e){db.exec('ROLLBACK');throw e;}
       return {exchangeId,nodeId:grant.target_id,count,accessCode,expiresAt:now+exchangeTtl};
     },
+    exchangeStatus(session,{exchangeId}){
+      sessionRole(session,['PIONEER'],'PIONEER_REQUIRED');
+      const intent=db.prepare('SELECT * FROM lab_exchange_intents WHERE exchange_id=? AND event_id=? AND actor_id=?').get(exchangeId,session.event_id,session.actor_id);
+      if(!intent)throw Error('EXCHANGE_INTENT_DENIED');
+      const now=clock(),incoming=parseList(intent.incoming_core_ids_json),outgoing=parseList(intent.outgoing_core_ids_json);
+      return {exchangeId:intent.exchange_id,nodeId:intent.node_id,count:intent.count,state:intent.state==='PREPARED'&&intent.expires_at<=now?'EXPIRED':intent.state,expiresAt:intent.expires_at,serverNow:now,inCount:incoming.length,outCount:outgoing.length,ready:incoming.length===intent.count&&outgoing.length===intent.count};
+    },
     scanExchangeCore(session,{exchangeId,uid}){
       sessionRole(session,['PIONEER'],'PIONEER_REQUIRED');
       const normalized=normalizeUid(uid), now=clock();
