@@ -64,3 +64,6 @@ select:focus,input:focus,textarea:focus{border-color:var(--role-accent,#79e8ff);
 #roleShell[data-role="FOUNDER"] .desktop-test button.primary{border-color:#e5cb78;background:linear-gradient(180deg,#4a3f1c,#29230f)}
 #roleShell[data-role="FOUNDER"] .desktop-test button.danger{min-height:70px;margin-top:16px}
 @media(max-width:430px){.capability{grid-template-columns:24px 1fr;padding:11px 10px}.capability b{font-size:12px}.capability small{font-size:11px}}
+
+/* Action states: readable outdoors, no ambiguous double-taps. */
+button:not(:disabled){cursor:pointer}button:focus-visible{outline:3px solid #fff;outline-offset:3px}button[data-action-state="running"]{opacity:1;filter:none;color:#061219;background:#ffd78b;border:2px solid #fff0c4;box-shadow:0 0 0 3px #ffd78b44;cursor:progress;animation:nodiv-action-pulse 1.1s ease-in-out infinite}button:disabled:not([data-action-state="running"]){opacity:.48;filter:grayscale(.65);border-style:dashed;box-shadow:none;cursor:not-allowed}button[hidden]{display:none!important}@keyframes nodiv-action-pulse{50%{box-shadow:0 0 0 6px #ffd78b22}}@media(prefers-reduced-motion:reduce){button[data-action-state="running"]{animation:none}}
