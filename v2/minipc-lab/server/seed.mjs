@@ -65,11 +65,15 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
     if(!allowed.includes(state))throw Error('REGISTRATION_DATABASE_STATE_INVALID');
     if((mode==='desktop'&&['READY','INITIALIZED','FIELD_ACTIVE'].includes(state))||(mode==='registration'&&['READY','INITIALIZED'].includes(state))){
       if(!core.db.prepare('SELECT 1 FROM hq_upload_bays WHERE event_id=? AND bay_id=?').get(eventId,'HQ-01'))runtime.hq.seedBay(eventId,{id:'HQ-01',uid:'PENDING-HQ-01'});
-      const existing=core.db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,'FOUNDER-TEST');
+      const founderUid=normalizeUid(process.env.NODIV_UID_FOUNDER_CARD||'');
+      if(!/^[0-9A-F]{8,32}$/.test(founderUid))throw Error('REGISTRATION_FOUNDER_UID_REQUIRED');
+      const existing=core.db.prepare('SELECT uid FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,'FOUNDER-TEST');
       if(!existing){
-        const founderUid=normalizeUid(process.env.NODIV_UID_FOUNDER_CARD||'');
-        if(!/^[0-9A-F]{8,32}$/.test(founderUid))throw Error('REGISTRATION_FOUNDER_UID_REQUIRED');
         core.db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,founderUid,'FOUNDER-TEST');
+      }else if(existing.uid!==founderUid){
+        // A changed bootstrap UID must not silently replace the identity of an existing event.
+        // Preserve all event data and require an explicit recovery procedure instead.
+        throw Error('REGISTRATION_FOUNDER_UID_MISMATCH');
       }
     }
     runtime.close();
