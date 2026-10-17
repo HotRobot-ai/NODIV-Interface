@@ -335,7 +335,7 @@ async function confirmExchange(){
 
 const MISSION_STEPS=[['nodeUid','MISSION_NODE','ZIEL-NODE','Ziel-Node scannen'],['cargoUid','MISSION_CARGO','TRANSIT-CORE','Transit-Core scannen'],['outUid','MISSION_OUT_CORE','NIEDRIGSTEN NODE-CORE','Schwächsten Node-Core scannen']];
 async function startMission(){
-  if(!missionFlow)missionFlow={nodeUid:'',cargoUid:'',outUid:'',step:0};
+  if(!missionFlow)missionFlow={nodeUid:'',cargoUid:'',outUid:'',step:0,lowestCoreEnergy:null};
   const host=$('missionProgress');
   if(!host)return;
   const step=missionFlow.step;
@@ -346,11 +346,12 @@ async function startMission(){
     phase('check',`${label} wird geprüft.`);
     const r=await api('/api/mission/check',{method:'POST',data:{uid}});
     if(r.kind!==expected)throw Error('MISSION_SCAN_MISMATCH');
-    missionFlow[key]=uid;missionFlow.step=step+1;
+    missionFlow[key]=uid;if(expected==='MISSION_NODE')missionFlow.lowestCoreEnergy=r.lowestCoreEnergy;missionFlow.step=step+1;
     const next=MISSION_STEPS[missionFlow.step];
-    host.innerHTML=`<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${next[3]}.</p><button id="missionNext" class="primary">${next[3].toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
+    const nextInstruction=next?.[1]==='MISSION_OUT_CORE'&&Number.isFinite(missionFlow.lowestCoreEnergy)?`N-Core mit ${missionFlow.lowestCoreEnergy} E aus dem Ziel-Node entnehmen und scannen`:next?.[3];
+    host.innerHTML=`<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${nextInstruction}.</p><button id="missionNext" class="primary">${nextInstruction.toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
     if(next)$('missionNext').onclick=startMission;else $('missionConfirm').onclick=confirmMission;
-    phase('success',next?`Scan bestätigt. ${next[3]}.`:'Alle Scans bestätigt. RESTORE kann abgeschlossen werden.');
+    phase('success',next?`Scan bestätigt. ${nextInstruction}.`:'Alle Scans bestätigt. RESTORE kann abgeschlossen werden.');
   }catch(e){
     phase('error',friendly(e));
     host.innerHTML=`<p class="phase-note">Scan nicht abgeschlossen. Du kannst diesen Schritt erneut versuchen.</p><button id="missionRetry" class="primary">${MISSION_STEPS[missionFlow.step][3].toUpperCase()}</button>`;
