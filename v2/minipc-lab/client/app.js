@@ -136,6 +136,7 @@ function renderRole({passive=false}={}){
   if(view.actor.role==='FOUNDER')host.innerHTML=renderFounder(view);
   host.dataset.userEditing='0';
   bindRole();
+  if(view.actor.role==='PIONEER')showNodeCooldown();
 }
 function eventActionBlocked(v){
   if(v.event?.state==='FIELD_ACTIVE')return '';
@@ -261,11 +262,26 @@ function bindRole(){
 const EXCHANGE_KEY='nodiv-v2-exchange-pending';
 let nodeCooldownUntil=0;
 function showNodeCooldown(){
-  const el=$('exchangeWork');
-  if(!el||!nodeCooldownUntil||exchange?.exchangeId)return;
+  const host=$('exchangeWork');
+  if(!host||!nodeCooldownUntil||exchange?.exchangeId)return;
   const left=Math.max(0,Math.ceil(nodeCooldownUntil-Date.now()/1000));
-  if(left===0){nodeCooldownUntil=0;el.innerHTML='<div class="feedback ok">NODE WIEDER FREI // Für einen neuen Tausch Node erneut scannen.</div>';return;}
-  el.innerHTML='<div class="feedback">NODE-SPERRE AKTIV // '+fmt(left)+'</div>';
+  let display=host.querySelector('#nodeCooldownDisplay');
+  if(!display){
+    host.replaceChildren();
+    display=document.createElement('div');
+    display.id='nodeCooldownDisplay';
+    display.className='feedback';
+    display.setAttribute('role','timer');
+    host.appendChild(display);
+  }
+  if(left===0){
+    nodeCooldownUntil=0;
+    display.classList.add('ok');
+    display.textContent='NODE WIEDER FREI // Für einen neuen Tausch Node erneut scannen.';
+    return;
+  }
+  const label='NODE-SPERRE AKTIV // '+fmt(left);
+  if(display.textContent!==label)display.textContent=label;
 }
 setInterval(showNodeCooldown,1000);
 function exchangeControls(){
