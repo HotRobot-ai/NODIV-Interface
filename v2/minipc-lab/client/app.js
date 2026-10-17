@@ -65,9 +65,9 @@ async function nfc(label){
   try{
     return await new Promise((resolve,reject)=>{
       reader.addEventListener('reading',e=>{
-        const uid=uidFromEvent(e);ctrl.abort();
+        const uid=uidFromEvent(e);
         if(!uid){reject(Error('NFC_KEINE_SERIENNUMMER'));return;}
-        phase('check',`${label}: NFC erkannt. UID wird geprüft.`);resolve(uid);
+        phase('check',`${label}: NFC erkannt. UID wird geprüft.`);resolve(uid);ctrl.abort();
       },{once:true});
       ctrl.signal.addEventListener('abort',()=>reject(Error('NFC_SCAN_TIMEOUT')),{once:true});
       reader.addEventListener('readingerror',()=>reject(Error('NFC_LESFEHLER')),{once:true});
