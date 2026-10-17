@@ -232,8 +232,24 @@ function bindRole(){
   $('evacPioneerOpen')?.addEventListener('click',openPioneerEvac);
 }
 
+const EXCHANGE_KEY='nodiv-v2-exchange-pending';
+function exchangeControls(){
+  const count=exchange.count;
+  $('exchangeWork').innerHTML=`<div class="code"><span>ACCESS CODE</span><b>${esc(exchange.accessCode)}</b></div><p>Node ${esc(exchange.nodeId)} · Scanne ${count} eigene und ${count} Node-Cores.</p><div id="exchangeProgress" class="feedback">EIGEN ${exchange.inCount}/${count} · NODE ${exchange.outCount}/${count}</div><button id="exchangeCoreScan" class="primary" ${exchange.ready?'hidden':''}>N-CORE SCANNEN</button><button id="exchangeConfirm" class="primary" ${exchange.ready?'':'hidden'}>EXCHANGE BESTÄTIGEN</button><div id="exchangeTime" class="feedback"></div>`;
+  $('exchangeCoreScan').onclick=scanExchangeCore;$('exchangeConfirm').onclick=confirmExchange;
+}
+async function recoverExchange(){
+  const raw=sessionStorage.getItem(EXCHANGE_KEY);if(!raw||!view||view.actor.role!=='PIONEER')return;
+  try{
+    const saved=JSON.parse(raw);if(saved.actorId!==view.actor.id)return;
+    const s=await api('/api/exchange/status?exchangeId='+encodeURIComponent(saved.exchangeId));
+    if(s.state!=='PREPARED'){sessionStorage.removeItem(EXCHANGE_KEY);phase(s.state==='CONFIRMED'?'success':'error',s.state==='CONFIRMED'?'Exchange bereits bestätigt.':'Exchange abgelaufen. Node erneut scannen.');return;}
+    exchange={...saved,...s};exchangeControls();phase('success','Exchange vom Server wiederhergestellt.');
+  }catch(e){phase('error','Exchange-Status nicht abrufbar: '+friendly(e));}
+}
 async function startExchange(){
   try{
+    if(exchange?.exchangeId){phase('error','Exchange läuft bereits. Erst abschließen oder Ablauf abwarten.');return;}
     exchange=null;const uid=await nfc('NODE');
     phase('check','Node wird serverseitig geprüft.');
     const grant=await api('/api/scan',{method:'POST',data:{uid}});
@@ -250,7 +266,8 @@ async function prepareExchange(){
     const count=Number($('exchangeCount').value);phase('check','Tausch wird vom Server vorbereitet.');
     const r=await api('/api/exchange/prepare',{method:'POST',data:{grantId:exchange.grantId,count}});
     exchange={...exchange,...r,inCount:0,outCount:0};
-    $('exchangeWork').innerHTML=`<div class="code"><span>ACCESS CODE</span><b>${esc(r.accessCode)}</b></div><p>Scanne ${count} eigene und ${count} Node-Cores. Reihenfolge egal; jeder Scan wird sofort geprüft.</p><div id="exchangeProgress" class="feedback">EIGEN 0/${count} · NODE 0/${count}</div><button id="exchangeCoreScan" class="primary">N-CORE SCANNEN</button><button id="exchangeConfirm" hidden>EXCHANGE BESTÄTIGEN</button>`;
+    sessionStorage.setItem(EXCHANGE_KEY,JSON.stringify({...exchange,actorId:view.actor.id}));
+    exchangeControls();
     $('exchangeCoreScan').onclick=scanExchangeCore;$('exchangeConfirm').onclick=confirmExchange;phase('success','Autorisierung erteilt. Core-Scans können beginnen.');
   }catch(e){phase('error',friendly(e));}
 }
@@ -258,14 +275,15 @@ async function scanExchangeCore(){
   try{
     const uid=await nfc('N-CORE');phase('check','Core wird gegen Besitz und Node-Zustand geprüft.');
     const r=await api('/api/scan',{method:'POST',data:{uid,exchangeId:exchange.exchangeId}});
-    exchange.inCount=r.inCount;exchange.outCount=r.outCount;
+    exchange.inCount=r.inCount;exchange.outCount=r.outCount;exchange.ready=r.ready;
+    sessionStorage.setItem(EXCHANGE_KEY,JSON.stringify({...exchange,actorId:view.actor.id}));
     $('exchangeProgress').textContent=`EIGEN ${r.inCount}/${r.count} · NODE ${r.outCount}/${r.count} // ${r.visibleEnergy} E bestätigt`;
     if(r.ready){$('exchangeCoreScan').hidden=true;$('exchangeConfirm').hidden=false;phase('success','Alle Scans bestätigt. Noch keine Umbuchung erfolgt.');}
     else phase('success','Scan bestätigt. Nächsten Core scannen.');
   }catch(e){phase('error',friendly(e));}
 }
 async function confirmExchange(){
-  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});phase('success',`Exchange abgeschlossen. Node-Sperre 05:00 aktiv.`);exchange=null;await refreshRole({quiet:true});}
+  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});phase('success',`Exchange abgeschlossen. Node-Sperre 05:00 aktiv.`);exchange=null;sessionStorage.removeItem(EXCHANGE_KEY);await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
 }
 
@@ -549,7 +567,7 @@ $('btnAuth').onclick=async()=>{
     const uid=await nfc('ACCESS CARD');phase('check','Identität und Rolle werden serverseitig geprüft.');
     session=await api('/api/session/start',{method:'POST',auth:false,data:{uid}});token=session.token;
     $('auth').hidden=true;$('roleShell').hidden=false;$('btnState').disabled=false;$('btnRestartSave').disabled=false;$('btnRestartCompare').disabled=false;
-    await refreshRole({quiet:true});phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
+    await refreshRole({quiet:true});await recoverExchange();phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
   }catch(e){setFeedback('authOut',friendly(e),true);phase('error',friendly(e));}
 };
 $('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=evacFlow=null;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
