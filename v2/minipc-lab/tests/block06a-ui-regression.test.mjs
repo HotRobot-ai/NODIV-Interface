@@ -9,7 +9,7 @@ const css=readFileSync(join(root.pathname,'client','style.css'),'utf8');
 
 test('BLOCK06A UI: passive refresh preserves active forms and NFC flows',()=>{
   assert.match(app,/function roleInteractionActive\(\)/);
-  assert.match(app,/scanActive\|\|exchange\|\|catchPreview\|\|fopFlow\|\|missionFlow\|\|hqFlow\|\|evacFlow/);
+  assert.match(app,/scanActive\\|\\|exchange\\|\\|\\(nodeCooldownUntil.*?\\)\\|\\|catchPreview\|\|fopFlow\|\|missionFlow\|\|hqFlow\|\|evacFlow/);
   assert.match(app,/refreshRole\(\{quiet:true,passive:true\}\)/);
   assert.match(app,/if\(passive&&roleInteractionActive\(\)\)return/);
   assert.match(app,/dataset\.userEditing='1'/);
