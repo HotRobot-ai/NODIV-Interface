@@ -45,3 +45,5 @@ test('exchange recovery reports expiry without extending or committing intent',(
   assert.throws(()=>f.store.confirmExchange(session,{exchangeId:prep.exchangeId,accessCode:prep.accessCode}),/EXCHANGE_INTENT_EXPIRED/);
   assert.equal(f.core.db.prepare("SELECT COUNT(*) n FROM operations WHERE event_id='TEST-V2' AND kind='EXCHANGE'").get().n,0);
 }finally{f.close()}});
+
+test('FOP primary code stays stable and is role protected',()=>{const f=fixture();try{const fop=f.store.session(f.store.startSession('TEST-V2',DEFAULT_UIDS.fopAccess).token);const pioneer=f.store.session(f.store.startSession('TEST-V2',DEFAULT_UIDS.pioneerAccess).token);const code=f.store.fopPrimaryCode(fop,'NODE-001');assert.equal(code.length,4);assert.equal(f.store.fopPrimaryCode(fop,'NODE-001'),code);assert.throws(()=>f.store.fopPrimaryCode(pioneer,'NODE-001'),/ROLE_DENIED/);assert.throws(()=>f.store.fopPrimaryCode(fop,'NODE-UNKNOWN'),/NODE_UNKNOWN/);}finally{f.close()}});
