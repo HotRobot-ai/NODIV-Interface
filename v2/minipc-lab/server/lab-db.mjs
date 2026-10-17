@@ -166,17 +166,8 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
       const exchangeId=randomBytes(18).toString('base64url');
       const operationId='LAB-EX-'+randomBytes(12).toString('hex');
       // The physical lock code is assigned to the Node, not to each Exchange.
-      let mechanical=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,grant.target_id);
-      if(!mechanical){
-        // Legacy/test nodes may have been installed before FOP requested their code.
-        for(let i=0;i<10000;i++){
-          const candidate=String(randomInt(0,10000)).padStart(4,'0');
-          if(db.prepare('SELECT 1 FROM lab_node_mechanical_codes WHERE event_id=? AND code=?').get(session.event_id,candidate))continue;
-          db.prepare("INSERT INTO lab_node_mechanical_codes(event_id,node_id,slot,code) VALUES (?,?,'PRIMARY',?)").run(session.event_id,grant.target_id,candidate);
-          mechanical={code:candidate};break;
-        }
-        if(!mechanical)throw Error('NODE_CODE_CAPACITY_EXHAUSTED');
-      }
+      const mechanical=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,grant.target_id);
+      if(!mechanical)throw Error('NODE_MECHANICAL_CODE_MISSING');
       const accessCode=mechanical.code;
       db.exec('BEGIN IMMEDIATE');
       try{
