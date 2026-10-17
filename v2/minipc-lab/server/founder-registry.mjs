@@ -21,13 +21,28 @@ function nextCoreId(db,eventId){
   }
   reject('REGISTRATION_CORE_CAPACITY_EXHAUSTED');
 }
-export function createFounderRegistry(db){
+function nextNodeId(db,eventId){
+  const row=db.prepare(`
+    SELECT n.node_id
+    FROM nodes n
+    LEFT JOIN lab_node_tags t ON t.event_id=n.event_id AND t.node_id=n.node_id
+    WHERE n.event_id=? AND n.state='AVAILABLE' AND t.node_id IS NULL
+    ORDER BY n.node_id
+    LIMIT 1
+  `).get(eventId);
+  if(!row)reject('REGISTRATION_NODE_CAPACITY_EXHAUSTED');
+  return row.node_id;
+}
+export function createFounderRegistry(db,{mode='registration'}={}){
+  const desktop=mode==='desktop';
   function register({eventId,role,uid,id,energy,actorRole}){
     const tag=normalizeUid(uid);
     if(!/^[0-9A-F]{8,32}$/.test(tag))reject('REGISTRATION_INVALID');
     const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
-    if(!event||event.state!=='READY')reject('REGISTRATION_PHASE_DENIED');
-    if(db.prepare('SELECT 1 FROM operations WHERE event_id=? LIMIT 1').get(eventId))reject('REGISTRATION_EVENT_USED');
+    const allowedStates=desktop?['READY','INITIALIZED','FIELD_ACTIVE']:['READY'];
+    if(!event||!allowedStates.includes(event.state))reject('REGISTRATION_PHASE_DENIED');
+    if(!desktop&&db.prepare('SELECT 1 FROM operations WHERE event_id=? LIMIT 1').get(eventId))reject('REGISTRATION_EVENT_USED');
+
     const kind=String(role||'').toUpperCase();
     if(!['CARD','NODE','CORE','HQ'].includes(kind))reject('REGISTRATION_INVALID');
     if(kind==='CORE'&&(!Number.isInteger(energy)||energy<1||energy>9999))reject('REGISTRATION_ENERGY_INVALID');
@@ -42,6 +57,7 @@ export function createFounderRegistry(db){
     let key=String(id||'').trim().toUpperCase();
     let resolvedActorRole=String(actorRole||'').trim().toUpperCase();
     if(kind==='CORE'&&!key)key=nextCoreId(db,eventId);
+    if(kind==='NODE'&&!key&&desktop)key=nextNodeId(db,eventId);
     if(kind==='CARD'&&!key){
       if(!DYNAMIC_ROLES.has(resolvedActorRole))reject('REGISTRATION_ROLE_REQUIRED');
       key=nextActorId(db,eventId,resolvedActorRole);
@@ -80,7 +96,7 @@ export function createFounderRegistry(db){
   function list(eventId){
     const cards=db.prepare("SELECT c.actor_id id,a.role,c.uid FROM lab_access_cards c JOIN actors a ON a.event_id=c.event_id AND a.actor_id=c.actor_id WHERE c.event_id=? ORDER BY CASE a.role WHEN 'FOUNDER' THEN 0 WHEN 'FOP' THEN 1 WHEN 'PIONEER' THEN 2 WHEN 'LOCAL' THEN 3 ELSE 4 END,c.actor_id").all(eventId);
     const nodes=db.prepare('SELECT t.node_id id,t.uid,n.state FROM lab_node_tags t JOIN nodes n ON n.event_id=t.event_id AND n.node_id=t.node_id WHERE t.event_id=? ORDER BY t.node_id').all(eventId);
-    const cores=db.prepare('SELECT core_id id,uid,visible_energy energy,status FROM cores WHERE event_id=? ORDER BY core_id').all(eventId);
+    const cores=db.prepare('SELECT core_id id,uid,visible_energy energy,status,owner_type ownerType,owner_id ownerId FROM cores WHERE event_id=? ORDER BY core_id').all(eventId);
     const hq=db.prepare("SELECT bay_id id,uid,active FROM hq_upload_bays WHERE event_id=? AND uid NOT LIKE 'PENDING-%' ORDER BY bay_id").all(eventId);
     return {cards,nodes,cores,hq};
   }

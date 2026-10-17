@@ -21,8 +21,10 @@ export function createV2GameplayRuntime(path=':memory:', {
   clock=()=>Math.floor(Date.now()/1000),
   verifyRecoveryNfcProof,
   verifyUploadNfcProof,
+  enforceNodeLocks=true,
 }={}) {
   const core=new SqliteGameCore(path,clock);
+  core.enforceNodeLocks=enforceNodeLocks;
   // Durable startup recovery: expired mission cargo returns to HQ before gameplay resumes.
   for(const e of core.db.prepare("SELECT event_id FROM events WHERE state='FIELD_ACTIVE'").all()) core.recoverExpiredMissions(e.event_id);
   const catchTransaction=new CatchTransaction(core);

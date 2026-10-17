@@ -7,7 +7,7 @@ export class GameError extends Error {
 
 const SCHEMA = `
 PRAGMA foreign_keys=ON;
-CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK(state IN ('READY','INITIALIZED','FIELD_ACTIVE','COMPLETED')));
+CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK(state IN ('READY','INITIALIZED','FIELD_ACTIVE','COMPLETED','TEST_ENDED')));
 CREATE TABLE IF NOT EXISTS actors (event_id TEXT NOT NULL, actor_id TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('FOUNDER','FOP','PIONEER','LOCAL','UNBOUND')), capacity INTEGER NOT NULL DEFAULT 0 CHECK(capacity BETWEEN 0 AND 3), active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), PRIMARY KEY(event_id,actor_id), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE TABLE IF NOT EXISTS nodes (event_id TEXT NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('AVAILABLE','INSTALLED','DEINSTALLED')), PRIMARY KEY(event_id,node_id), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE TABLE IF NOT EXISTS cores (event_id TEXT NOT NULL, core_id TEXT NOT NULL, uid TEXT NOT NULL, visible_energy INTEGER NOT NULL CHECK(visible_energy > 0), actual_energy INTEGER NOT NULL CHECK(actual_energy > 0), owner_type TEXT NOT NULL CHECK(owner_type IN ('HQ','PIONEER','NODE','TRANSIT')), owner_id TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(event_id,core_id), UNIQUE(event_id,uid), FOREIGN KEY(event_id) REFERENCES events(event_id));
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS actor_node_locks (event_id TEXT NOT NULL, actor_id TE
 `;
 
 export class SqliteGameCore {
-  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path, { timeout: 5000 }); if (path !== ':memory:') this.db.exec('PRAGMA journal_mode=WAL'); this.db.exec(SCHEMA); this.clock = clock; }
+  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path, { timeout: 5000 }); if (path !== ':memory:') this.db.exec('PRAGMA journal_mode=WAL'); this.db.exec(SCHEMA); this.clock = clock; this.enforceNodeLocks = true; }
   close() { this.db.close(); }
   seedEvent(eventId, state = 'FIELD_ACTIVE') { this.db.prepare('INSERT INTO events(event_id,state) VALUES (?,?)').run(eventId,state); }
   seedActor(eventId, actorId, role, capacity = 0) { this.db.prepare('INSERT INTO actors(event_id,actor_id,role,capacity) VALUES (?,?,?,?)').run(eventId,actorId,role,capacity); this.db.prepare('INSERT INTO balances(event_id,actor_id) VALUES (?,?)').run(eventId,actorId); }
@@ -34,7 +34,7 @@ export class SqliteGameCore {
   _fail(code, problems=null) { const e=new GameError(code); if(problems)e.problems=problems; throw e; }
   _assertNodeUnlocked(eventId,actorId,nodeId) {
     const lock=this.db.prepare("SELECT until_epoch FROM actor_node_locks WHERE event_id=? AND actor_id=? AND node_id=? AND kind='RESTORE'").get(eventId,actorId,nodeId);
-    if(lock?.until_epoch>this.clock()) this._fail('RESTORE_TARGET_LOCKED');
+    if(this.enforceNodeLocks&&lock?.until_epoch>this.clock()) this._fail('RESTORE_TARGET_LOCKED');
   }
   _assertMissionFree(eventId,nodeId,excludeMissionId=null) {
     const row=excludeMissionId
@@ -170,7 +170,7 @@ export class SqliteGameCore {
         this._assertMissionFree(eventId,nodeId);
         this._assertReservationFree(eventId,operationId,actorId,nodeId,moves.map(m=>m.id));
         const cd=this.db.prepare("SELECT until_epoch FROM node_cooldowns WHERE event_id=? AND node_id=? AND kind='EXCHANGE'").get(eventId,nodeId);
-        if(cd?.until_epoch>this.clock()) this._fail('NODE_EXCHANGE_COOLDOWN');
+        if(this.enforceNodeLocks&&cd?.until_epoch>this.clock()) this._fail('NODE_EXCHANGE_COOLDOWN');
       }else if(kind==='RESTORE_1'||kind==='RESTORE_2'){
         const phase=kind==='RESTORE_2'?2:1;
         if(energyCredit||nodeChanges.length||eventState||capacityChange!==1||actor.capacity!==phase||moves.length!==2) this._fail(kind+'_INVALID_SHAPE');
@@ -210,7 +210,8 @@ export class SqliteGameCore {
         if(nodeCores.length!==3||nodeCores.some(c=>c.status!=='DEPLOYED')) this._fail('NODE_REQUIRES_THREE_CORES');
         if(outgoing.id!==nodeCores[0].core_id) this._fail('RESUPPLY_MUST_DISPLACE_LOWEST');
         const personal=this.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,actorId).n;
-        if(personal!==0) this._fail('RESUPPLY_REQUIRES_EMPTY_INVENTORY');
+        const capacity=this.db.prepare("SELECT capacity FROM actors WHERE event_id=? AND actor_id=? AND role='PIONEER'").get(eventId,actorId)?.capacity;
+        if(!Number.isInteger(capacity)||personal>=capacity) this._fail('RESUPPLY_REQUIRES_FREE_SLOT');
       }else if(kind==='INSTALL'){
         if(energyCredit||capacityChange||eventState||moves.length!==3||nodeChanges.length!==1) this._fail('INSTALL_INVALID_SHAPE');
         const change=nodeChanges[0]; if(!change?.id||change.state!=='INSTALLED') this._fail('INSTALL_INVALID_NODE_CHANGE');
@@ -265,12 +266,12 @@ export class SqliteGameCore {
         if(this.db.prepare('UPDATE balances SET secured_energy=secured_energy+? WHERE event_id=? AND actor_id=?').run(energyCredit,eventId,actorId).changes!==1) this._fail('BALANCE_UNKNOWN');
       }
       if(kind==='EXCHANGE'){
-        exchangeCooldownUntil=this.clock()+300;
-        this.db.prepare("INSERT INTO node_cooldowns(event_id,node_id,kind,until_epoch,operation_id) VALUES (?,?,'EXCHANGE',?,?) ON CONFLICT(event_id,node_id,kind) DO UPDATE SET until_epoch=excluded.until_epoch,operation_id=excluded.operation_id").run(eventId,nodeId,exchangeCooldownUntil,operationId);
+        exchangeCooldownUntil=this.enforceNodeLocks?this.clock()+480:null;
+        if(this.enforceNodeLocks) this.db.prepare("INSERT INTO node_cooldowns(event_id,node_id,kind,until_epoch,operation_id) VALUES (?,?,'EXCHANGE',?,?) ON CONFLICT(event_id,node_id,kind) DO UPDATE SET until_epoch=excluded.until_epoch,operation_id=excluded.operation_id").run(eventId,nodeId,exchangeCooldownUntil,operationId);
       }
-      if(kind==='RESTORE_1'||kind==='RESTORE_2'){
-        restoreLockUntil=this.clock()+3600;
-        this.db.prepare("INSERT INTO actor_node_locks(event_id,actor_id,node_id,kind,until_epoch,operation_id) VALUES (?,?,?,'RESTORE',?,?) ON CONFLICT(event_id,actor_id,node_id,kind) DO UPDATE SET until_epoch=excluded.until_epoch,operation_id=excluded.operation_id").run(eventId,actorId,nodeId,restoreLockUntil,operationId);
+      if(kind==='RESTORE_1'||kind==='RESTORE_2'||kind==='RESUPPLY'){
+        restoreLockUntil=this.enforceNodeLocks?this.clock()+3600:null;
+        if(this.enforceNodeLocks) this.db.prepare("INSERT INTO actor_node_locks(event_id,actor_id,node_id,kind,until_epoch,operation_id) VALUES (?,?,?,'RESTORE',?,?) ON CONFLICT(event_id,actor_id,node_id,kind) DO UPDATE SET until_epoch=excluded.until_epoch,operation_id=excluded.operation_id").run(eventId,actorId,nodeId,restoreLockUntil,operationId);
       }
       this.assertIntegrity(eventId);
       const response={ok:true,eventId,operationId,kind,moved:moves.map(m=>m.id),energyCredit,replayed:false,...(exchangeCooldownUntil?{cooldownUntil:exchangeCooldownUntil}:{}),...(restoreLockUntil?{nodeLockUntil:restoreLockUntil}:{})};
