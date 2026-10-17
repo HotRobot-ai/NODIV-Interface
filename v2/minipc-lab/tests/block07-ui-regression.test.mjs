@@ -36,3 +36,13 @@ test('BLOCK07 package surface: one clearly named Windows launcher selects Founde
   assert.match(starter,/wird NICHT geloescht/);
   assert.match(html,/TESTMODUS · LOKALER SPIELSTAND/);
 });
+
+test('BLOCK07 NFC: a successful reading settles before its scan controller is aborted',()=>{
+  const reading=app.match(/reader\.addEventListener\('reading',e=>\{([\s\S]*?)\},\{once:true\}\)/);
+  assert.ok(reading,'shared NFC reading handler exists');
+  const body=reading[1];
+  assert.ok(body.indexOf('resolve(uid)')>=0,'UID resolves');
+  assert.ok(body.indexOf('ctrl.abort()',body.indexOf('resolve(uid)'))>body.indexOf('resolve(uid)'),'successful read aborts only after resolve');
+  assert.doesNotMatch(body.slice(0,body.indexOf('if(!uid)')),/ctrl\.abort\(\)/,'do not abort before UID validation');
+  assert.match(app,/ctrl\.signal\.addEventListener\('abort'/,'abort listener is covered by this regression');
+});
