@@ -75,6 +75,27 @@ async function nfc(label){
     });
   }finally{clearTimeout(timer);scanActive=false}
 }
+// One active action at a time; preserve the original label and restore it on failure.
+let activeActionButton=null;
+document.addEventListener('click',event=>{
+  const button=event.target.closest('button');
+  if(!button||button.disabled||!button.isConnected)return;
+  if(activeActionButton){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(!button.onclick)return;
+  activeActionButton=button;
+  button.dataset.originalLabel=button.textContent;
+  button.dataset.actionState='running';button.disabled=true;button.setAttribute('aria-busy','true');
+  button.textContent='AKTION LÄUFT …';
+  // Handler is invoked by the existing onclick listener. Release only when the
+  // corresponding async action settles, rather than using a fixed timeout.
+  const handler=button.onclick;
+  button.onclick=null;
+  Promise.resolve().then(()=>handler.call(button,event)).catch(e=>phase('error',friendly(e))).finally(()=>{
+    if(button.isConnected){button.disabled=false;button.textContent=button.dataset.originalLabel;button.dataset.actionState='ready';button.removeAttribute('aria-busy');button.onclick=handler;}
+    activeActionButton=null;
+  });
+  event.preventDefault();event.stopImmediatePropagation();
+},true);
 function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmt(seconds){seconds=Math.max(0,Math.ceil(Number(seconds)||0));return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
 function op(prefix){return `${prefix}-${crypto.randomUUID()}`;}
