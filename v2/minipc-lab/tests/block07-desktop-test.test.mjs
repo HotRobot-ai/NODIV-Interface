@@ -165,3 +165,30 @@ test('BLOCK07 desktop: Founder + FOP + Pioneer + one Node runs shared install/ex
     rmSync(dir,{recursive:true,force:true});
   }
 });
+
+
+test('BLOCK07 Founder bootstrap UID is retained across restart and mismatches cannot silently change existing identity',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'nodiv-b07-founder-uid-')),dbPath=join(dir,'desktop.sqlite'),eventId='B07-FOUNDER-UID';
+  const previous=process.env.NODIV_UID_FOUNDER_CARD;
+  let fx;
+  try{
+    process.env.NODIV_UID_FOUNDER_CARD='04FADE0711';
+    fx=await startApp(dbPath,eventId);
+    assert.equal((await fx.login('04FADE0711')).role,'FOUNDER');
+    assert.equal(fx.app.core.db.prepare("SELECT uid FROM lab_access_cards WHERE event_id=? AND actor_id='FOUNDER-TEST'").get(eventId).uid,'04FADE0711');
+    await fx.app.close();fx=null;
+    fx=await startApp(dbPath,eventId);
+    assert.equal((await fx.login('04FADE0711')).role,'FOUNDER');
+    await fx.app.close();fx=null;
+    process.env.NODIV_UID_FOUNDER_CARD='04FADE0712';
+    await assert.rejects(startApp(dbPath,eventId),/REGISTRATION_FOUNDER_UID_MISMATCH/);
+    process.env.NODIV_UID_FOUNDER_CARD='04FADE0711';
+    fx=await startApp(dbPath,eventId);
+    assert.equal((await fx.login('04FADE0711')).role,'FOUNDER');
+    assert.equal(fx.app.core.db.prepare("SELECT COUNT(*) n FROM lab_access_cards WHERE event_id=?").get(eventId).n,1);
+  }finally{
+    if(fx)await fx.app.close();
+    if(previous===undefined)Reflect.deleteProperty(process.env,'NODIV_UID_FOUNDER_CARD');else process.env.NODIV_UID_FOUNDER_CARD=previous;
+    rmSync(dir,{recursive:true,force:true});
+  }
+});
