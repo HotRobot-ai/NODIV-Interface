@@ -260,24 +260,36 @@ function bindRole(){
 }
 
 const EXCHANGE_KEY='nodiv-v2-exchange-pending';
+const NODE_COOLDOWN_KEY='nodiv-v2-node-cooldown';
 let nodeCooldownUntil=0;
+function saveNodeCooldown(until){
+  nodeCooldownUntil=Number(until)||0;
+  if(nodeCooldownUntil>Date.now()/1000&&view?.actor?.id){
+    sessionStorage.setItem(NODE_COOLDOWN_KEY,JSON.stringify({actorId:view.actor.id,until:nodeCooldownUntil}));
+  }else sessionStorage.removeItem(NODE_COOLDOWN_KEY);
+  showNodeCooldown();
+}
 function showNodeCooldown(){
   const host=$('exchangeWork');
-  if(!host||!nodeCooldownUntil||exchange?.exchangeId)return;
+  if(!host||exchange?.exchangeId)return;
   const left=Math.max(0,Math.ceil(nodeCooldownUntil-Date.now()/1000));
   let display=host.querySelector('#nodeCooldownDisplay');
+  if(!nodeCooldownUntil){if(display)display.remove();return;}
   if(!display){
-    host.replaceChildren();
     display=document.createElement('div');
     display.id='nodeCooldownDisplay';
     display.className='feedback';
     display.setAttribute('role','timer');
-    host.appendChild(display);
+    host.replaceChildren(display);
   }
+  const start=$('exchangeStart');
+  if(start)start.disabled=left>0;
   if(left===0){
     nodeCooldownUntil=0;
+    sessionStorage.removeItem(NODE_COOLDOWN_KEY);
     display.classList.add('ok');
     display.textContent='NODE WIEDER FREI // Für einen neuen Tausch Node erneut scannen.';
+    if(start)start.disabled=false;
     return;
   }
   const label='NODE-SPERRE AKTIV // '+fmt(left);
@@ -301,10 +313,11 @@ async function recoverExchange(){
 async function startExchange(){
   try{
     if(exchange?.exchangeId){phase('error','Exchange läuft bereits. Erst abschließen oder Ablauf abwarten.');return;}
+    if(nodeCooldownUntil>Date.now()/1000){showNodeCooldown();phase('error','Node-Sperre aktiv.');return;}
     exchange=null;const uid=await nfc('NODE');
     phase('check','Node wird serverseitig geprüft.');
     const grant=await api('/api/scan',{method:'POST',data:{uid}});
-    if(grant.cooldownUntil&&grant.cooldownUntil>Math.floor(Date.now()/1000)){nodeCooldownUntil=grant.cooldownUntil;showNodeCooldown();phase('error','Node-Sperre aktiv. Kein neuer Tausch möglich.');return;}
+    if(grant.cooldownUntil&&grant.cooldownUntil>Math.floor(Date.now()/1000)){saveNodeCooldown(grant.cooldownUntil);phase('error','Node-Sperre aktiv. Kein neuer Tausch möglich.');return;}
     const max=Math.min(3,view.inventory.used,view.actor.capacity);
     if(max<1)throw Error('PIONEER_CORE_REQUIRED');
     exchange={grantId:grant.grantId,nodeId:grant.nodeId,max};
@@ -334,7 +347,7 @@ async function scanExchangeCore(){
   }catch(e){phase('error',friendly(e));}
 }
 async function confirmExchange(){
-  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});nodeCooldownUntil=Number(r.cooldownUntil||0);phase('success','Exchange abgeschlossen. Node-Sperre aktiv.');exchange=null;sessionStorage.removeItem(EXCHANGE_KEY);await refreshRole({quiet:true});showNodeCooldown();}
+  try{phase('commit','Exchange wird atomar gebucht.');const r=await api('/api/exchange/confirm',{method:'POST',data:{exchangeId:exchange.exchangeId,accessCode:exchange.accessCode}});exchange=null;sessionStorage.removeItem(EXCHANGE_KEY);saveNodeCooldown(r.cooldownUntil);phase('success','Exchange abgeschlossen. Node-Sperre aktiv.');await refreshRole({quiet:true});showNodeCooldown();}
   catch(e){phase('error',friendly(e));}
 }
 
@@ -618,7 +631,7 @@ $('btnAuth').onclick=async()=>{
     const uid=await nfc('ACCESS CARD');phase('check','Identität und Rolle werden serverseitig geprüft.');
     session=await api('/api/session/start',{method:'POST',auth:false,data:{uid}});token=session.token;
     $('auth').hidden=true;$('roleShell').hidden=false;$('btnState').disabled=false;$('btnRestartSave').disabled=false;$('btnRestartCompare').disabled=false;
-    await refreshRole({quiet:true});await recoverExchange();phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
+    await refreshRole({quiet:true});try{const saved=JSON.parse(sessionStorage.getItem(NODE_COOLDOWN_KEY)||'null');if(saved?.actorId===view?.actor?.id&&saved.until>Date.now()/1000){nodeCooldownUntil=saved.until;showNodeCooldown();}}catch{}await recoverExchange();phase('success',`${ROLE_LABEL[session.role]} autorisiert.`);
   }catch(e){setFeedback('authOut',friendly(e),true);phase('error',friendly(e));}
 };
 $('btnLock').onclick=()=>{token='';session=null;view=null;exchange=catchPreview=fopFlow=missionFlow=hqFlow=evacFlow=null;$('roleShell').hidden=true;$('auth').hidden=false;phase('idle','');setFeedback('authOut','Interface gesperrt.');};
