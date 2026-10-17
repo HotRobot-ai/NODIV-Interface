@@ -301,6 +301,7 @@ export function createLabApp(config=labConfig()){
         if(b.exchangeId){const result=store.scanExchangeCore(s,{exchangeId:b.exchangeId,uid:b.uid});return json(res,200,{ok:true,...result});}
         const result=store.issueNodeGrant(s,b.uid);return json(res,200,{ok:true,purpose:'EXCHANGE_NODE',...result});
       }
+      if(req.method==='GET'&&u.pathname==='/api/exchange/status'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.exchangeStatus(s,{exchangeId:u.searchParams.get('exchangeId')})});}
       if(req.method==='POST'&&u.pathname==='/api/exchange/prepare'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,{ok:true,...store.prepareExchange(s,b)});}
       if(req.method==='POST'&&u.pathname==='/api/exchange/confirm'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,store.confirmExchange(s,b));}
 
