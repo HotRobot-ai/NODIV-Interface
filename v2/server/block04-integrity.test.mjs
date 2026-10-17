@@ -28,7 +28,7 @@ test('BLOCK04: 8-minute Exchange cooldown and idempotent replay survive DB resta
   r=createV2GameplayRuntime(db,{clock:()=>now});
   assert.equal(r.exchange(first).replayed,true);
   assert.throws(()=>r.exchange({eventId:'E',operationId:'X2',pioneerId:'P1',nodeId:'N1',gives:['N1C1'],takes:['N1C2']}),/NODE_EXCHANGE_COOLDOWN/);
-  now=1300;
+  now=1480;
   assert.equal(r.exchange({eventId:'E',operationId:'X2',pioneerId:'P1',nodeId:'N1',gives:['N1C1'],takes:['N1C2']}).replayed,false);
   assert.equal(r.core.db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id='E' AND owner_type='NODE' AND owner_id='N1'").get().n,3);
  }finally{try{r.close()}catch{}rmSync(dir,{recursive:true,force:true})}
