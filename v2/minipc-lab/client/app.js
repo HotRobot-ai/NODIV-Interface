@@ -162,8 +162,9 @@ function renderPioneer(v){
   const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
+  const supply=v.resupplyDispatch?.eligible&&!v.mission?`<section class="card" id="resupplyCard"><small class="card-kicker">HQ // RE-SUPPLY</small><h3>${v.resupplyDispatch.mandatory?'VERSORGUNG ERFORDERLICH':'FREIER N-CORE-SLOT'}</h3><p>${v.resupplyDispatch.mandatory?'Ohne persönlichen N-Core ist eine Versorgungsmission erforderlich.':'Du kannst einen N-Core aus der HQ-Reserve über einen Ziel-Node übernehmen.'}</p><button id="resupplyAssign" class="primary">${v.resupplyDispatch.mandatory?'RE-SUPPLY-AUFTRAG STARTEN':'RE-SUPPLY ANFORDERN'}</button></section>`:'';
   const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">Nur bestätigte EVAC-Scans werden akzeptiert.</p><button id="evacPioneerOpen" class="primary">EVAC-AUFTRAG ÖFFNEN</button><div id="evacPioneerWork"></div></section>`:'';
-  return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${dispatch}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary" ${v.inventory.cores.some(c=>c.status==='FIELD')?'':'disabled title="Kein persönlicher N-Core für Upload vorhanden"'}>HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
+  return `${protect}<section class="card"><small class="card-kicker">N-CORE INVENTORY</small><div class="metrics"><div class="metric"><small>KAPAZITÄT</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GETRAGEN</small><b>${v.inventory.energy} E</b></div></div><div class="slots">${renderSlots(v)}</div></section>${transit}${renderMission(v)}${dispatch}${supply}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary" ${v.inventory.cores.some(c=>c.status==='FIELD')?'':'disabled title="Kein persönlicher N-Core für Upload vorhanden"'}>HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
@@ -241,6 +242,7 @@ function bindRole(){
   $('exchangeStart')?.addEventListener('click',startExchange);
   $('missionStart')?.addEventListener('click',startMission);
   $('restoreAssign')?.addEventListener('click',assignRestoreMission);
+  $('resupplyAssign')?.addEventListener('click',assignResupplyMission);
   $('hqOpen')?.addEventListener('click',openHq);
   $('catchScan')?.addEventListener('click',scanCatch);
   $('catchConfirm')?.addEventListener('click',confirmCatch);
@@ -599,6 +601,10 @@ async function endDesktopTest(){
   }catch(e){setFeedback('desktopTestOut',friendly(e),true);phase('error',friendly(e));}
 }
 
+async function assignResupplyMission(){
+  try{phase('commit','Freier Slot und HQ-Versorgung werden geprüft.');const r=await api('/api/mission/assign-resupply',{method:'POST'});phase('success',`RE-SUPPLY zugewiesen // ${r.nodeId}.`);await refreshRole({quiet:true});}
+  catch(e){phase('error',friendly(e));}
+}
 async function assignRestoreMission(){
   try{phase('commit','RESTORE-Qualifikation und Ziel werden serverseitig geprüft.');const r=await api('/api/mission/assign-next',{method:'POST'});phase('success',`${r.kind} zugewiesen // ${r.nodeId}.`);await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
