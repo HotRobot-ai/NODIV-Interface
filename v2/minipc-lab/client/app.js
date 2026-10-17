@@ -429,7 +429,7 @@ async function scanFopNode(){
         $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Für diesen weiteren Node wird ein neues serverseitiges FOP-Loadout benötigt.</p><button id="fopLoadout" class="primary">3-CORE-LOADOUT ABRUFEN</button><div id="fopProgress" class="feedback"></div>`;
         $('fopLoadout').onclick=requestFopLoadout;phase('success','Node frei. Loadout kann aus der HQ-Reserve zugewiesen werden.');
       }else{
-        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><div class="code"><span>SCHLOSS AUF PRIMARY EINSTELLEN</span><b>${esc(r.mechanicalCode)}</b></div><p>Danach exakt drei zugewiesene Transit-Cores scannen.</p><p class="phase-note">LOADOUT // ${esc(energies||'3 zugewiesene Cores')}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Nach bestätigter Installation wird der feste Schloss-Code ausgegeben. Zuerst exakt drei zugewiesene Transit-Cores scannen.</p><p class="phase-note">LOADOUT // ${esc(energies||'3 zugewiesene Cores')}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
         $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Installation zulässig. Loadout scannen.');
       }
     }
@@ -440,7 +440,7 @@ async function requestFopLoadout(){
     phase('commit','Drei freie HQ-Cores werden serverseitig als FOP-Transit gebunden.');
     const r=await api('/api/fop/loadout',{method:'POST',data:{nodeId:fopFlow.nodeId}});
     const energies=(r.transit||[]).map(x=>x.visible_energy+' E').join(' · ');
-    $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(fopFlow.nodeId)}</b></div><div class="code"><span>SCHLOSS AUF PRIMARY EINSTELLEN</span><b>${esc(fopFlow.mechanicalCode)}</b></div><p class="phase-note">NEUES LOADOUT // ${esc(energies)}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+    $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(fopFlow.nodeId)}</b></div><p>Der feste Schloss-Code erscheint nach bestätigter Installation.</p><p class="phase-note">NEUES LOADOUT // ${esc(energies)}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
     $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Loadout zugewiesen. Genau diese drei Cores scannen.');
   }catch(e){phase('error',friendly(e));}
 }
@@ -459,7 +459,7 @@ async function commitFop(){
     phase('commit',`${fopFlow.action} wird atomar gebucht.`);
     const path=fopFlow.action==='INSTALL'?'/api/fop/install':'/api/fop/deinstall';
     const data=fopFlow.action==='INSTALL'?{nodeId:fopFlow.nodeId,coreUids:fopFlow.coreUids,operationId:op('FOP-IN')}:{nodeId:fopFlow.nodeId,operationId:op('FOP-OUT')};
-    await api(path,{method:'POST',data});phase('success',`${fopFlow.action} abgeschlossen.`);fopFlow=null;await refreshRole({quiet:true});
+    const result=await api(path,{method:'POST',data});const installed=fopFlow.action==='INSTALL';const nodeId=fopFlow.nodeId;fopFlow=null;await refreshRole({quiet:true});if(installed){$('fopWork').innerHTML=`<div class="code"><span>${esc(nodeId)} // PRIMARY SCHLOSS-CODE</span><b>${esc(result.mechanicalCode)}</b></div><p>Installation bestätigt. Diesen festen Code am Node einstellen.</p>`;}phase('success',`${installed?'INSTALLATION':'DEINSTALLATION'} abgeschlossen.`);
   }catch(e){phase('error',friendly(e));}
 }
 async function openFopEvac(){
