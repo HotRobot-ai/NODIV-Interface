@@ -263,7 +263,21 @@ function exchangeControls(){
   const count=exchange.count;
   $('exchangeWork').innerHTML=`<div class="code"><span>ACCESS CODE</span><b>${esc(exchange.accessCode)}</b></div><p>Node ${esc(exchange.nodeId)} · Scanne ${count} eigene und ${count} Node-Cores.</p><div id="exchangeProgress" class="feedback">EIGEN ${exchange.inCount}/${count} · NODE ${exchange.outCount}/${count}</div><button id="exchangeCoreScan" class="primary" ${exchange.ready?'hidden':''}>N-CORE SCANNEN</button><button id="exchangeConfirm" class="primary" ${exchange.ready?'':'hidden'}>EXCHANGE BESTÄTIGEN</button><div id="exchangeTime" class="feedback"></div>`;
   $('exchangeCoreScan').onclick=scanExchangeCore;$('exchangeConfirm').onclick=confirmExchange;
+  updateExchangeTimer();
 }
+function updateExchangeTimer(){
+  const out=$('exchangeTime');
+  if(!out||!exchange?.exchangeId)return;
+  const remaining=Math.max(0,Math.ceil(Number(exchange.expiresAt||0)-Date.now()/1000));
+  out.textContent=remaining>0?`FREIGABE GÜLTIG // ${fmt(remaining)} · Nächsten N-Core scannen.`:'FREIGABE ABGELAUFEN // Node erneut scannen.';
+  out.classList.toggle('error',remaining===0);
+  if(remaining===0){
+    const scan=$('exchangeCoreScan'),confirm=$('exchangeConfirm');
+    if(scan)scan.disabled=true;
+    if(confirm)confirm.disabled=true;
+  }
+}
+setInterval(updateExchangeTimer,1000);
 async function recoverExchange(){
   const raw=sessionStorage.getItem(EXCHANGE_KEY);if(!raw||!view||view.actor.role!=='PIONEER')return;
   try{
