@@ -138,7 +138,7 @@ function createBlock06Realtest(core,mode){
     const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,core.clock()).map(x=>x.node_id):[]);
     const candidates=[];
     for(const n of db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId)){
-      if(locks.has(n.node_id))continue;
+      if(locks.has(n.node_id)||!isKnownNode(eventId,actorId,n.node_id))continue;
       if(db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>? LIMIT 1").get(eventId,n.node_id,core.clock()))continue;
       const cs=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy ASC,core_id").all(eventId,n.node_id);
       if(cs.length!==3||cs.some(coreRow=>coreRow.status!=='DEPLOYED'))continue;
@@ -219,7 +219,7 @@ function assignResupply(core,eventId,actorId){
   const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
   let target;
   for(const node of nodes){
-   if(locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
+   if(!isKnownNode(eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
    const cs=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy,core_id").all(eventId,node.node_id);
    if(cs.length!==3||cs.some(c=>c.status!=='DEPLOYED'||blockedCores.has(c.core_id)))continue;
    if(!target||cs[0].visible_energy<target.out.visible_energy)target={nodeId:node.node_id,out:cs[0]};
