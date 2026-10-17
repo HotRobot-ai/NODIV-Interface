@@ -373,7 +373,7 @@ async function confirmHq(){
 async function scanFopNode(){
   try{
     fopFlow={coreUids:[]};const uid=await nfc('NODE');phase('check','Node und zulässige FOP-Aktion werden geprüft.');
-    const r=await api('/api/fop/scan',{method:'POST',data:{uid}});fopFlow={...fopFlow,nodeId:r.nodeId,action:r.action};
+    const r=await api('/api/fop/scan',{method:'POST',data:{uid}});fopFlow={...fopFlow,nodeId:r.nodeId,action:r.action,mechanicalCode:r.mechanicalCode};
     if(r.action==='DEINSTALL'){
       $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Server bestätigt: 3/3-Node. Deinstallation führt alle drei Cores zurück zur Reserve.</p><button id="fopCommit" class="primary">DEINSTALLATION BESTÄTIGEN</button>`;
       $('fopCommit').onclick=commitFop;phase('success','Deinstallation zulässig. Noch keine Umbuchung.');
@@ -383,7 +383,7 @@ async function scanFopNode(){
         $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Für diesen weiteren Node wird ein neues serverseitiges FOP-Loadout benötigt.</p><button id="fopLoadout" class="primary">3-CORE-LOADOUT ABRUFEN</button><div id="fopProgress" class="feedback"></div>`;
         $('fopLoadout').onclick=requestFopLoadout;phase('success','Node frei. Loadout kann aus der HQ-Reserve zugewiesen werden.');
       }else{
-        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><p>Exakt drei zugewiesene Transit-Cores scannen.</p><p class="phase-note">LOADOUT // ${esc(energies||'3 zugewiesene Cores')}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+        $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(r.nodeId)}</b></div><div class="code"><span>SCHLOSS AUF PRIMARY EINSTELLEN</span><b>${esc(r.mechanicalCode)}</b></div><p>Danach exakt drei zugewiesene Transit-Cores scannen.</p><p class="phase-note">LOADOUT // ${esc(energies||'3 zugewiesene Cores')}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
         $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Installation zulässig. Loadout scannen.');
       }
     }
@@ -394,7 +394,7 @@ async function requestFopLoadout(){
     phase('commit','Drei freie HQ-Cores werden serverseitig als FOP-Transit gebunden.');
     const r=await api('/api/fop/loadout',{method:'POST',data:{nodeId:fopFlow.nodeId}});
     const energies=(r.transit||[]).map(x=>x.visible_energy+' E').join(' · ');
-    $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(fopFlow.nodeId)}</b></div><p class="phase-note">NEUES LOADOUT // ${esc(energies)}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
+    $('fopWork').innerHTML=`<div class="code"><span>NODE</span><b>${esc(fopFlow.nodeId)}</b></div><div class="code"><span>SCHLOSS AUF PRIMARY EINSTELLEN</span><b>${esc(fopFlow.mechanicalCode)}</b></div><p class="phase-note">NEUES LOADOUT // ${esc(energies)}</p><div id="fopProgress" class="feedback">0/3 bestätigt</div><button id="fopCoreScan" class="primary">N-CORE SCANNEN</button><button id="fopCommit" hidden>INSTALLATION BESTÄTIGEN</button>`;
     $('fopCoreScan').onclick=scanFopCore;$('fopCommit').onclick=commitFop;phase('success','Loadout zugewiesen. Genau diese drei Cores scannen.');
   }catch(e){phase('error',friendly(e));}
 }
