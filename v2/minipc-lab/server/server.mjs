@@ -205,6 +205,7 @@ function resupplyOffer(db,eventId,actorId,now){
  const busy=activeMission(db,eventId,actorId,now);
  return {eligible:!!a&&used<a.capacity&&!busy,mandatory:used===0,used,capacity:a?.capacity||0};
 }
+function isKnownNode(db,eventId,actorId,nodeId){return !!db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId)}
 function assignResupply(core,eventId,actorId){
  core.recoverExpiredMissions(eventId);
  const db=core.db,now=core.clock();
