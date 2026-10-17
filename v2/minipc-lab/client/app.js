@@ -31,6 +31,7 @@ const ERROR_TEXT={
   RESUPPLY_ASSIGNMENT_CONFLICT:'Voll-Upload nicht möglich: Ein anderer Auftrag ist noch aktiv.',
   NFC_KEINE_SERIENNUMMER:'NFC-Tag erkannt, aber keine UID übertragen. Tag erneut ruhig an das Smartphone halten.',
   NFC_LESFEHLER:'NFC konnte nicht gelesen werden. Tag erneut an das Smartphone halten.',
+  NFC_SCAN_TIMEOUT:'Kein NFC-Tag innerhalb von 30 Sekunden erkannt. Scan erneut starten.',
   DESKTOP_TEST_MODE_REQUIRED:'Diese Funktion ist nur im gekennzeichneten Schreibtisch-Testmodus verfügbar.',
   DESKTOP_TEST_START_STATE_INVALID:'Testspiel kann aus diesem Zustand nicht gestartet werden.',
   DESKTOP_TEST_END_STATE_INVALID:'Testspiel kann aus diesem Zustand nicht beendet werden.',
@@ -68,6 +69,7 @@ async function nfc(label){
         if(!uid){reject(Error('NFC_KEINE_SERIENNUMMER'));return;}
         phase('check',`${label}: NFC erkannt. UID wird geprüft.`);resolve(uid);
       },{once:true});
+      ctrl.signal.addEventListener('abort',()=>reject(Error('NFC_SCAN_TIMEOUT')),{once:true});
       reader.addEventListener('readingerror',()=>reject(Error('NFC_LESFEHLER')),{once:true});
       reader.scan({signal:ctrl.signal}).catch(reject);
     });
