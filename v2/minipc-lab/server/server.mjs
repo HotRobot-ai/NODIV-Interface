@@ -345,7 +345,7 @@ export function createLabApp(config=labConfig()){
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:store.fopPrimaryCode(s,node.node_id),coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
