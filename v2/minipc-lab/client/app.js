@@ -333,20 +333,31 @@ async function confirmExchange(){
   catch(e){phase('error',friendly(e));}
 }
 
+const MISSION_STEPS=[['nodeUid','MISSION_NODE','ZIEL-NODE','Ziel-Node scannen'],['cargoUid','MISSION_CARGO','TRANSIT-CORE','Transit-Core scannen'],['outUid','MISSION_OUT_CORE','NIEDRIGSTEN NODE-CORE','Schwächsten Node-Core scannen']];
 async function startMission(){
+  if(!missionFlow)missionFlow={nodeUid:'',cargoUid:'',outUid:'',step:0};
+  const host=$('missionProgress');
+  if(!host)return;
+  const step=missionFlow.step;
+  if(step>=MISSION_STEPS.length)return;
+  const [key,expected,label]=MISSION_STEPS[step];
   try{
-    missionFlow={nodeUid:'',cargoUid:'',outUid:'',step:0};
-    const steps=[['nodeUid','MISSION_NODE','ZIEL-NODE'],['cargoUid','MISSION_CARGO','TRANSIT-CORE'],['outUid','MISSION_OUT_CORE','NIEDRIGSTEN NODE-CORE']];
-    for(let i=0;i<steps.length;i++){
-      const [key,expected,label]=steps[i],uid=await nfc(label);phase('check',`${label} wird geprüft.`);
-      const r=await api('/api/mission/check',{method:'POST',data:{uid}});
-      if(r.kind!==expected)throw Error('MISSION_SCAN_MISMATCH');
-      missionFlow[key]=uid;setFeedback('missionProgress',`${i+1}/3 bestätigt // ${label}`);
-    }
-    $('missionProgress').insertAdjacentHTML('beforeend','<button id="missionConfirm" class="primary">AUFTRAG VERBINDLICH ABSCHLIESSEN</button>');
-    $('missionConfirm').onclick=confirmMission;phase('success','Alle drei Scans bestätigt. Noch keine Umbuchung erfolgt.');
-  }catch(e){phase('error',friendly(e));}
+    const uid=await nfc(label);
+    phase('check',`${label} wird geprüft.`);
+    const r=await api('/api/mission/check',{method:'POST',data:{uid}});
+    if(r.kind!==expected)throw Error('MISSION_SCAN_MISMATCH');
+    missionFlow[key]=uid;missionFlow.step=step+1;
+    const next=MISSION_STEPS[missionFlow.step];
+    host.innerHTML=`<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${next[3]}.</p><button id="missionNext" class="primary">${next[3].toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
+    if(next)$('missionNext').onclick=startMission;else $('missionConfirm').onclick=confirmMission;
+    phase('success',next?`Scan bestätigt. ${next[3]}.`:'Alle Scans bestätigt. RESTORE kann abgeschlossen werden.');
+  }catch(e){
+    phase('error',friendly(e));
+    host.innerHTML=`<p class="phase-note">Scan nicht abgeschlossen. Du kannst diesen Schritt erneut versuchen.</p><button id="missionRetry" class="primary">${MISSION_STEPS[missionFlow.step][3].toUpperCase()}</button>`;
+    $('missionRetry').onclick=startMission;
+  }
 }
+
 async function confirmMission(){
   try{phase('commit','Auftrag wird atomar gebucht.');const r=await api('/api/mission/confirm',{method:'POST',data:{...missionFlow,operationId:op('MISSION')}});phase('success',`${r.kind||view.mission.kind} abgeschlossen.`);missionFlow=null;await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
