@@ -165,7 +165,10 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
       if(nodeCount!==3) throw Error('NODE_REQUIRES_THREE_CORES');
       const exchangeId=randomBytes(18).toString('base64url');
       const operationId='LAB-EX-'+randomBytes(12).toString('hex');
-      const accessCode=String(randomInt(0,10000)).padStart(4,'0');
+      // The physical lock code is assigned to the Node, not to each Exchange.
+      const mechanical=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,grant.target_id);
+      if(!mechanical)throw Error('NODE_MECHANICAL_CODE_MISSING');
+      const accessCode=mechanical.code;
       db.exec('BEGIN IMMEDIATE');
       try{
         const used=db.prepare('UPDATE lab_scan_grants SET consumed_at=? WHERE grant_id=? AND consumed_at IS NULL AND expires_at>?').run(now,grantId,now);
