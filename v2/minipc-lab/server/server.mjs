@@ -345,7 +345,7 @@ export function createLabApp(config=labConfig()){
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:store.fopPrimaryCode(s,node.node_id),coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:action==='DEINSTALL'?store.fopPrimaryCode(s,node.node_id):null,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
@@ -360,7 +360,8 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==3)throw Error('FOP_THREE_CORES_REQUIRED');
         const ids=b.coreUids.map(uid=>store.coreTarget(s,uid)).map(c=>{if(c.owner_type!=='TRANSIT'||c.owner_id!==s.actor_id||c.status!=='IN_TRANSIT')throw Error('INSTALL_CARGO_INVALID');return c.core_id;});
-        return json(res,200,runtime.fop.install({eventId:s.event_id,operationId:b.operationId||('FOP-IN-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId,coreIds:ids}));
+        const installed=runtime.fop.install({eventId:s.event_id,operationId:b.operationId||('FOP-IN-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId,coreIds:ids});
+        return json(res,200,{...installed,mechanicalCode:store.fopPrimaryCode(s,b.nodeId)});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/deinstall'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
