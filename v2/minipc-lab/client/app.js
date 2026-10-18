@@ -369,7 +369,7 @@ async function startMission(){
   try{
     const uid=await nfc(label);
     phase('check',`${label} wird geprüft.`);
-    const r=await api('/api/mission/check',{method:'POST',data:{uid}});
+    const r=await api('/api/mission/check',{method:'POST',data:{uid,missionId:view?.mission?.id||view?.mission?.missionId}});
     if(r.kind!==expected)throw Error('MISSION_SCAN_MISMATCH');
     missionFlow[key]=uid;if(expected==='MISSION_NODE')missionFlow.lowestCoreEnergy=r.lowestCoreEnergy;missionFlow.step=step+1;
     const next=MISSION_STEPS[missionFlow.step];
@@ -385,7 +385,7 @@ async function startMission(){
 }
 
 async function confirmMission(){
-  try{phase('commit','Auftrag wird atomar gebucht.');const r=await api('/api/mission/confirm',{method:'POST',data:{...missionFlow,operationId:op('MISSION')}});phase('success',`${r.kind||view.mission.kind} abgeschlossen.`);missionFlow=null;await refreshRole({quiet:true});}
+  try{phase('commit','Auftrag wird atomar gebucht.');const r=await api('/api/mission/confirm',{method:'POST',data:{...missionFlow,missionId:view?.mission?.id||view?.mission?.missionId,operationId:op('MISSION')}});phase('success',`${r.kind||view.mission.kind} abgeschlossen.`);missionFlow=null;await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
 }
 
