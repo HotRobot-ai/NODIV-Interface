@@ -10,11 +10,12 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
  const dir=mkdtempSync(join(tmpdir(),'nodiv-rs-double-'));
  const eventId='RS-DOUBLE';
  const prior=process.env.NODIV_UID_FOUNDER_CARD;
- process.env.NODIV_UID_FOUNDER_CARD=DEFAULT_UIDS.founderAccess;
+ process.env.NODIV_UID_FOUNDER_CARD='04FADE0001';
  const app=createLabApp({mode:'registration',dbPath:join(dir,'game.sqlite'),eventId,host:'127.0.0.1',port:0,sessionTtl:3600,grantTtl:90,exchangeTtl:300,tlsKey:null,tlsCert:null});
  try{
   const db=app.core.db;
   db.prepare("UPDATE events SET state='FIELD_ACTIVE' WHERE event_id=?").run(eventId);
+  for(const [uid,actor] of [[DEFAULT_UIDS.pioneerAccess,'P9003'],[DEFAULT_UIDS.fopAccess,'FOP-TEST']])db.prepare('INSERT OR REPLACE INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,uid,actor);
   db.prepare("UPDATE actors SET capacity=3 WHERE event_id=? AND actor_id='P9003'").run(eventId);
   for(const nodeId of ['NODE-001','NODE-002']){
    db.prepare("UPDATE nodes SET state='INSTALLED' WHERE event_id=? AND node_id=?").run(eventId,nodeId);
@@ -37,7 +38,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
    return result;
   }
   const pioneer=await call('/api/session/start',{data:{uid:DEFAULT_UIDS.pioneerAccess}});
-  const founder=await call('/api/session/start',{data:{uid:DEFAULT_UIDS.founderAccess}});
+  const founder=await call('/api/session/start',{data:{uid:'04FADE0001'}});
   const fop=await call('/api/session/start',{data:{uid:DEFAULT_UIDS.fopAccess}});
   const offer=await call('/api/role/state',{token:pioneer.token});
   assert.equal(offer.resupplyDispatch.maxCount,2);
@@ -52,7 +53,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   const payload=(m,auth,uid)=>({missionId:m.mission_id,authorizerToken:auth.token,authorizerUid:uid,uid:coreUid(m.core_id)});
   await assert.rejects(()=>call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[0],pioneer,DEFAULT_UIDS.pioneerAccess)}),/RESUPPLY_AUTHORIZER_DENIED/);
   await assert.rejects(()=>call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[0],founder,DEFAULT_UIDS.fopAccess)}),/RESUPPLY_AUTHORIZER_CARD_MISMATCH/);
-  await call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[0],founder,DEFAULT_UIDS.founderAccess)});
+  await call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[0],founder,'04FADE0001')});
   state=await call('/api/role/state',{token:pioneer.token});
   assert.equal(state.assignedMissions.filter(m=>m.handoverConfirmed).length,1);
   await call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[1],fop,DEFAULT_UIDS.fopAccess)});
