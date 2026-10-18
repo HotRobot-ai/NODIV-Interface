@@ -135,3 +135,8 @@ button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
 .access-hero button.primary{animation:access-pulse 4s ease-in-out infinite}
 @keyframes access-pulse{50%{box-shadow:0 0 30px #22c7ec88}}
 @media(prefers-reduced-motion:reduce){.access-hero button.primary{animation:none}}
+
+/* Access: scan first, quiet brand signature beneath the action. */
+.access-hero .access-signature{margin:16px 0 0;text-align:center}
+.access-hero .access-signature strong{font-size:12px;letter-spacing:.19em;color:#c2dce8;font-weight:800}
+.access-hero #authOut:empty{display:none}
