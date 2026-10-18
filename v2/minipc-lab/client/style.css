@@ -140,3 +140,5 @@ button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
 .access-hero .access-signature{margin:16px 0 0;text-align:center}
 .access-hero .access-signature strong{font-size:12px;letter-spacing:.19em;color:#c2dce8;font-weight:800}
 .access-hero #authOut:empty{display:none}
+
+.access-signature .motto-dot{color:#6de6ff;text-shadow:0 0 9px #45dfff99;font-weight:900}
