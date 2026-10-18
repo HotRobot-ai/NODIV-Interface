@@ -411,6 +411,15 @@ export function createLabApp(config=labConfig()){
         store.uploadBayTarget(session,b.uid);
         return json(res,200,runtime.localHqUpload({eventId:session.event_id,operationId:b.operationId,localId:session.actor_id,coreId:b.coreId}));
       }
+      // Unbound initiates the complete handover by scanning the receiving FOP's Access Card.
+      if(req.method==='POST'&&u.pathname==='/api/unbound/fop/handover'){
+        const session=store.session(bearer(req));requireRole(session,'UNBOUND');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim())throw Error('HANDOVER_CONTEXT_REQUIRED');
+        const receiver=store.accessTarget(session,b.uid);
+        if(receiver.role!=='FOP')throw Error('HANDOVER_FOP_INVALID');
+        return json(res,200,runtime.unboundHandover({eventId:session.event_id,operationId:b.operationId,unboundId:session.actor_id,fopId:receiver.actor_id}));
+      }
       // The returning FOP must physically scan the HQ terminal before transport cores are released.
       if(req.method==='POST'&&u.pathname==='/api/fop/custody/return'){
         const session=store.session(bearer(req));requireRole(session,'FOP');
