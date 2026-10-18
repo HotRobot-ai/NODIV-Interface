@@ -54,6 +54,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   await call('/api/mission/confirm',{token:pioneer.token,data:{missionId:one.mission_id,nodeUid:oneNodeUid,cargoUid:oneCoreUid,outUid:oneOut,operationId:'RS-SINGLE-VERIFIED'}});
   assert.equal(db.prepare('SELECT state FROM missions WHERE event_id=? AND mission_id=?').get(eventId,one.mission_id).state,'COMPLETED');
   assert.equal(app.core.assertIntegrity(eventId).ok,true);
+  app.core.seedCore(eventId,{id:'RS-H-REPLENISH',uid:'AABBCCDD09',energy:290,ownerType:'HQ',ownerId:'HQ',status:'RESERVE'});
   const assigned=await call('/api/mission/assign-resupply',{token:pioneer.token,data:{count:2}});
   assert.equal(assigned.assignments.length,2);
   assert.equal(new Set(assigned.assignments.map(m=>m.nodeId)).size,2);
