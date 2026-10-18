@@ -351,6 +351,12 @@ export function createLabApp(config=labConfig()){
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
       }
+      // Read-only FOP custody inventory. Never expose another operator's transport.
+      if(req.method==='GET'&&u.pathname==='/api/fop/custody'){
+        const session=store.session(bearer(req));requireRole(session,'FOP');
+        const cores=core.db.prepare("SELECT c.core_id,c.visible_energy,c.status,x.unbound_id,x.received_at FROM fop_core_custody x JOIN cores c ON c.event_id=x.event_id AND c.core_id=x.core_id WHERE x.event_id=? AND x.fop_id=? AND x.returned_operation_id IS NULL AND c.owner_type='TRANSIT' AND c.owner_id=? AND c.status='FOP_CUSTODY' ORDER BY x.received_at,c.core_id").all(session.event_id,session.actor_id,session.actor_id);
+        return json(res,200,{ok:true,cores,count:cores.length});
+      }
       if(req.method==='POST'&&u.pathname==='/api/session/start'){const b=await body(req);const s=store.startSession(config.eventId,b.uid);return json(res,200,{ok:true,...s});}
 
       // Existing BLOCK 01/02 Exchange path retained; now supports 1..3 server-authorized cores.
