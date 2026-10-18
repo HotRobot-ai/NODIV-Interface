@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import {ensureFounderRecovery,founderRecoveryKeyPath} from './founder-recovery.mjs';
 import { createV2GameplayRuntime } from '../../server/gameplay-runtime.mjs';
 import { installLabSchema, normalizeUid } from './lab-db.mjs';
 import { seedEvacRealtestDatabase } from './evac-realtest-fixture.mjs';
@@ -75,6 +76,8 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
         // Preserve all event data and require an explicit recovery procedure instead.
         throw Error('REGISTRATION_FOUNDER_UID_MISMATCH');
       }
+      const recovery=ensureFounderRecovery(core.db,{eventId,actorId:'FOUNDER-TEST',keyPath:founderRecoveryKeyPath(dbPath)});
+      if(!recovery.ready)console.warn('FOUNDER RECOVERY NICHT BEREIT: '+recovery.reason);
     }
     runtime.close();
     return {dbPath,eventId,created:!exists,mode};
