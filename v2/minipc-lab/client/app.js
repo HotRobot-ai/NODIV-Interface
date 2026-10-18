@@ -139,6 +139,7 @@ function renderRole({passive=false}={}){
   host.dataset.userEditing='0';
   bindRole();
   if(view.actor.role==='PIONEER')showNodeCooldown();
+  if(view.actor.role==='FOP')openFopCustody();
 }
 function eventActionBlocked(v){
   if(v.event?.state==='FIELD_ACTIVE')return '';
@@ -177,7 +178,7 @@ function renderCatcher(v){
 function renderFop(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
-  return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div><h3>N-CORE TRANSPORT</h3><p>Separates Inventar, Rückgabe nur am HQ.</p><button id="fopCustodyOpen">TRANSPORT PRÜFEN</button><div id="fopCustodyWork" class="feedback"></div></section>${evac}`;
+  return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div><h3>N-CORE TRANSPORT</h3><p>Aktuell transportierte N-Cores. Rückgabe nur am HQ.</p><div id="fopCustodyWork" class="feedback" role="status">Transportinventar wird geladen …</div><button id="fopCustodyOpen">INVENTAR AKTUALISIEREN</button></section>${evac}`;
 }
 function founderHardwareRows(v){
   const h=v.hardware||{cards:[],nodes:[],cores:[],hq:[]};
@@ -476,8 +477,18 @@ async function openFopCustody(){
     const result=await api('/api/fop/custody');
     const cores=result.cores||[];
     const out=$('fopCustodyWork');
-    if(!cores.length){out.textContent='Keine N-Cores im Transport.';return;}
-    out.textContent=cores.length+' N-Cores im Transport: '+cores.map(c=>c.visible_energy+' E').join(' · ');
+    if(!out)return;
+    if(!cores.length){out.textContent='TRANSPORT LEER // 0 N-Cores · 0 E';return;}
+    const total=cores.reduce((sum,c)=>sum+Number(c.visible_energy||0),0);
+    out.replaceChildren();
+    const summary=document.createElement('p');
+    summary.textContent=cores.length+' N-Cores im Transport // '+total+' E gesamt';
+    out.append(summary);
+    for(const [index,core] of cores.entries()){
+      const line=document.createElement('p');
+      line.textContent='N-CORE '+String(index+1).padStart(2,'0')+' // '+core.visible_energy+' E';
+      out.append(line);
+    }
     const button=document.createElement('button');
     button.className='primary';
     button.textContent='AM HQ ZURÜCKGEBEN';
