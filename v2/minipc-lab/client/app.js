@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let token='',session=null,view=null;
-let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,hqPanelOpen=false,evacFlow=null,scanActive=false;
+let selectedMissionId='',exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,hqPanelOpen=false,evacFlow=null,scanActive=false;
 
 const ROLE_LABEL={FOUNDER:'FOUNDER',FOP:'FIELD OPERATOR',PIONEER:'PIONEER',LOCAL:'LOCAL',UNBOUND:'UNBOUND'};
 const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'NODIV',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
@@ -158,8 +158,10 @@ function renderSlots(v){
 }
 function renderMission(v){
   if(!v.mission)return '';
-  const name=v.mission.kind==='RESUPPLY'?'RE-SUPPLY':v.mission.kind.replace('_',' #');
-  return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(v.mission.nodeId)}</h3><p>${v.mission.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${v.mission.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(v.mission.remainingSeconds)}</b></div></div><p class="phase-note"><strong>AM ZIEL-NODE:</strong> Drücke die Schaltfläche unten und halte deine Access Card nicht an den Node – scanne den NFC-Tag des Ziel-Nodes.</p><button id="missionStart" class="primary">1. ZIEL-NODE JETZT SCANNEN</button><div id="missionProgress" class="feedback"></div></section>`;
+  const selected=(v.assignedMissions||[]).find(m=>m.id===selectedMissionId);
+  const current=selected?{...v.mission,id:selected.id,nodeId:selected.nodeId,cargo:{energy:selected.energy},remainingSeconds:selected.remainingSeconds}:v.mission;
+  const name=current.kind==='RESUPPLY'?'RE-SUPPLY':current.kind.replace('_',' #');
+  return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(current.nodeId)}</h3><p>${current.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${current.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(current.remainingSeconds)}</b></div></div><p class="phase-note"><strong>AM ZIEL-NODE:</strong> Drücke die Schaltfläche unten und halte deine Access Card nicht an den Node – scanne den NFC-Tag des Ziel-Nodes.</p><button id="missionStart" class="primary">1. ZIEL-NODE JETZT SCANNEN</button><div id="missionProgress" class="feedback"></div></section>`;
 }
 function renderPioneer(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
@@ -168,7 +170,7 @@ function renderPioneer(v){
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
   const supply=v.resupplyDispatch&&!v.mission?`<section class="card" id="resupplyCard"><small class="card-kicker">HQ // RE-SUPPLY</small><h3>${v.resupplyDispatch.mandatory?'VERSORGUNG ERFORDERLICH':'FREIER N-CORE-SLOT'}</h3><p>${v.resupplyDispatch.mandatory?'Ohne persönlichen N-Core ist eine Versorgungsmission erforderlich.':'Du kannst einen N-Core aus der HQ-Reserve über einen Ziel-Node übernehmen.'}</p>${v.resupplyDispatch.eligible?`<button id="resupplyAssign" class="primary">${v.resupplyDispatch.mandatory?'RE-SUPPLY-AUFTRAG STARTEN':'RE-SUPPLY ANFORDERN'}</button>`:`<p class="phase-note">AUFTRAG BLOCKIERT: ${esc(v.resupplyDispatch.reason||'UNBEKANNT')}</p>`}</section>`:'';
   const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">Nur bestätigte EVAC-Scans werden akzeptiert.</p><button id="evacPioneerOpen" class="primary">EVAC-AUFTRAG ÖFFNEN</button><div id="evacPioneerWork"></div></section>`:'';
-  const parallel=(v.assignedMissions||[]).length>1?`<section class="card"><small class="card-kicker">RE-SUPPLY // EINSATZPLAN</small><h3>${v.assignedMissions.length} ZIEL-NODES</h3><p>Jeder Auftrag wird einzeln abgeschlossen. Die N-Cores bleiben bis zur Buchung IN TRANSIT.</p>${v.assignedMissions.map((m,i)=>`<div class="metric"><small>AUFTRAG ${i+1}</small><b>${esc(m.nodeId)} · ${m.energy} E</b><p>${fmt(m.remainingSeconds)} verbleibend</p></div>`).join('')}</section>`:'';
+  const parallel=(v.assignedMissions||[]).length>1?`<section class="card"><small class="card-kicker">RE-SUPPLY // EINSATZPLAN</small><h3>${v.assignedMissions.length} ZIEL-NODES</h3><p>Jeder Auftrag wird einzeln abgeschlossen. Die N-Cores bleiben bis zur Buchung IN TRANSIT.</p>${v.assignedMissions.map((m,i)=>`<button type="button" class="metric" data-resupply-mission="${esc(m.id)}" aria-pressed="${selectedMissionId===m.id}"><small>AUFTRAG ${i+1}${selectedMissionId===m.id?" · AUSGEWÄHLT":""}</small><b>${esc(m.nodeId)} · ${m.energy} E</b><span>${fmt(m.remainingSeconds)} verbleibend</span></button>`).join('')}</section>`:'';
   return `<section class="card pioneer-inventory"><div class="pioneer-inventory-head"><span>N-CORE INVENTAR</span><strong>${v.inventory.energy} E</strong></div><div class="pioneer-capacity">${v.inventory.used} / ${v.inventory.capacity} SLOTS BELEGT</div><div class="slots pioneer-slots">${renderSlots(v)}</div></section>${protect}${transit}${renderMission(v)}${parallel}${dispatch}${supply}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary" ${v.inventory.cores.some(c=>c.status==='FIELD')?'':'disabled title="Kein persönlicher N-Core für Upload vorhanden"'}>HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
@@ -246,6 +248,7 @@ function updateFounderRegFields(){
 function bindRole(){
   $('exchangeStart')?.addEventListener('click',startExchange);
   $('missionStart')?.addEventListener('click',startMission);
+  document.querySelectorAll('[data-resupply-mission]').forEach(button=>button.addEventListener('click',()=>{selectedMissionId=button.dataset.resupplyMission;missionFlow=null;renderRole();}));
   $('restoreAssign')?.addEventListener('click',assignRestoreMission);
   $('resupplyAssign')?.addEventListener('click',assignResupplyMission);
   $('hqOpen')?.addEventListener('click',openHq);
@@ -370,14 +373,14 @@ async function startMission(){
   try{
     const uid=await nfc(label);
     phase('check',`${label} wird geprüft.`);
-    const r=await api('/api/mission/check',{method:'POST',data:{uid,missionId:view?.mission?.id||view?.mission?.missionId}});
+    const r=await api('/api/mission/check',{method:'POST',data:{uid,missionId:selectedMissionId||view?.mission?.id||view?.mission?.missionId}});
     if(r.kind!==expected)throw Error('MISSION_SCAN_MISMATCH');
     missionFlow[key]=uid;if(expected==='MISSION_NODE')missionFlow.lowestCoreEnergy=r.lowestCoreEnergy;missionFlow.step=step+1;
     const next=MISSION_STEPS[missionFlow.step];
     const nextInstruction=next?.[1]==='MISSION_OUT_CORE'&&Number.isFinite(missionFlow.lowestCoreEnergy)?`N-Core mit ${missionFlow.lowestCoreEnergy} E aus dem Ziel-Node entnehmen und scannen`:next?.[3];
-    host.innerHTML=`${expected==='MISSION_NODE'?`<div class="code"><span>NODE ÖFFNUNGSCODE</span><b>${esc(r.accessCode)}</b></div><p>Node öffnen, dann Transit-Core und Node-Core gemäß Auftrag tauschen.</p>`:''}<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${nextInstruction}.</p><button id="missionNext" class="primary">${nextInstruction.toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
+    host.innerHTML=`${expected==='MISSION_NODE'?`<div class="code"><span>NODE ÖFFNUNGSCODE</span><b>${esc(r.accessCode)}</b></div><p>Node öffnen, dann Transit-Core und Node-Core gemäß Auftrag tauschen.</p>`:''}<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${nextInstruction}.</p><button id="missionNext" class="primary">${nextInstruction.toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">AUFTRAG VERBINDLICH ABSCHLIESSEN</button>'}`;
     if(next)$('missionNext').onclick=startMission;else $('missionConfirm').onclick=confirmMission;
-    phase('success',next?`Scan bestätigt. ${nextInstruction}.`:'Alle Scans bestätigt. RESTORE kann abgeschlossen werden.');
+    phase('success',next?`Scan bestätigt. ${nextInstruction}.`:'Alle Scans bestätigt. Auftrag kann abgeschlossen werden.');
   }catch(e){
     phase('error',friendly(e));
     host.innerHTML=`<p class="phase-note">Scan nicht abgeschlossen. Du kannst diesen Schritt erneut versuchen.</p><button id="missionRetry" class="primary">${MISSION_STEPS[missionFlow.step][3].toUpperCase()}</button>`;
@@ -386,7 +389,7 @@ async function startMission(){
 }
 
 async function confirmMission(){
-  try{phase('commit','Auftrag wird atomar gebucht.');const r=await api('/api/mission/confirm',{method:'POST',data:{...missionFlow,missionId:view?.mission?.id||view?.mission?.missionId,operationId:op('MISSION')}});phase('success',`${r.kind||view.mission.kind} abgeschlossen.`);missionFlow=null;await refreshRole({quiet:true});}
+  try{phase('commit','Auftrag wird atomar gebucht.');const r=await api('/api/mission/confirm',{method:'POST',data:{...missionFlow,missionId:selectedMissionId||view?.mission?.id||view?.mission?.missionId,operationId:op('MISSION')}});phase('success',`${r.kind||view.mission.kind} abgeschlossen.`);missionFlow=null;await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
 }
 
