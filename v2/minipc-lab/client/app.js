@@ -370,7 +370,7 @@ async function startMission(){
     missionFlow[key]=uid;if(expected==='MISSION_NODE')missionFlow.lowestCoreEnergy=r.lowestCoreEnergy;missionFlow.step=step+1;
     const next=MISSION_STEPS[missionFlow.step];
     const nextInstruction=next?.[1]==='MISSION_OUT_CORE'&&Number.isFinite(missionFlow.lowestCoreEnergy)?`N-Core mit ${missionFlow.lowestCoreEnergy} E aus dem Ziel-Node entnehmen und scannen`:next?.[3];
-    host.innerHTML=`<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${nextInstruction}.</p><button id="missionNext" class="primary">${nextInstruction.toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
+    host.innerHTML=`${expected==='MISSION_NODE'?`<div class="code"><span>NODE ÖFFNUNGSCODE</span><b>${esc(r.accessCode)}</b></div><p>Node öffnen, dann Transit-Core und Node-Core gemäß Auftrag tauschen.</p>`:''}<p class="phase-note">${step+1}/3 bestätigt: ${label} erkannt.</p>${next?`<p>Nächster Schritt: ${nextInstruction}.</p><button id="missionNext" class="primary">${nextInstruction.toUpperCase()}</button>`:'<p>Alle drei Scans bestätigt. Noch keine Buchung erfolgt.</p><button id="missionConfirm" class="primary">RESTORE VERBINDLICH ABSCHLIESSEN</button>'}`;
     if(next)$('missionNext').onclick=startMission;else $('missionConfirm').onclick=confirmMission;
     phase('success',next?`Scan bestätigt. ${nextInstruction}.`:'Alle Scans bestätigt. RESTORE kann abgeschlossen werden.');
   }catch(e){
