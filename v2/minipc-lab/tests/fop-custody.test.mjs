@@ -40,5 +40,8 @@ test('Local HQ upload credits once and cannot upload someone else core',()=>{
   assert.equal(runtime.localHqUpload({eventId,operationId:'GOOD',localId:'L1',coreId:'NC3'}).energyCredit,90);
   assert.equal(c.balance(eventId,'L1'),90);
   assert.equal(c.core(eventId,'NC3').owner_type,'HQ');
+  assert.equal(runtime.localHqUpload({eventId,operationId:'GOOD',localId:'L1',coreId:'NC3'}).replayed,true);
+  assert.equal(c.balance(eventId,'L1'),90);
+  assert.throws(()=>runtime.localHqUpload({eventId,operationId:'GOOD',localId:'L1',coreId:'WRONG'}),e=>e.code==='IDEMPOTENCY_CONFLICT');
  }finally{runtime.close()}
 });
