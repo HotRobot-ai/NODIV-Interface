@@ -151,3 +151,9 @@ button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
 .access-hero #btnAuth{margin-top:10px}
 .access-hero .access-signature{margin-top:20px}
 @media(max-width:390px){.access-hero .access-art{height:auto;aspect-ratio:1.35}}
+
+/* Artwork across the full access panel; preserve image proportions. */
+.access-hero{min-height:690px;justify-content:flex-end;background:linear-gradient(180deg,transparent 55%,#020a12dd 100%),url('/nodiv-background.png') center/cover no-repeat,#06131c}
+.access-hero .access-art{display:none}
+.access-hero .access-signature strong{font-size:18px;letter-spacing:.08em}
+.access-hero .motto-dot{font-size:1.3em;color:#64e7ff}
