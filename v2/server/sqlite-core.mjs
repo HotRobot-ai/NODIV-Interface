@@ -43,8 +43,32 @@ CREATE TABLE IF NOT EXISTS actor_node_locks (event_id TEXT NOT NULL, actor_id TE
 `;
 
 export class SqliteGameCore {
-  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path, { timeout: 5000 }); if (path !== ':memory:') this.db.exec('PRAGMA journal_mode=WAL'); this.db.exec(SCHEMA); this.clock = clock; this.enforceNodeLocks = true; }
+  constructor(path = ':memory:', clock = () => Math.floor(Date.now()/1000)) { this.db = new DatabaseSync(path, { timeout: 5000 }); if (path !== ':memory:') this.db.exec('PRAGMA journal_mode=WAL'); this.db.exec(SCHEMA); this._migrateCustodyLedger(); this.clock = clock; this.enforceNodeLocks = true; }
   close() { this.db.close(); }
+  _migrateCustodyLedger() {
+    const pk=this.db.prepare("PRAGMA table_info(fop_core_custody)").all().filter(c=>c.pk>0).sort((a,b)=>a.pk-b.pk).map(c=>c.name);
+    if(pk.join(',')==='event_id,core_id,received_operation_id') return;
+    if(pk.join(',')!=='event_id,core_id') throw new GameError('CUSTODY_SCHEMA_UNKNOWN');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.exec(`CREATE TABLE fop_core_custody_new (
+        event_id TEXT NOT NULL,core_id TEXT NOT NULL,fop_id TEXT NOT NULL,unbound_id TEXT NOT NULL,
+        received_operation_id TEXT NOT NULL,returned_operation_id TEXT,
+        received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,returned_at TEXT,
+        PRIMARY KEY(event_id,core_id,received_operation_id),
+        FOREIGN KEY(event_id,core_id) REFERENCES cores(event_id,core_id),
+        FOREIGN KEY(event_id,fop_id) REFERENCES actors(event_id,actor_id),
+        FOREIGN KEY(event_id,unbound_id) REFERENCES actors(event_id,actor_id),
+        CHECK ((returned_operation_id IS NULL AND returned_at IS NULL) OR (returned_operation_id IS NOT NULL AND returned_at IS NOT NULL))
+      );
+      INSERT INTO fop_core_custody_new SELECT * FROM fop_core_custody;
+      DROP TABLE fop_core_custody;
+      ALTER TABLE fop_core_custody_new RENAME TO fop_core_custody;
+      CREATE INDEX fop_custody_open ON fop_core_custody(event_id,fop_id,returned_operation_id);
+      CREATE UNIQUE INDEX fop_custody_one_active_core ON fop_core_custody(event_id,core_id) WHERE returned_operation_id IS NULL;`);
+      this.db.exec('COMMIT');
+    } catch(error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   seedEvent(eventId, state = 'FIELD_ACTIVE') { this.db.prepare('INSERT INTO events(event_id,state) VALUES (?,?)').run(eventId,state); }
   seedActor(eventId, actorId, role, capacity = 0) { this.db.prepare('INSERT INTO actors(event_id,actor_id,role,capacity) VALUES (?,?,?,?)').run(eventId,actorId,role,capacity); this.db.prepare('INSERT INTO balances(event_id,actor_id) VALUES (?,?)').run(eventId,actorId); }
   seedNode(eventId, nodeId, state = 'AVAILABLE') { this.db.prepare('INSERT INTO nodes(event_id,node_id,state) VALUES (?,?,?)').run(eventId,nodeId,state); }
