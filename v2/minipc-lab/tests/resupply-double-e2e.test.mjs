@@ -43,6 +43,17 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   const fop=await call('/api/session/start',{data:{uid:DEFAULT_UIDS.fopAccess}});
   const offer=await call('/api/role/state',{token:pioneer.token});
   assert.equal(offer.resupplyDispatch.maxCount,2);
+  // A single RE-SUPPLY must also require HQ handover, not only double assignments.
+  const single=await call('/api/mission/assign-resupply',{token:pioneer.token,data:{count:1}});
+  const one=db.prepare("SELECT mission_id,core_id,node_id FROM missions WHERE event_id=? AND actor_id='P9003' AND kind='RESUPPLY' AND state='ASSIGNED'").get(eventId);
+  const oneCoreUid=db.prepare('SELECT uid FROM cores WHERE event_id=? AND core_id=?').get(eventId,one.core_id).uid;
+  const oneOut=db.prepare("SELECT uid FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy,core_id LIMIT 1").get(eventId,one.node_id).uid;
+  const oneNodeUid=one.node_id==='NODE-001'?DEFAULT_UIDS.node:DEFAULT_UIDS.node2;
+  await assert.rejects(()=>call('/api/mission/confirm',{token:pioneer.token,data:{missionId:one.mission_id,nodeUid:oneNodeUid,cargoUid:oneCoreUid,outUid:oneOut}}),/RESUPPLY_HQ_HANDOVER_REQUIRED/);
+  await call('/api/mission/hq-handover',{token:pioneer.token,data:{missionId:one.mission_id,authorizerToken:founder.token,authorizerUid:'04FADE0001',uid:oneCoreUid}});
+  await call('/api/mission/confirm',{token:pioneer.token,data:{missionId:one.mission_id,nodeUid:oneNodeUid,cargoUid:oneCoreUid,outUid:oneOut,operationId:'RS-SINGLE-VERIFIED'}});
+  assert.equal(db.prepare('SELECT state FROM missions WHERE event_id=? AND mission_id=?').get(eventId,one.mission_id).state,'COMPLETED');
+  assert.equal(app.core.assertIntegrity(eventId).ok,true);
   const assigned=await call('/api/mission/assign-resupply',{token:pioneer.token,data:{count:2}});
   assert.equal(assigned.assignments.length,2);
   assert.equal(new Set(assigned.assignments.map(m=>m.nodeId)).size,2);
