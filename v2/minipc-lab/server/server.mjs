@@ -45,6 +45,10 @@ function requireRole(session,...roles){if(!roles.includes(session.role))throw Er
 function activeMission(db,eventId,actorId,now){
   return db.prepare("SELECT * FROM missions WHERE event_id=? AND actor_id=? AND state='ASSIGNED' AND expires_at>? AND kind IN ('RESTORE_1','RESTORE_2','RESUPPLY') ORDER BY expires_at,mission_id LIMIT 1").get(eventId,actorId,now);
 }
+function selectedMission(db,eventId,actorId,now,missionId){
+ if(!missionId)return activeMission(db,eventId,actorId,now);
+ return db.prepare("SELECT * FROM missions WHERE event_id=? AND actor_id=? AND mission_id=? AND state='ASSIGNED' AND expires_at>? AND kind IN ('RESTORE_1','RESTORE_2','RESUPPLY')").get(eventId,actorId,missionId,now);
+}
 function lowestNodeCore(db,eventId,nodeId){
   return db.prepare("SELECT core_id,uid,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy ASC,core_id ASC LIMIT 1").get(eventId,nodeId);
 }
@@ -479,7 +483,7 @@ export function createLabApp(config=labConfig()){
 
       // Pioneer RESTORE / RE-SUPPLY: scan values never choose the rule outcome.
       if(req.method==='POST'&&u.pathname==='/api/mission/check'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=activeMission(core.db,s.event_id,s.actor_id,runtime.core.clock());
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
         if(!mission)throw Error('MISSION_NOT_ASSIGNED');
         const uid=normalizeUid(b.uid),node=core.db.prepare('SELECT node_id FROM lab_node_tags WHERE event_id=? AND uid=?').get(s.event_id,uid);
         if(node){
@@ -496,7 +500,7 @@ export function createLabApp(config=labConfig()){
         throw Error('MISSION_CORE_MISMATCH');
       }
       if(req.method==='POST'&&u.pathname==='/api/mission/confirm'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=activeMission(core.db,s.event_id,s.actor_id,runtime.core.clock());
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
         if(!mission)throw Error('MISSION_NOT_ASSIGNED');
         const node=store.nodeTarget(s,b.nodeUid),cargo=store.coreTarget(s,b.cargoUid),out=store.coreTarget(s,b.outUid),low=lowestNodeCore(core.db,s.event_id,mission.node_id);
         if(node.node_id!==mission.node_id||cargo.core_id!==mission.core_id||out.core_id!==low?.core_id)throw Error('MISSION_SCAN_MISMATCH');
