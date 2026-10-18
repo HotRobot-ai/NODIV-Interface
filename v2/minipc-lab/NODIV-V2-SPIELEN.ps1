@@ -10,12 +10,26 @@ Write-Host 'TESTMODUS // SCHREIBTISCHBETRIEB'
 Write-Host ''
 Write-Host '1 = Founder Access Card einmalig einrichten'
 Write-Host '2 = NODIV V2 TESTMODUS starten'
-$choice = Read-Host 'Auswahl (1/2)'
-if ($choice -notin @('1','2')) { Write-Host 'Abgebrochen.'; exit }
+Write-Host '3 = Founder Access Card wiederherstellen'
+$choice = Read-Host 'Auswahl (1/2/3)'
+if ($choice -notin @('1','2','3')) { Write-Host 'Abgebrochen.'; exit }
+
+$db = Join-Path $PSScriptRoot 'data\nodiv-v2-desktop.sqlite'
+$recoveryKey = Join-Path $PSScriptRoot 'data\founder-recovery.key'
 
 if ($choice -eq '1') {
+  if (Test-Path $db) {
+    throw 'Vorhandener NODIV-Spielstand erkannt. Founder-Karte nicht neu bootstrappen. Bei Verlust/Defekt Auswahl 3 verwenden.'
+  }
   $port = 8790
   $script = 'NODIV-V2-NFC-SETUP.mjs'
+} elseif ($choice -eq '3') {
+  if (-not (Test-Path $db)) { throw 'Kein vorhandener NODIV-Spielstand fuer Recovery gefunden.' }
+  if (-not (Test-Path $recoveryKey)) { throw 'Founder Recovery-Schluessel fehlt. Es wird keine Ersatzberechtigung erzeugt.' }
+  $gamePort = Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue
+  if ($gamePort) { throw 'NODIV TESTMODUS laeuft noch. Erst den Spielserver beenden, dann Recovery starten.' }
+  $port = 8790
+  $script = 'NODIV-V2-FOUNDER-RECOVERY.mjs'
 } else {
   $port = 8787
   $script = 'server/server.mjs'
@@ -27,7 +41,6 @@ if ($choice -eq '1') {
   if (-not $m.Success) {
     throw 'Founder Access Card fehlt. Zuerst Auswahl 1 ausfuehren.'
   }
-  $db = Join-Path $PSScriptRoot 'data\nodiv-v2-desktop.sqlite'
   if (Test-Path $db) {
     Write-Host 'Vorhandener NODIV-Testspielstand erkannt. Er wird NICHT geloescht.' -ForegroundColor Yellow
     Write-Host 'Registrierungen, Spielfortschritt und Historie bleiben erhalten.'
@@ -45,7 +58,12 @@ Write-Host "Schalte privaten Tailscale-Zugriff auf Port $port ..."
 if ($LASTEXITCODE -ne 0) { throw 'Tailscale Serve fehlgeschlagen.' }
 
 Write-Host ''
-Write-Host 'NODIV bereit. HTTPS-Adresse auf dem Smartphone in Chrome oeffnen.' -ForegroundColor Green
+if ($choice -eq '3') {
+  Write-Host 'FOUNDER RECOVERY bereit. HTTPS-Adresse auf dem Smartphone in Chrome oeffnen.' -ForegroundColor Yellow
+  Write-Host 'Nur die neue Founder Access Card scannen. Der Spielstand wird nicht zurueckgesetzt.'
+} else {
+  Write-Host 'NODIV bereit. HTTPS-Adresse auf dem Smartphone in Chrome oeffnen.' -ForegroundColor Green
+}
 if ($choice -eq '2') {
   Write-Host 'TESTMODUS: Fehlende Rollen oder Hardware werden nicht erzeugt.' -ForegroundColor Yellow
   Write-Host 'Datenbank niemals fuer einen normalen Neustart loeschen.'
