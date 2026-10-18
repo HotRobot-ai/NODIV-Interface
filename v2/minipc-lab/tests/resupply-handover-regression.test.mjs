@@ -24,7 +24,9 @@ test('handover needs matching FOP or Founder session and NFC card',()=>{
 
 test('pending handover remains visible and mission launch is blocked after reload',()=>{
   assert.match(server,/handoverConfirmed:!!m\.handoverAt/);
-  assert.match(client,/selected\?\.handoverRequired&&!selected\.handoverConfirmed/);
-  assert.match(client,/HQ-ÜBERGABE AUSSTEHEND/);
+  assert.match(client,/current\.kind==='RESUPPLY'&&selected&&!selected\.handoverConfirmed/);
+  assert.match(client,/id="resupplyHqCard"/);
+  assert.match(client,/activeResupply\.map\(m=>/);
+  assert.match(client,/HQ-FREIGABE STARTEN/);
   assert.match(client,/data-resupply-handover|data-hq-handover/);
 });
