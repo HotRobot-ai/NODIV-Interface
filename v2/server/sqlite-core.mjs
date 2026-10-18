@@ -155,7 +155,7 @@ export class SqliteGameCore {
       if(ec&&this.db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state==='STARTED') this._fail('EVAC_NORMAL_ACTION_FROZEN');
       const actor=this.db.prepare('SELECT * FROM actors WHERE event_id=? AND actor_id=?').get(eventId,actorId);
       if(!actor||!actor.active) this._fail('ACTOR_DENIED');
-      const permitted={EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
+      const permitted={EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],LOCAL_HQ_UPLOAD:['LOCAL'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
       if(!permitted[kind]?.includes(actor.role)) this._fail('ROLE_DENIED');
       if(new Set(moves.map(m=>m.id)).size!==moves.length) this._fail('DUPLICATE_CORE');
 
@@ -172,6 +172,13 @@ export class SqliteGameCore {
           expected+=c.actual_energy;
         }
         if(energyCredit!==expected) this._fail('UPLOAD_CREDIT_MISMATCH');
+      }else if(kind==='LOCAL_HQ_UPLOAD'){
+        if(moves.length!==1||capacityChange||nodeChanges.length||eventState||missionId) this._fail('LOCAL_UPLOAD_INVALID_SHAPE');
+        const m=moves[0];
+        if(m.fromType!=='PIONEER'||m.fromId!==actorId||m.toType!=='HQ'||m.toId!=='HQ'||m.status!=='SECURED') this._fail('LOCAL_UPLOAD_INVALID_ROUTE');
+        const c=this.core(eventId,m.id);
+        if(!c||c.owner_type!=='PIONEER'||c.owner_id!==actorId||c.status!=='FIELD') this._fail('LOCAL_UPLOAD_CORE_INVALID');
+        if(energyCredit!==c.actual_energy) this._fail('LOCAL_UPLOAD_CREDIT_MISMATCH');
       }else if(kind==='EXCHANGE'){
         if(energyCredit||capacityChange||nodeChanges.length||eventState||moves.length<2||moves.length>6||moves.length%2) this._fail('EXCHANGE_INVALID_SHAPE');
         const incoming=moves.filter(m=>m.fromType==='PIONEER'&&m.fromId===actorId&&m.toType==='NODE');
@@ -281,7 +288,7 @@ export class SqliteGameCore {
         this.db.prepare('UPDATE events SET state=? WHERE event_id=?').run(eventState,eventId);
       }
       if(energyCredit){
-        if(kind!=='HQ_UPLOAD') this._fail('ENERGY_CREDIT_DENIED');
+        if(kind!=='HQ_UPLOAD'&&kind!=='LOCAL_HQ_UPLOAD') this._fail('ENERGY_CREDIT_DENIED');
         if(this.db.prepare('UPDATE balances SET secured_energy=secured_energy+? WHERE event_id=? AND actor_id=?').run(energyCredit,eventId,actorId).changes!==1) this._fail('BALANCE_UNKNOWN');
       }
       if(kind==='EXCHANGE'){
