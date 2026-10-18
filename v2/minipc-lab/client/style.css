@@ -117,3 +117,17 @@ body{background:radial-gradient(ellipse at 50% 0,#0c3547 0,transparent 55%),#040
 @media(max-height:740px){.access-hero{min-height:0}.access-art{height:105px}.energy-ring{width:100px}.energy-ring:before{width:80px}.access-signature{margin-bottom:8px}}
 @media(hover:hover){button:not(:disabled):hover{border-color:#a1eaff;filter:brightness(1.12)}}
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #a5eeff;outline-offset:3px}
+
+/* Role-level visual hierarchy: one primary action, unmistakable state feedback. */
+#roleShell[data-role="FOP"] .role-head{border-left:4px solid #6ee6ff}
+#roleShell[data-role="PIONEER"] .role-head{border-left:4px solid #55d9f4}
+#roleShell[data-role="LOCAL"] .role-head{border-left:4px solid #83c6e1}
+#roleShell[data-role="UNBOUND"] .role-head{border-left:4px solid #bd9cff}
+#roleShell[data-role="UNBOUND"] .role-sigil{border-color:#bd9cff;box-shadow:0 0 22px #bd9cff55}
+#roleShell[data-role="FOUNDER"] .role-head{border-left:4px solid #d8bc75}
+button:disabled{opacity:.58;cursor:not-allowed;background:#19262c;border-color:#52616a;color:#b0bdc3;box-shadow:none}
+button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
+.feedback.ok{border-left:3px solid var(--ok);padding-left:10px}
+.feedback.error{border-left:3px solid var(--bad);padding-left:10px}
+.status-pill.warn{border-color:#a8863d;color:var(--warn)}
+@media(max-width:390px){.role-head{padding:16px 12px;gap:8px}.role-head h2{font-size:clamp(18px,6vw,26px);overflow-wrap:anywhere}.role-sigil{width:42px;height:42px}.metrics{gap:6px}.metric{padding:10px 8px}.metric b{font-size:clamp(17px,5vw,20px)}.card{padding:13px}.next-card{padding:13px}}
