@@ -237,6 +237,15 @@ function isKnownNode(db,eventId,actorId,nodeId){
  // Existing confirmed exchanges are authoritative discovery evidence, including older saved games.
  return !!db.prepare("SELECT 1 FROM lab_exchange_intents WHERE event_id=? AND actor_id=? AND node_id=? AND state='CONFIRMED' LIMIT 1").get(eventId,actorId,nodeId);
 }
+// Separate physical HQ handover proof; existing single-mission saves remain compatible.
+function ensureResupplyHandover(db){
+ db.exec("CREATE TABLE IF NOT EXISTS lab_resupply_handover (event_id TEXT NOT NULL, mission_id TEXT NOT NULL, actor_id TEXT NOT NULL, core_id TEXT NOT NULL, confirmed_at INTEGER, PRIMARY KEY(event_id,mission_id))");
+}
+function verifyResupplyHandover(db,eventId,actorId,missionId,coreId){
+ ensureResupplyHandover(db);
+ const row=db.prepare("SELECT confirmed_at FROM lab_resupply_handover WHERE event_id=? AND mission_id=? AND actor_id=? AND core_id=?").get(eventId,missionId,actorId,coreId);
+ if(row&&!row.confirmed_at)throw Error('RESUPPLY_HQ_HANDOVER_REQUIRED');
+}
 function assignResupply(core,eventId,actorId,count=1){
  if(!Number.isInteger(count)||count<1||count>2)throw Error('RESUPPLY_COUNT_INVALID');
  core.recoverExpiredMissions(eventId);
@@ -261,6 +270,7 @@ function assignResupply(core,eventId,actorId,count=1){
   if(targets.length<count)throw Error('NO_KNOWN_AVAILABLE_NODE');
   const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy,core_id").all(eventId).filter(x=>!blockedCores.has(x.core_id));
   if(reserve.length<count)throw Error('NO_HQ_RESERVE');
+  if(count===2)ensureResupplyHandover(db);
   const assignments=[];
   for(const target of targets.slice(0,count)){
    const index=reserve.findIndex(x=>x.visible_energy>=target.out.visible_energy);
@@ -268,6 +278,7 @@ function assignResupply(core,eventId,actorId,count=1){
    const id='RS-LAB-'+randomUUID();
    if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,cargo.core_id).changes!==1)throw Error('RESUPPLY_CARGO_CONFLICT');
    db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,'ASSIGNED',?)").run(eventId,id,actorId,'RESUPPLY',target.nodeId,cargo.core_id,now+1800);
+   if(count===2)db.prepare("INSERT INTO lab_resupply_handover(event_id,mission_id,actor_id,core_id) VALUES (?,?,?,?)").run(eventId,id,actorId,cargo.core_id);
    assignments.push({missionId:id,kind:'RESUPPLY',nodeId:target.nodeId});
   }
   core.assertIntegrity(eventId);db.exec('COMMIT');
@@ -485,6 +496,19 @@ export function createLabApp(config=labConfig()){
         return json(res,200,runtime.fop.deinstall({eventId:s.event_id,operationId:b.operationId||('FOP-OUT-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId}));
       }
 
+      if(req.method==='POST'&&u.pathname==='/api/mission/hq-handover'){
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');
+        const b=await body(req),now=core.clock(),mission=selectedMission(core.db,s.event_id,s.actor_id,now,b.missionId);
+        if(!mission||mission.kind!=='RESUPPLY')throw Error('MISSION_NOT_ASSIGNED');
+        const scanned=store.coreTarget(s,normalizeUid(b.uid));
+        if(scanned.core_id!==mission.core_id||scanned.owner_type!=='TRANSIT'||scanned.owner_id!==s.actor_id||scanned.status!=='IN_TRANSIT')throw Error('RESUPPLY_CARGO_CONFLICT');
+        ensureResupplyHandover(core.db);
+        const row=core.db.prepare("SELECT confirmed_at FROM lab_resupply_handover WHERE event_id=? AND mission_id=? AND actor_id=? AND core_id=?").get(s.event_id,mission.mission_id,s.actor_id,mission.core_id);
+        if(!row)throw Error('RESUPPLY_HANDOVER_NOT_REQUIRED');
+        core.db.prepare("UPDATE lab_resupply_handover SET confirmed_at=COALESCE(confirmed_at,?) WHERE event_id=? AND mission_id=? AND actor_id=? AND core_id=?").run(now,s.event_id,mission.mission_id,s.actor_id,mission.core_id);
+        return json(res,200,{ok:true,missionId:mission.mission_id,energy:scanned.visible_energy,confirmed:true});
+      }
+
       // Pioneer RESTORE / RE-SUPPLY: scan values never choose the rule outcome.
       if(req.method==='POST'&&u.pathname==='/api/mission/check'){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
@@ -508,6 +532,7 @@ export function createLabApp(config=labConfig()){
         if(!mission)throw Error('MISSION_NOT_ASSIGNED');
         const node=store.nodeTarget(s,b.nodeUid),cargo=store.coreTarget(s,b.cargoUid),out=store.coreTarget(s,b.outUid),low=lowestNodeCore(core.db,s.event_id,mission.node_id);
         if(node.node_id!==mission.node_id||cargo.core_id!==mission.core_id||out.core_id!==low?.core_id)throw Error('MISSION_SCAN_MISMATCH');
+        if(mission.kind==='RESUPPLY')verifyResupplyHandover(core.db,s.event_id,s.actor_id,mission.mission_id,mission.core_id);
         if(mission.kind==='RESUPPLY')return json(res,200,runtime.resupply({eventId:s.event_id,operationId:b.operationId||('RS-'+randomUUID()),pioneerId:s.actor_id,missionId:mission.mission_id,outCoreId:out.core_id}));
         const phase=mission.kind==='RESTORE_2'?2:mission.kind==='RESTORE_1'?1:0;if(!phase)throw Error('MISSION_KIND_INVALID');
         return json(res,200,runtime.restore({eventId:s.event_id,operationId:b.operationId||('REST-'+randomUUID()),pioneerId:s.actor_id,nodeId:node.node_id,cargoCoreId:cargo.core_id,outCoreId:out.core_id,phase,missionId:mission.mission_id}));
