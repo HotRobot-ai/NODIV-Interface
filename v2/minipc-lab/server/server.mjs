@@ -233,32 +233,42 @@ function isKnownNode(db,eventId,actorId,nodeId){
  // Existing confirmed exchanges are authoritative discovery evidence, including older saved games.
  return !!db.prepare("SELECT 1 FROM lab_exchange_intents WHERE event_id=? AND actor_id=? AND node_id=? AND state='CONFIRMED' LIMIT 1").get(eventId,actorId,nodeId);
 }
-function assignResupply(core,eventId,actorId){
+function assignResupply(core,eventId,actorId,count=1){
+ if(!Number.isInteger(count)||count<1||count>2)throw Error('RESUPPLY_COUNT_INVALID');
  core.recoverExpiredMissions(eventId);
  const db=core.db,now=core.clock();
  db.exec('BEGIN IMMEDIATE');
  try{
   const offer=resupplyOffer(db,eventId,actorId,now,core.enforceNodeLocks);
   if(!offer.eligible)throw Error(offer.reason||'RESUPPLY_NOT_ELIGIBLE');
+  if(count>offer.capacity-offer.used)throw Error('NO_FREE_SLOT');
   const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
   const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
   const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
   const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
   const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
-  let target;
+  const targets=[];
   for(const node of nodes){
    if(!isKnownNode(db,eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
    const cs=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy,core_id").all(eventId,node.node_id);
-   if(cs.length!==3||cs.some(c=>c.status!=='DEPLOYED'||blockedCores.has(c.core_id)))continue;
-   if(!target||cs[0].visible_energy<target.out.visible_energy)target={nodeId:node.node_id,out:cs[0]};
+   if(cs.length===3&&cs.every(c=>c.status==='DEPLOYED'&&!blockedCores.has(c.core_id)))targets.push({nodeId:node.node_id,out:cs[0]});
   }
+  targets.sort((a,b)=>a.out.visible_energy-b.out.visible_energy||a.nodeId.localeCompare(b.nodeId));
+  if(targets.length<count)throw Error('NO_KNOWN_AVAILABLE_NODE');
   const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy,core_id").all(eventId).filter(x=>!blockedCores.has(x.core_id));
-  const cargo=target&&(reserve.find(x=>x.visible_energy>=target.out.visible_energy)||reserve[reserve.length-1]);
-  if(!cargo)throw Error('RESUPPLY_ASSIGNMENT_UNAVAILABLE');
-  const id='RS-LAB-'+randomUUID();
-  if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,cargo.core_id).changes!==1)throw Error('RESUPPLY_CARGO_CONFLICT');
-  db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,'ASSIGNED',?)").run(eventId,id,actorId,'RESUPPLY',target.nodeId,cargo.core_id,now+1800);
-  core.assertIntegrity(eventId);db.exec('COMMIT');return {missionId:id,kind:'RESUPPLY',nodeId:target.nodeId};
+  if(reserve.length<count)throw Error('NO_HQ_RESERVE');
+  const assignments=[];
+  for(const target of targets.slice(0,count)){
+   const index=reserve.findIndex(x=>x.visible_energy>=target.out.visible_energy);
+   const cargo=reserve.splice(index<0?reserve.length-1:index,1)[0];
+   const id='RS-LAB-'+randomUUID();
+   if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,cargo.core_id).changes!==1)throw Error('RESUPPLY_CARGO_CONFLICT');
+   db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,'ASSIGNED',?)").run(eventId,id,actorId,'RESUPPLY',target.nodeId,cargo.core_id,now+1800);
+   assignments.push({missionId:id,kind:'RESUPPLY',nodeId:target.nodeId});
+  }
+  core.assertIntegrity(eventId);db.exec('COMMIT');
+  return count===1?assignments[0]:{assignments};
+
  }catch(e){db.exec('ROLLBACK');throw e}
 }
 
@@ -587,7 +597,7 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/founder/test/end'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.end(s.event_id,s.actor_id)});
       }
-      if(req.method==='POST'&&u.pathname==='/api/mission/assign-resupply'){const session=store.session(bearer(req));requireRole(session,'PIONEER');if(!['registration','desktop'].includes(config.mode))throw Error('MODE_DENIED');return json(res,200,{ok:true,...assignResupply(core,session.event_id,session.actor_id)});}
+      if(req.method==='POST'&&u.pathname==='/api/mission/assign-resupply'){const session=store.session(bearer(req));requireRole(session,'PIONEER');if(!['registration','desktop'].includes(config.mode))throw Error('MODE_DENIED');const b=await body(req);return json(res,200,{ok:true,...assignResupply(core,session.event_id,session.actor_id,b.count===undefined?1:b.count)});}
       if(req.method==='POST'&&u.pathname==='/api/mission/assign-next'){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');return json(res,200,{ok:true,...realtest.assignRestore(s.event_id,s.actor_id)});
       }
