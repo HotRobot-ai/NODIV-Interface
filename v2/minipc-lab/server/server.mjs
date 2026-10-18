@@ -223,14 +223,14 @@ function resupplyOffer(db,eventId,actorId,now,enforceNodeLocks=false){
  const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
  const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
  const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
- let availableNode=false;
+ let availableNodes=0;
  for(const node of nodes){
   if(!isKnownNode(db,eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
   const cs=db.prepare("SELECT core_id,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=?").all(eventId,node.node_id);
-  if(cs.length===3&&cs.every(c=>c.status==='DEPLOYED'&&!blockedCores.has(c.core_id))){availableNode=true;break;}
+  if(cs.length===3&&cs.every(c=>c.status==='DEPLOYED'&&!blockedCores.has(c.core_id))){availableNodes++;}
  }
- const reserve=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").all(eventId).some(c=>!blockedCores.has(c.core_id));
- return {eligible:availableNode&&reserve,mandatory,used,capacity,reason:!availableNode?'NO_KNOWN_AVAILABLE_NODE':!reserve?'NO_HQ_RESERVE':null};
+ const reserveCount=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").all(eventId).filter(c=>!blockedCores.has(c.core_id)).length;
+ return {eligible:availableNodes>0&&reserveCount>0,maxCount:Math.min(2,Math.max(0,capacity-used),availableNodes,reserveCount),mandatory,used,capacity,reason:!availableNodes?'NO_KNOWN_AVAILABLE_NODE':!reserveCount?'NO_HQ_RESERVE':null};
 }
 function isKnownNode(db,eventId,actorId,nodeId){
  if(db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId))return true;
