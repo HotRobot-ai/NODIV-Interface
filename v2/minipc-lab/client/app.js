@@ -22,6 +22,7 @@ const ERROR_TEXT={
   MISSION_NODE_MISMATCH:'Falscher Ziel-Node. Prüfe deinen Auftrag.',
   MISSION_CORE_MISMATCH:'Dieser N-Core gehört nicht zu deinem aktuellen Auftrag.',
   MISSION_SCAN_MISMATCH:'Die Scans passen nicht mehr zum aktuellen Serverzustand.',
+  RESUPPLY_HQ_HANDOVER_REQUIRED:'RE-SUPPLY wartet auf die bestätigte N-Core-Übergabe durch Founder oder FOP am HQ.',
   EVAC_COMPLETION_BLOCKED:'Eventabschluss noch nicht freigegeben. EVAC vollständig fortsetzen.',
   EVAC_PENDING_OPERATIONS:'Eventabschluss wartet noch auf offene serverseitige Vorgänge.',
   INSTALL_CARGO_INVALID:'Dieser N-Core gehört nicht zu deinem aktuellen FOP-Loadout.',
@@ -128,8 +129,9 @@ function renderRole({passive=false}={}){
   $('roleChannel').textContent=ROLE_CHANNEL[view.actor.role]||'NODIV';
   $('roleIdentity').textContent=view.actor.id;
   $('roleName').textContent=ROLE_LABEL[view.actor.role]||view.actor.role;
-  $('nextTitle').textContent=view.nextAction?.label||'STATUS PRÜFEN';
-  $('nextDetail').textContent=view.nextAction?.detail||'';
+  const pendingHandover=view.actor.role==='PIONEER'&&(view.assignedMissions||[]).some(m=>m.kind==='RESUPPLY'&&m.handoverRequired&&!m.handoverConfirmed);
+  $('nextTitle').textContent=pendingHandover?'HQ-ÜBERGABE BESTÄTIGEN':view.nextAction?.label||'STATUS PRÜFEN';
+  $('nextDetail').textContent=pendingHandover?'Am HQ den zugewiesenen Transit-Core durch Founder oder FOP freigeben lassen. Erst danach zum Ziel-Node gehen.':view.nextAction?.detail||'';
   $('nextAction').classList.toggle('pioneer-next',view.actor.role==='PIONEER');
   const host=$('roleContent');
   if(passive&&roleInteractionActive())return;
