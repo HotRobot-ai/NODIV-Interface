@@ -172,7 +172,7 @@ function renderCatcher(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const role=v.actor.role;
   const evac=v.event.evacState==='STARTED';
-  return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><div class="slots">${(v.inventory.cores||[]).filter(c=>c.status==='FIELD').map((c,i)=>`<div class="slot"><small>SLOT 0${i+1}</small><b>${esc(c.energy)} E</b></div>`).join('')||'<p class="phase-note">NOCH KEIN N-CORE ERBEUTET</p>'}</div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>`;
+  return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><div class="slots">${(v.inventory.cores||[]).filter(c=>c.status==='FIELD').map((c,i)=>`<div class="slot"><small>SLOT 0${i+1}</small><b>${esc(c.energy)} E</b></div>`).join('')||'<p class="phase-note">NOCH KEIN N-CORE ERBEUTET</p>'}</div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>${evac?"":`<section class="card"><h3>${role==="LOCAL"?"HQ UPLOAD":"FOP ÜBERGABE"}</h3><p>${role==="LOCAL"?"HQ-Tag scannen.":"FOP Access Card scannen."}</p><button id="custodyAction" class="primary" ${v.inventory.used===0?"disabled":""}>${role==="LOCAL"?"HQ-TAG SCANNEN":"FOP-KARTE SCANNEN"}</button><div id="custodyOut" class="feedback"></div></section>`}`;
 }
 function renderFop(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
@@ -248,6 +248,7 @@ function bindRole(){
   $('hqOpen')?.addEventListener('click',openHq);
   $('catchScan')?.addEventListener('click',scanCatch);
   $('catchConfirm')?.addEventListener('click',confirmCatch);
+  $('custodyAction')?.addEventListener('click',performCustodyAction);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
   $('fopCustodyOpen')?.addEventListener('click',openFopCustody);
   $('regScan')?.addEventListener('click',registerFounderHardware);
@@ -386,6 +387,22 @@ async function confirmMission(){
   catch(e){phase('error',friendly(e));}
 }
 
+async function performCustodyAction(){
+ const button=$('custodyAction'); if(!button||button.disabled)return; button.disabled=true;
+ try{
+  const local=view.actor.role==='LOCAL';
+  const carried=view.inventory.cores.filter(c=>c.status==='FIELD');
+  if(local&&carried.length!==1)throw Error('LOCAL_CORE_REQUIRED');
+  const uid=await nfc(local?'HQ UPLOAD-TAG':'FOP ACCESS CARD');
+  const key='nodiv-custody-'+view.actor.id;
+  let operationId=sessionStorage.getItem(key);
+  if(!operationId){operationId=op(local?'LOCAL-UPLOAD':'UNBOUND-HANDOVER');sessionStorage.setItem(key,operationId);}
+  await api(local?'/api/local/hq/upload':'/api/unbound/fop/handover',{method:'POST',data:{uid,operationId,...(local?{coreId:carried[0].id}:{})}});
+  sessionStorage.removeItem(key);
+  setFeedback('custodyOut',local?'N-Core am HQ gesichert.':'N-Cores an FOP übergeben.');
+  await refreshRole({quiet:true});
+ }catch(e){setFeedback('custodyOut',friendly(e),true);button.disabled=false;}
+}
 async function scanCatch(){
   try{
     catchPreview='';const uid=await nfc('PIONEER ACCESS CARD');phase('check','Ziel, Schutz und Catch-Core werden geprüft.');
