@@ -28,7 +28,9 @@ jobs:
           node --check server/server.mjs
           node --check server/desktop-test.mjs
           node --check server/founder-registry.mjs
+          node --check server/founder-recovery.mjs
           node --check server/seed.mjs
+          node --check NODIV-V2-FOUNDER-RECOVERY.mjs
       - name: Build BLOCK 07 desktop package
         shell: bash
         run: |
@@ -53,6 +55,8 @@ jobs:
           test -f "$out/NODIV-V2-SPIELEN.cmd"
           test -f "$out/v2/minipc-lab/NODIV-V2-SPIELEN.cmd"
           test -f "$out/v2/minipc-lab/NODIV-V2-SPIELEN.ps1"
+          test -f "$out/v2/minipc-lab/NODIV-V2-FOUNDER-RECOVERY.mjs"
+          test -f "$out/v2/minipc-lab/server/founder-recovery.mjs"
           test -f "$out/v2/server/gameplay-runtime.mjs"
           test ! -e "$out/v2/minipc-lab/NODIV-V2-STARTER.cmd"
           test ! -e "$out/v2/minipc-lab/RESET-TEST.cmd"
