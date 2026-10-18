@@ -21,6 +21,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
    db.prepare("UPDATE nodes SET state='INSTALLED' WHERE event_id=? AND node_id=?").run(eventId,nodeId);
    db.prepare("INSERT INTO pioneer_known_nodes(event_id,actor_id,node_id,discovered_at) VALUES (?,?,?,?)").run(eventId,'P9003',nodeId,Math.floor(Date.now()/1000));
   }
+  for(const [uid,nodeId] of [[DEFAULT_UIDS.node,'NODE-001'],[DEFAULT_UIDS.node2,'NODE-002']])db.prepare('INSERT OR REPLACE INTO lab_node_tags(event_id,uid,node_id) VALUES (?,?,?)').run(eventId,uid,nodeId);
   let n=0;
   for(const nodeId of ['NODE-001','NODE-002']){
    for(const energy of [100,150,200]){
