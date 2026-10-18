@@ -403,6 +403,23 @@ export function createLabApp(config=labConfig()){
         return json(res,200,runtime.hq.confirm({eventId:s.event_id,pioneerId:s.actor_id,orderId:b.orderId,operationId:b.operationId||('UPLOAD-'+randomUUID())}));
       }
 
+      // Physical HQ tag is required before a Local core can be secured.
+      if(req.method==='POST'&&u.pathname==='/api/local/hq/upload'){
+        const session=store.session(bearer(req));requireRole(session,'LOCAL');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim()||typeof b.coreId!=='string'||!b.coreId.trim())throw Error('LOCAL_UPLOAD_CONTEXT_REQUIRED');
+        store.uploadBayTarget(session,b.uid);
+        return json(res,200,runtime.localHqUpload({eventId:session.event_id,operationId:b.operationId,localId:session.actor_id,coreId:b.coreId}));
+      }
+      // The returning FOP must physically scan the HQ terminal before transport cores are released.
+      if(req.method==='POST'&&u.pathname==='/api/fop/custody/return'){
+        const session=store.session(bearer(req));requireRole(session,'FOP');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim())throw Error('RETURN_CONTEXT_REQUIRED');
+        store.uploadBayTarget(session,b.uid);
+        return json(res,200,runtime.fopHqReturn({eventId:session.event_id,operationId:b.operationId,fopId:session.actor_id,coreIds:b.coreIds}));
+      }
+
       // FOP: Node scan is read-only; all ownership changes are revalidated by the shared runtime.
       if(req.method==='POST'&&u.pathname==='/api/fop/scan'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),node=store.nodeTarget(s,b.uid);
