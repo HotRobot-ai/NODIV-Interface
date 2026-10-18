@@ -9,6 +9,6 @@ if /I "%~1"=="--smoke" (
   echo NODIV BLOCK07 STARTER SMOKE PASS
   exit /b 0
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0NODIV-V2-SPIELEN.ps1"
+powershell.exe -NoProfile -File "%~dp0NODIV-V2-SPIELEN.ps1"
 echo.
 pause
