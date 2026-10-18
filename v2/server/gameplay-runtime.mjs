@@ -144,6 +144,22 @@ export function createV2GameplayRuntime(path=':memory:', {
       moves:[move(coreId,'PIONEER',localId,'HQ','HQ','SECURED')],energyCredit:c.actual_energy});
   }
 
+  function unboundHandover({eventId,operationId,unboundId,fopId}){
+    requiredStrings([eventId,operationId,unboundId,fopId],'HANDOVER_CONTEXT_REQUIRED');
+    const held=core.db.prepare("SELECT core_id,actual_energy FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD' ORDER BY core_id").all(eventId,unboundId);
+    if(!held.length||held.length>2) throw new GameError('HANDOVER_INVENTORY_INVALID');
+    return core.run({eventId,operationId,actorId:unboundId,kind:'UNBOUND_HANDOVER',
+      moves:held.map(c=>move(c.core_id,'PIONEER',unboundId,'TRANSIT',fopId,'FOP_CUSTODY')),
+      energyCredit:held.reduce((n,c)=>n+c.actual_energy,0)});
+  }
+
+  function fopHqReturn({eventId,operationId,fopId,coreIds}){
+    requiredStrings([eventId,operationId,fopId],'RETURN_CONTEXT_REQUIRED');
+    uniqueStrings(coreIds,'RETURN_CORES_REQUIRED');
+    return core.run({eventId,operationId,actorId:fopId,kind:'FOP_HQ_RETURN',
+      moves:coreIds.map(id=>move(id,'TRANSIT',fopId,'HQ','HQ','RESERVE'))});
+  }
+
   function fopInstall({eventId,operationId,fopId,nodeId,coreIds}){
     requiredStrings([eventId,operationId,fopId,nodeId],'FOP_CONTEXT_REQUIRED');uniqueStrings(coreIds,'FOP_CORES_REQUIRED');
     if(coreIds.length!==3)throw new GameError('FOP_THREE_CORES_REQUIRED');
@@ -162,7 +178,7 @@ export function createV2GameplayRuntime(path=':memory:', {
 
   return {
     core,
-    exchange,restore,upload,resupply,localHqUpload,hq,roles,
+    exchange,restore,upload,resupply,localHqUpload,unboundHandover,fopHqReturn,hq,roles,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{start:evacStart,teams:evacTeams,flow:evacFlow,completion:evacCompletion},
