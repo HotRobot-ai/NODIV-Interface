@@ -709,12 +709,15 @@ async function endDesktopTest(){
 
 async function confirmResupplyHandover(missionId){
   try{
-    phase('scan','HQ-Tag scannen.');
-    const hqUid=await nfc('HQ-UPLOADPUNKT');
+    phase('scan','Founder- oder FOP-Access-Card scannen.');
+    const authorizerUid=await nfc('FOUNDER / FOP ACCESS CARD');
+    phase('check','Ausgabeberechtigung wird geprüft.');
+    const authorization=await api('/api/session/start',{method:'POST',auth:false,data:{uid:authorizerUid}});
+    if(!['FOUNDER','FOP'].includes(authorization.role))throw Error('RESUPPLY_AUTHORIZER_DENIED');
     phase('scan','Zugewiesenen N-Core scannen.');
     const uid=await nfc('RE-SUPPLY N-CORE');
     phase('check','HQ-Übergabe wird serverseitig geprüft.');
-    const r=await api('/api/mission/hq-handover',{method:'POST',data:{missionId,hqUid,uid}});
+    const r=await api('/api/mission/hq-handover',{method:'POST',data:{missionId,authorizerUid,authorizerToken:authorization.token,uid}});
     phase('success',`HQ-Übergabe bestätigt: ${r.energy} E. Ziel-Node kann aufgesucht werden.`);
     await refreshRole({quiet:true});
   }catch(e){phase('error',friendly(e));}
