@@ -79,3 +79,38 @@ button:not(:disabled){cursor:pointer}button:focus-visible{outline:3px solid #fff
 .custody-slot strong{display:block;margin-top:7px;font-size:23px;color:#79e8ff}
 .custody-empty{padding:14px 11px;margin:10px 0!important;border:1px solid #244553;background:#07131a;font-size:12px;font-weight:800;letter-spacing:.03em;color:#9bb9c4!important}
 .custody-panel>button{margin-top:12px}
+
+/* NODIV V2 identity: reusable legacy artwork, one shared role language. */
+body{background:radial-gradient(ellipse at 50% 0,#0c3547 0,transparent 55%),#04080c}
+.brand-head{position:relative;padding:20px 8px 17px;border-bottom:1px solid #326c81}
+.brand-head:after{content:"";display:block;width:108px;height:2px;margin-top:13px;background:linear-gradient(90deg,#8aeaff,transparent);box-shadow:0 0 15px #36cfff}
+.brand{text-shadow:0 0 24px #41cfff44}
+.panel,.role-head,.next-card,.card,.diagnostics{border-radius:12px}
+.access-hero{position:relative;isolation:isolate;overflow:hidden;min-height:min(690px,calc(100svh - 170px));padding:clamp(18px,5vw,32px);justify-content:flex-end;border-color:#4d9db5;background:linear-gradient(180deg,#020a1208 0%,#020a1266 34%,#020a12ed 73%,#020a12 100%),url('/f6072312-e4b9-448b-84ee-3283e200b198.png') center top/cover no-repeat,#06131c}
+.access-hero:before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 50% 33%,#2fe0ff23,transparent 40%)}
+.access-art{height:clamp(125px,28svh,260px);display:grid;place-items:center;pointer-events:none}
+.energy-ring{width:clamp(115px,32vw,190px);aspect-ratio:1;border:2px solid #83e8ff8a;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 28px #30d6ff5c,inset 0 0 28px #30d6ff42,0 0 0 12px #35bbff0a;animation:nodiv-breathe 5s ease-in-out infinite}
+.energy-ring:before{content:"";position:absolute;width:clamp(90px,25vw,148px);aspect-ratio:1;border:1px dashed #a6e9ff91;border-radius:50%}
+.energy-core{width:38%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#e9fdff 0%,#7cdeff 24%,#198bbd 58%,#06354e 80%);box-shadow:0 0 22px #7feaff,0 0 70px #35d7ff7a}
+.access-signature{display:grid;gap:7px;text-align:center;margin:0 0 16px;text-shadow:0 2px 8px #000}
+.access-signature span{font-size:10px;letter-spacing:.19em;color:#a6d7e8;font-weight:850}
+.access-signature strong{font-size:clamp(17px,5vw,24px);letter-spacing:.1em;color:#f1fcff}
+.access-hero h1{font-size:clamp(28px,8vw,42px);margin-top:9px}
+.access-hero button.primary{min-height:66px;font-size:16px;border-radius:9px;box-shadow:0 0 25px #22c7ec55}
+.access-hero p{color:#d3e6ef}
+.role-head{min-height:175px;align-items:flex-end;padding:24px 18px;background:linear-gradient(180deg,#020a1233,#020a12e9 83%),url('/f6072312-e4b9-448b-84ee-3283e200b198.png') center 30%/cover no-repeat,#06131c;border-color:#4e8da3}
+.role-head>div{position:relative;z-index:1}
+.role-sigil{flex:none}
+#roleShell[data-role="FOUNDER"] .role-head{border-color:#b9a16c}
+#roleShell[data-role="FOUNDER"] .role-sigil{border-color:#d8bc75;box-shadow:0 0 22px #d8bc7555}
+#roleShell[data-role="LOCAL"] .role-sigil{border-radius:14px;transform:rotate(-8deg)}
+#roleShell[data-role="UNBOUND"] .role-sigil{border-style:dashed;transform:rotate(18deg)}
+#roleShell[data-role="FOP"] .role-head{min-height:210px}
+.next-card{border-left:4px solid var(--cyan);background:linear-gradient(120deg,#0c2c39,#06131a)}
+.nodiv-signature{padding:24px 8px 7px;text-align:center;font-size:11px;letter-spacing:.16em;font-weight:850;color:#9fc9d8}
+.nodiv-signature span{color:#567d8c}
+.feedback.ok,.step-row.done i{color:var(--ok)}
+.feedback.error{color:var(--bad)}
+@keyframes nodiv-breathe{50%{box-shadow:0 0 43px #30d6ff8c,inset 0 0 35px #30d6ff70,0 0 0 17px #35bbff0a}}
+@media(prefers-reduced-motion:reduce){.energy-ring{animation:none}}
+@media(max-width:390px){.access-hero{min-height:560px}.role-head{min-height:155px}.access-signature strong{letter-spacing:.055em}}
