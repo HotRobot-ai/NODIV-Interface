@@ -473,28 +473,53 @@ async function confirmHq(){
 }
 
 async function openFopCustody(){
+  const out=$('fopCustodyWork');
+  if(!out)return;
   try {
     const result=await api('/api/fop/custody');
     const cores=result.cores||[];
-    const out=$('fopCustodyWork');
-    if(!out)return;
-    if(!cores.length){out.textContent='TRANSPORT LEER // 0 N-Cores · 0 E';return;}
+    if(!out.isConnected)return;
     const total=cores.reduce((sum,c)=>sum+Number(c.visible_energy||0),0);
+    out.className='custody-panel';
     out.replaceChildren();
-    const summary=document.createElement('p');
-    summary.textContent=cores.length+' N-Cores im Transport // '+total+' E gesamt';
-    out.append(summary);
-    for(const [index,core] of cores.entries()){
-      const line=document.createElement('p');
-      line.textContent='N-CORE '+String(index+1).padStart(2,'0')+' // '+core.visible_energy+' E';
-      out.append(line);
+    const header=document.createElement('div');
+    header.className='custody-summary';
+    const count=document.createElement('div');
+    count.innerHTML='<small>N-CORES IM TRANSPORT</small><b></b>';
+    count.querySelector('b').textContent=String(cores.length);
+    const energy=document.createElement('div');
+    energy.innerHTML='<small>TRANSPORTENERGIE</small><b></b>';
+    energy.querySelector('b').textContent=total+' E';
+    header.append(count,energy);
+    out.append(header);
+    if(!cores.length){
+      const empty=document.createElement('p');
+      empty.className='custody-empty';
+      empty.textContent='TRANSPORT LEER · KEINE RÜCKGABE ERFORDERLICH';
+      out.append(empty);
+      return;
     }
+    const slots=document.createElement('div');
+    slots.className='custody-slots';
+    cores.forEach((core,index)=>{
+      const slot=document.createElement('div');
+      slot.className='custody-slot';
+      const label=document.createElement('small');
+      label.textContent='N-CORE '+String(index+1).padStart(2,'0');
+      const value=document.createElement('strong');
+      value.textContent=core.visible_energy+' E';
+      slot.append(label,value);
+      slots.append(slot);
+    });
+    out.append(slots);
     const button=document.createElement('button');
     button.className='primary';
     button.textContent='AM HQ ZURÜCKGEBEN';
     button.onclick=()=>returnFopCustody(cores.map(c=>c.core_id));
     out.append(button);
-  } catch(e){setFeedback('fopCustodyWork',friendly(e),true);}
+  } catch(e){
+    if(out.isConnected){out.className='feedback error';out.textContent=friendly(e);}
+  }
 }
 async function returnFopCustody(coreIds){
   try {
