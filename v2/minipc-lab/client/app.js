@@ -177,7 +177,7 @@ function renderCatcher(v){
 function renderFop(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
-  return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div></section>${evac}`;
+  return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div><h3>N-CORE TRANSPORT</h3><p>Separates Inventar, Rückgabe nur am HQ.</p><button id="fopCustodyOpen">TRANSPORT PRÜFEN</button><div id="fopCustodyWork" class="feedback"></div></section>${evac}`;
 }
 function founderHardwareRows(v){
   const h=v.hardware||{cards:[],nodes:[],cores:[],hq:[]};
@@ -249,6 +249,7 @@ function bindRole(){
   $('catchScan')?.addEventListener('click',scanCatch);
   $('catchConfirm')?.addEventListener('click',confirmCatch);
   $('fopNodeScan')?.addEventListener('click',scanFopNode);
+  $('fopCustodyOpen')?.addEventListener('click',openFopCustody);
   $('regScan')?.addEventListener('click',registerFounderHardware);
   if($('regKind')){updateFounderRegFields();$('regKind').addEventListener('change',updateFounderRegFields);}
   $('founderInitialize')?.addEventListener('click',initializeRealtest);
@@ -451,6 +452,29 @@ async function confirmHq(){
     phase('success',r.mandatoryResupply?`Upload gesichert // ${r.energyCredit} E. RE-SUPPLY ist verbindlich zugewiesen.`:`Upload gesichert // ${r.energyCredit} E.`);
     await refreshRole({quiet:true});
   }catch(e){phase('error',friendly(e));}
+}
+
+async function openFopCustody(){
+  try {
+    const result=await api('/api/fop/custody');
+    const cores=result.cores||[];
+    const out=$('fopCustodyWork');
+    if(!cores.length){out.textContent='Keine N-Cores im Transport.';return;}
+    out.textContent=cores.length+' N-Cores im Transport: '+cores.map(c=>c.visible_energy+' E').join(' · ');
+    const button=document.createElement('button');
+    button.className='primary';
+    button.textContent='AM HQ ZURÜCKGEBEN';
+    button.onclick=()=>returnFopCustody(cores.map(c=>c.core_id));
+    out.append(button);
+  } catch(e){setFeedback('fopCustodyWork',friendly(e),true);}
+}
+async function returnFopCustody(coreIds){
+  try {
+    const uid=await nfc('HQ UPLOAD-TAG');
+    await api('/api/fop/custody/return',{method:'POST',data:{uid,operationId:'FOP-RETURN-'+crypto.randomUUID(),coreIds}});
+    await openFopCustody();
+    phase('success','N-Cores am HQ zurückgegeben.');
+  } catch(e){setFeedback('fopCustodyWork',friendly(e),true);phase('error',friendly(e));}
 }
 
 async function scanFopNode(){
