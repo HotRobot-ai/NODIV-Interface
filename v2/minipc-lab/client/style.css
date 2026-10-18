@@ -168,3 +168,6 @@ main{min-width:0}
 .access-hero #btnAuth{min-width:0;max-width:100%;margin-top:0}
 .access-hero .access-signature strong{font-size:clamp(13px,3.9vw,18px);letter-spacing:.05em;overflow-wrap:normal}
 @media(max-width:600px){main{width:100%;padding-left:12px;padding-right:12px}.access-hero{padding-left:12px;padding-right:12px;padding-bottom:20px}}
+
+/* Finish the access card top border now that the status row is in diagnostics. */
+.access-hero{border-top:1px solid #4d9db5;margin-top:0}
