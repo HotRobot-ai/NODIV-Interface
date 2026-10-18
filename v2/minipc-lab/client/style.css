@@ -67,3 +67,15 @@ select:focus,input:focus,textarea:focus{border-color:var(--role-accent,#79e8ff);
 
 /* Action states: readable outdoors, no ambiguous double-taps. */
 button:not(:disabled){cursor:pointer}button:focus-visible{outline:3px solid #fff;outline-offset:3px}button[data-action-state="running"]{opacity:1;filter:none;color:#061219;background:#ffd78b;border:2px solid #fff0c4;box-shadow:0 0 0 3px #ffd78b44;cursor:progress;animation:nodiv-action-pulse 1.1s ease-in-out infinite}button:disabled:not([data-action-state="running"]){opacity:.48;filter:grayscale(.65);border-style:dashed;box-shadow:none;cursor:not-allowed}button[hidden]{display:none!important}@keyframes nodiv-action-pulse{50%{box-shadow:0 0 0 6px #ffd78b22}}@media(prefers-reduced-motion:reduce){button[data-action-state="running"]{animation:none}}
+
+/* FOP transport: compact, structured field inventory */
+.custody-panel{margin:12px 0 8px}
+.custody-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.custody-summary>div{padding:13px 11px;border:1px solid #2c5665;background:#06141b;min-width:0}
+.custody-summary small,.custody-slot small{display:block;font-size:10px;font-weight:850;letter-spacing:.07em;color:#8fb2be}
+.custody-summary b{display:block;margin-top:5px;font-size:25px;line-height:1.2;color:#effbff}
+.custody-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}
+.custody-slot{border:1px solid #376c7e;background:linear-gradient(145deg,#0b2934,#07161e);padding:14px 11px;min-width:0}
+.custody-slot strong{display:block;margin-top:7px;font-size:23px;color:#79e8ff}
+.custody-empty{padding:14px 11px;margin:10px 0!important;border:1px solid #244553;background:#07131a;font-size:12px;font-weight:800;letter-spacing:.03em;color:#9bb9c4!important}
+.custody-panel>button{margin-top:12px}
