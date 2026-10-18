@@ -155,7 +155,7 @@ export class SqliteGameCore {
       if(ec&&this.db.prepare('SELECT state FROM evac_control WHERE event_id=?').get(eventId)?.state==='STARTED') this._fail('EVAC_NORMAL_ACTION_FROZEN');
       const actor=this.db.prepare('SELECT * FROM actors WHERE event_id=? AND actor_id=?').get(eventId,actorId);
       if(!actor||!actor.active) this._fail('ACTOR_DENIED');
-      const permitted={EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],LOCAL_HQ_UPLOAD:['LOCAL'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
+      const permitted={EXCHANGE:['PIONEER'],CATCH:['LOCAL','UNBOUND','PIONEER'],RESTORE_1:['PIONEER'],RESTORE_2:['PIONEER'],RESUPPLY:['PIONEER'],HQ_UPLOAD:['PIONEER'],LOCAL_HQ_UPLOAD:['LOCAL'],UNBOUND_HANDOVER:['UNBOUND'],FOP_HQ_RETURN:['FOP'],INSTALL:['FOP'],DEINSTALL:['FOP'],EVAC:['FOP','FOUNDER','PIONEER'],SHUTDOWN:['FOUNDER']};
       if(!permitted[kind]?.includes(actor.role)) this._fail('ROLE_DENIED');
       if(new Set(moves.map(m=>m.id)).size!==moves.length) this._fail('DUPLICATE_CORE');
 
@@ -179,6 +179,27 @@ export class SqliteGameCore {
         const c=this.core(eventId,m.id);
         if(!c||c.owner_type!=='PIONEER'||c.owner_id!==actorId||c.status!=='FIELD') this._fail('LOCAL_UPLOAD_CORE_INVALID');
         if(energyCredit!==c.actual_energy) this._fail('LOCAL_UPLOAD_CREDIT_MISMATCH');
+       }else if(kind==='UNBOUND_HANDOVER'){
+        if(!moves.length||moves.length>2||capacityChange||nodeChanges.length||eventState||missionId) this._fail('HANDOVER_INVALID_SHAPE');
+        const fopId=moves[0].toId;
+        if(!this.db.prepare("SELECT 1 FROM actors WHERE event_id=? AND actor_id=? AND role='FOP' AND active=1").get(eventId,fopId)) this._fail('HANDOVER_FOP_INVALID');
+        const held=this.db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").all(eventId,actorId);
+        if(held.length!==moves.length||held.some(c=>!moves.some(m=>m.id===c.core_id))) this._fail('HANDOVER_MUST_BE_FULL_INVENTORY');
+        let total=0;
+        for(const m of moves){
+          if(m.fromType!=='PIONEER'||m.fromId!==actorId||m.toType!=='TRANSIT'||m.toId!==fopId||m.status!=='FOP_CUSTODY') this._fail('HANDOVER_INVALID_ROUTE');
+          const c=this.core(eventId,m.id);
+          if(!c||c.status!=='FIELD') this._fail('HANDOVER_CORE_INVALID');
+          total+=c.actual_energy;
+        }
+        if(energyCredit!==total) this._fail('HANDOVER_CREDIT_MISMATCH');
+      }else if(kind==='FOP_HQ_RETURN'){
+        if(!moves.length||energyCredit||capacityChange||nodeChanges.length||eventState||missionId) this._fail('RETURN_INVALID_SHAPE');
+        for(const m of moves){
+          if(m.fromType!=='TRANSIT'||m.fromId!==actorId||m.toType!=='HQ'||m.toId!=='HQ'||m.status!=='RESERVE') this._fail('RETURN_INVALID_ROUTE');
+          const custody=this.db.prepare("SELECT 1 FROM fop_core_custody WHERE event_id=? AND core_id=? AND fop_id=? AND returned_operation_id IS NULL").get(eventId,m.id,actorId);
+          if(!custody||this.core(eventId,m.id)?.status!=='FOP_CUSTODY') this._fail('RETURN_CORE_NOT_IN_CUSTODY');
+        }
       }else if(kind==='EXCHANGE'){
         if(energyCredit||capacityChange||nodeChanges.length||eventState||moves.length<2||moves.length>6||moves.length%2) this._fail('EXCHANGE_INVALID_SHAPE');
         const incoming=moves.filter(m=>m.fromType==='PIONEER'&&m.fromId===actorId&&m.toType==='NODE');
@@ -271,6 +292,16 @@ export class SqliteGameCore {
         if(move.toType==='NODE'&&!this.db.prepare('SELECT 1 FROM nodes WHERE event_id=? AND node_id=?').get(eventId,move.toId)) this._fail('NODE_UNKNOWN');
         this.db.prepare('UPDATE cores SET owner_type=?,owner_id=?,status=?,version=version+1 WHERE event_id=? AND core_id=?').run(move.toType,move.toId,move.status??c.status,eventId,move.id);
       }
+      if(kind==='UNBOUND_HANDOVER'){
+        for(const m of moves){
+          this.db.prepare("INSERT INTO fop_core_custody(event_id,core_id,fop_id,unbound_id,received_operation_id) VALUES (?,?,?,?,?)").run(eventId,m.id,m.toId,actorId,operationId);
+        }
+      }
+      if(kind==='FOP_HQ_RETURN'){
+        for(const m of moves){
+          if(this.db.prepare("UPDATE fop_core_custody SET returned_operation_id=?,returned_at=CURRENT_TIMESTAMP WHERE event_id=? AND core_id=? AND fop_id=? AND returned_operation_id IS NULL").run(operationId,eventId,m.id,actorId).changes!==1) this._fail('RETURN_CUSTODY_CONFLICT');
+        }
+      }
       if(missionId&&['RESTORE_1','RESTORE_2','RESUPPLY'].includes(kind)){
         const updated=this.db.prepare("UPDATE missions SET state='COMPLETED',completed_operation_id=? WHERE event_id=? AND mission_id=? AND state='ASSIGNED'").run(operationId,eventId,missionId);
         if(updated.changes!==1) this._fail(kind.startsWith('RESTORE')?'RESTORE_MISSION_DENIED':'RESUPPLY_MISSION_DENIED');
@@ -288,7 +319,7 @@ export class SqliteGameCore {
         this.db.prepare('UPDATE events SET state=? WHERE event_id=?').run(eventState,eventId);
       }
       if(energyCredit){
-        if(kind!=='HQ_UPLOAD'&&kind!=='LOCAL_HQ_UPLOAD') this._fail('ENERGY_CREDIT_DENIED');
+        if(!['HQ_UPLOAD','LOCAL_HQ_UPLOAD','UNBOUND_HANDOVER'].includes(kind)) this._fail('ENERGY_CREDIT_DENIED');
         if(this.db.prepare('UPDATE balances SET secured_energy=secured_energy+? WHERE event_id=? AND actor_id=?').run(energyCredit,eventId,actorId).changes!==1) this._fail('BALANCE_UNKNOWN');
       }
       if(kind==='EXCHANGE'){
