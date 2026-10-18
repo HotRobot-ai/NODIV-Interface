@@ -157,3 +157,6 @@ button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
 .access-hero .access-art{display:none}
 .access-hero .access-signature strong{font-size:18px;letter-spacing:.08em}
 .access-hero .motto-dot{font-size:1.3em;color:#64e7ff}
+
+/* Align the original artwork at the top edge without cropping its side details. */
+.access-hero{background-size:100% 100%,100% auto;background-position:center center,center top;border-top-color:transparent}
