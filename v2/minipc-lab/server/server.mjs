@@ -199,11 +199,25 @@ function createBlock06Realtest(core,mode){
   return {status,initialize,start,restoreStatus,assignRestore,fopLoadoutStatus,assignFopLoadout};
 }
 
-function resupplyOffer(db,eventId,actorId,now){
+function resupplyOffer(db,eventId,actorId,now,enforceNodeLocks=false){
  const a=db.prepare("SELECT capacity FROM actors WHERE event_id=? AND actor_id=? AND role='PIONEER'").get(eventId,actorId);
  const used=db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,actorId).n;
  const busy=activeMission(db,eventId,actorId,now);
- return {eligible:!!a&&used<a.capacity&&!busy,mandatory:used===0,used,capacity:a?.capacity||0};
+ const mandatory=used===0,capacity=a?.capacity||0;
+ if(!a||used>=capacity||busy)return {eligible:false,mandatory,used,capacity,reason:busy?'ACTIVE_MISSION':'NO_FREE_SLOT'};
+ const locks=new Set(enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
+ const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
+ const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
+ const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
+ const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
+ let availableNode=false;
+ for(const node of nodes){
+  if(!isKnownNode(db,eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
+  const cs=db.prepare("SELECT core_id,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=?").all(eventId,node.node_id);
+  if(cs.length===3&&cs.every(c=>c.status==='DEPLOYED'&&!blockedCores.has(c.core_id))){availableNode=true;break;}
+ }
+ const reserve=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").all(eventId).some(c=>!blockedCores.has(c.core_id));
+ return {eligible:availableNode&&reserve,mandatory,used,capacity,reason:!availableNode?'NO_KNOWN_AVAILABLE_NODE':!reserve?'NO_HQ_RESERVE':null};
 }
 function isKnownNode(db,eventId,actorId,nodeId){return !!db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId)}
 function assignResupply(core,eventId,actorId){
@@ -211,8 +225,8 @@ function assignResupply(core,eventId,actorId){
  const db=core.db,now=core.clock();
  db.exec('BEGIN IMMEDIATE');
  try{
-  const offer=resupplyOffer(db,eventId,actorId,now);
-  if(!offer.eligible)throw Error('RESUPPLY_NOT_ELIGIBLE');
+  const offer=resupplyOffer(db,eventId,actorId,now,core.enforceNodeLocks);
+  if(!offer.eligible)throw Error(offer.reason||'RESUPPLY_NOT_ELIGIBLE');
   const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
   const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
   const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
@@ -329,7 +343,7 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
           if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Es wurde kein EVAC-Abschluss erzeugt.'};
         }
-        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock());view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
       }
