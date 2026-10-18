@@ -36,8 +36,8 @@ set "port=8790"
 set "script=NODIV-V2-FOUNDER-RECOVERY.mjs"
 goto :launch
 :game
-findstr /R /C:"^NODIV_LAB_MODE=desktop *$" ".env" >nul || (echo FEHLER: Desktop-Modus fehlt in .env.& goto :fail)
-findstr /R /C:"^NODIV_UID_FOUNDER_CARD=[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]" ".env" >nul || (echo FEHLER: Founder Access Card fehlt. Zuerst Auswahl 1.& goto :fail)
+node "server/desktop-config-check.mjs" || goto :fail
+rem Founder UID and mode are checked by the same Node.js validator.
 if exist "data\nodiv-v2-desktop.sqlite" echo Vorhandener Spielstand bleibt erhalten.
 set "port=8787"
 set "script=server/server.mjs"
