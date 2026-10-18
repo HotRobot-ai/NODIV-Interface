@@ -113,4 +113,7 @@ body{background:radial-gradient(ellipse at 50% 0,#0c3547 0,transparent 55%),#040
 .feedback.error{color:var(--bad)}
 @keyframes nodiv-breathe{50%{box-shadow:0 0 43px #30d6ff8c,inset 0 0 35px #30d6ff70,0 0 0 17px #35bbff0a}}
 @media(prefers-reduced-motion:reduce){.energy-ring{animation:none}}
-@media(max-width:390px){.access-hero{min-height:560px}.role-head{min-height:155px}.access-signature strong{letter-spacing:.055em}}
+@media(max-width:390px){.access-hero{min-height:0;padding:18px}.access-art{height:110px}.energy-ring{width:104px}.energy-ring:before{width:82px}.access-signature{margin-bottom:8px}.access-hero h1{font-size:28px}.access-hero p{margin:7px 0 12px}.role-head{min-height:155px}.access-signature strong{letter-spacing:.055em}}
+@media(max-height:740px){.access-hero{min-height:0}.access-art{height:105px}.energy-ring{width:100px}.energy-ring:before{width:80px}.access-signature{margin-bottom:8px}}
+@media(hover:hover){button:not(:disabled):hover{border-color:#a1eaff;filter:brightness(1.12)}}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #a5eeff;outline-offset:3px}
