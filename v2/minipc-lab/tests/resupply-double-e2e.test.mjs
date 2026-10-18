@@ -61,7 +61,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   let state=await call('/api/role/state',{token:pioneer.token});
   assert.equal(state.assignedMissions.length,2);
   assert.ok(state.assignedMissions.every(m=>m.handoverRequired&&!m.handoverConfirmed));
-  const missions=db.prepare("SELECT mission_id,core_id FROM missions WHERE event_id=? AND actor_id='P9003' AND kind='RESUPPLY'").all(eventId);
+  const missions=db.prepare("SELECT mission_id,core_id FROM missions WHERE event_id=? AND actor_id='P9003' AND kind='RESUPPLY' AND state='ASSIGNED'").all(eventId);
   const coreUid=id=>db.prepare('SELECT uid FROM cores WHERE event_id=? AND core_id=?').get(eventId,id).uid;
   const payload=(m,auth,uid)=>({missionId:m.mission_id,authorizerToken:auth.token,authorizerUid:uid,uid:coreUid(m.core_id)});
   await assert.rejects(()=>call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[0],pioneer,DEFAULT_UIDS.pioneerAccess)}),/RESUPPLY_AUTHORIZER_DENIED/);
