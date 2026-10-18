@@ -9,6 +9,8 @@ import {DEFAULT_UIDS} from '../server/seed.mjs';
 test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persist',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'nodiv-rs-double-'));
  const eventId='RS-DOUBLE';
+ const prior=process.env.NODIV_UID_FOUNDER_CARD;
+ process.env.NODIV_UID_FOUNDER_CARD=DEFAULT_UIDS.founderAccess;
  const app=createLabApp({mode:'registration',dbPath:join(dir,'game.sqlite'),eventId,host:'127.0.0.1',port:0,sessionTtl:3600,grantTtl:90,exchangeTtl:300,tlsKey:null,tlsCert:null});
  try{
   const db=app.core.db;
@@ -57,5 +59,5 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   state=await call('/api/role/state',{token:pioneer.token});
   assert.ok(state.assignedMissions.every(m=>m.handoverConfirmed));
   assert.equal(app.core.assertIntegrity(eventId).ok,true);
- }finally{await app.close();rmSync(dir,{recursive:true,force:true});}
+ }finally{await app.close();if(prior===undefined)delete process.env.NODIV_UID_FOUNDER_CARD;else process.env.NODIV_UID_FOUNDER_CARD=prior;rmSync(dir,{recursive:true,force:true});}
 });
