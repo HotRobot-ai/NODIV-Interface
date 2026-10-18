@@ -500,6 +500,7 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');
         const b=await body(req),now=core.clock(),mission=selectedMission(core.db,s.event_id,s.actor_id,now,b.missionId);
         if(!mission||mission.kind!=='RESUPPLY')throw Error('MISSION_NOT_ASSIGNED');
+        store.uploadBayTarget(s,b.hqUid);
         const scanned=store.coreTarget(s,normalizeUid(b.uid));
         if(scanned.core_id!==mission.core_id||scanned.owner_type!=='TRANSIT'||scanned.owner_id!==s.actor_id||scanned.status!=='IN_TRANSIT')throw Error('RESUPPLY_CARGO_CONFLICT');
         ensureResupplyHandover(core.db);
