@@ -12,6 +12,25 @@ CREATE TABLE IF NOT EXISTS actors (event_id TEXT NOT NULL, actor_id TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS nodes (event_id TEXT NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('AVAILABLE','INSTALLED','DEINSTALLED')), PRIMARY KEY(event_id,node_id), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE TABLE IF NOT EXISTS cores (event_id TEXT NOT NULL, core_id TEXT NOT NULL, uid TEXT NOT NULL, visible_energy INTEGER NOT NULL CHECK(visible_energy > 0), actual_energy INTEGER NOT NULL CHECK(actual_energy > 0), owner_type TEXT NOT NULL CHECK(owner_type IN ('HQ','PIONEER','NODE','TRANSIT')), owner_id TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(event_id,core_id), UNIQUE(event_id,uid), FOREIGN KEY(event_id) REFERENCES events(event_id));
 CREATE INDEX IF NOT EXISTS cores_owner ON cores(event_id,owner_type,owner_id);
+-- Separate physical custody ledger: FOP transport does not consume node loadout slots.
+-- A core remains unavailable to HQ until its custody row is closed by an HQ return.
+CREATE TABLE IF NOT EXISTS fop_core_custody (
+  event_id TEXT NOT NULL,
+  core_id TEXT NOT NULL,
+  fop_id TEXT NOT NULL,
+  unbound_id TEXT NOT NULL,
+  received_operation_id TEXT NOT NULL,
+  returned_operation_id TEXT,
+  received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  returned_at TEXT,
+  PRIMARY KEY(event_id,core_id),
+  FOREIGN KEY(event_id,core_id) REFERENCES cores(event_id,core_id),
+  FOREIGN KEY(event_id,fop_id) REFERENCES actors(event_id,actor_id),
+  FOREIGN KEY(event_id,unbound_id) REFERENCES actors(event_id,actor_id),
+  CHECK ((returned_operation_id IS NULL AND returned_at IS NULL) OR
+         (returned_operation_id IS NOT NULL AND returned_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS fop_custody_open ON fop_core_custody(event_id,fop_id,returned_operation_id);
 CREATE TABLE IF NOT EXISTS balances (event_id TEXT NOT NULL, actor_id TEXT NOT NULL, secured_energy INTEGER NOT NULL DEFAULT 0 CHECK(secured_energy >= 0), PRIMARY KEY(event_id,actor_id), FOREIGN KEY(event_id,actor_id) REFERENCES actors(event_id,actor_id));
 CREATE TABLE IF NOT EXISTS operations (event_id TEXT NOT NULL, operation_id TEXT NOT NULL, actor_id TEXT NOT NULL, kind TEXT NOT NULL, payload_hash TEXT NOT NULL, response_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(event_id,operation_id));
 CREATE TABLE IF NOT EXISTS audit (event_id TEXT NOT NULL, operation_id TEXT NOT NULL, seq INTEGER NOT NULL, core_id TEXT, from_type TEXT, from_id TEXT, to_type TEXT, to_id TEXT, energy_delta INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(event_id,operation_id,seq), FOREIGN KEY(event_id,operation_id) REFERENCES operations(event_id,operation_id));
