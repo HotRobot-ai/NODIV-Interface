@@ -219,7 +219,11 @@ function resupplyOffer(db,eventId,actorId,now,enforceNodeLocks=false){
  const reserve=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").all(eventId).some(c=>!blockedCores.has(c.core_id));
  return {eligible:availableNode&&reserve,mandatory,used,capacity,reason:!availableNode?'NO_KNOWN_AVAILABLE_NODE':!reserve?'NO_HQ_RESERVE':null};
 }
-function isKnownNode(db,eventId,actorId,nodeId){return !!db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId)}
+function isKnownNode(db,eventId,actorId,nodeId){
+ if(db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId))return true;
+ // Existing confirmed exchanges are authoritative discovery evidence, including older saved games.
+ return !!db.prepare("SELECT 1 FROM lab_exchange_intents WHERE event_id=? AND actor_id=? AND node_id=? AND state='CONFIRMED' LIMIT 1").get(eventId,actorId,nodeId);
+}
 function assignResupply(core,eventId,actorId){
  core.recoverExpiredMissions(eventId);
  const db=core.db,now=core.clock();
