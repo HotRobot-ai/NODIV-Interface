@@ -142,3 +142,12 @@ button.danger:not(:disabled){border-color:#ed7179;color:#ffe5e6}
 .access-hero #authOut:empty{display:none}
 
 .access-signature .motto-dot{color:#6de6ff;text-shadow:0 0 9px #45dfff99;font-weight:900}
+
+/* Reveal the complete original Würzburg artwork above the scan controls. */
+.access-hero{min-height:0;padding:12px 12px 22px;justify-content:flex-start;gap:0;background:#06131c}
+.access-hero:before{display:none}
+.access-hero .access-art{height:auto;aspect-ratio:1.35;max-height:420px;width:100%;background:url('/nodiv-background.png') center center/contain no-repeat;display:block}
+.access-hero .energy-ring{display:none}
+.access-hero #btnAuth{margin-top:10px}
+.access-hero .access-signature{margin-top:20px}
+@media(max-width:390px){.access-hero .access-art{height:auto;aspect-ratio:1.35}}
