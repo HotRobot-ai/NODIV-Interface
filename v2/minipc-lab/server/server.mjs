@@ -240,6 +240,9 @@ function isKnownNode(db,eventId,actorId,nodeId){
 // Separate physical HQ handover proof; existing single-mission saves remain compatible.
 function ensureResupplyHandover(db){
  db.exec("CREATE TABLE IF NOT EXISTS lab_resupply_handover (event_id TEXT NOT NULL, mission_id TEXT NOT NULL, actor_id TEXT NOT NULL, core_id TEXT NOT NULL, confirmed_at INTEGER, PRIMARY KEY(event_id,mission_id))");
+ // Backfill active RE-SUPPLY assignments created by older desktop builds.
+ // INSERT OR IGNORE preserves already confirmed handovers and is safe on every state read/restart.
+ db.prepare("INSERT OR IGNORE INTO lab_resupply_handover(event_id,mission_id,actor_id,core_id) SELECT event_id,mission_id,actor_id,core_id FROM missions WHERE kind='RESUPPLY' AND state='ASSIGNED'").run();
 }
 function verifyResupplyHandover(db,eventId,actorId,missionId,coreId){
  ensureResupplyHandover(db);
@@ -387,6 +390,10 @@ export function createLabApp(config=labConfig()){
           view.assignedMissions=core.db.prepare("SELECT m.mission_id id,m.kind,m.node_id nodeId,m.expires_at expiresAt,c.visible_energy energy,h.confirmed_at handoverAt,h.mission_id handoverRequired FROM missions m JOIN cores c ON c.event_id=m.event_id AND c.core_id=m.core_id LEFT JOIN lab_resupply_handover h ON h.event_id=m.event_id AND h.mission_id=m.mission_id AND h.actor_id=m.actor_id AND h.core_id=m.core_id WHERE m.event_id=? AND m.actor_id=? AND m.state='ASSIGNED' AND m.expires_at>? AND m.kind='RESUPPLY' ORDER BY m.node_id,m.mission_id").all(s.event_id,s.actor_id,now).map(m=>({...m,handoverRequired:!!m.handoverRequired,handoverConfirmed:!!m.handoverAt,remainingSeconds:Math.max(0,m.expiresAt-now)}));
         }
         if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'){
+          const pendingHandover=(view.assignedMissions||[]).find(m=>m.kind==='RESUPPLY'&&m.handoverRequired&&!m.handoverConfirmed);
+          if(pendingHandover)view.nextAction={code:'RESUPPLY_HQ_HANDOVER',label:'HQ-ÜBERGABE BESTÄTIGEN',detail:`Am HQ Founder- oder FOP-Access-Card und anschließend den ${pendingHandover.energy}-E-N-Core scannen. Erst danach zu ${pendingHandover.nodeId} gehen.`};
+        }
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
       }
