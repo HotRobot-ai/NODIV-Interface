@@ -3,7 +3,7 @@ let token='',session=null,view=null;
 let exchange=null,catchPreview='',fopFlow=null,missionFlow=null,hqFlow=null,hqPanelOpen=false,evacFlow=null,scanActive=false;
 
 const ROLE_LABEL={FOUNDER:'FOUNDER',FOP:'FIELD OPERATOR',PIONEER:'PIONEER',LOCAL:'LOCAL',UNBOUND:'UNBOUND'};
-const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'CYAN FIELD CHANNEL',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
+const ROLE_CHANNEL={FOUNDER:'ROOT // SYSTEM CONTROL',FOP:'FIELD OPERATIONS',PIONEER:'NODIV',LOCAL:'FIELD ACCESS',UNBOUND:'UNBOUND ACCESS'};
 const ERROR_TEXT={
   ACCESS_CARD_DENIED:'Access Card nicht freigegeben.',
   NO_SESSION:'Sitzung abgelaufen. Access Card erneut scannen.',
