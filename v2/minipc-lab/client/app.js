@@ -170,7 +170,7 @@ function renderPioneer(v){
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
   const supply=v.resupplyDispatch&&!v.mission?`<section class="card" id="resupplyCard"><small class="card-kicker">HQ // RE-SUPPLY</small><h3>${v.resupplyDispatch.mandatory?'VERSORGUNG ERFORDERLICH':'FREIER N-CORE-SLOT'}</h3><p>${v.resupplyDispatch.mandatory?'Ohne persönlichen N-Core ist eine Versorgungsmission erforderlich.':'Du kannst einen N-Core aus der HQ-Reserve über einen Ziel-Node übernehmen.'}</p>${v.resupplyDispatch.eligible?`<button id="resupplyAssign" class="primary">${v.resupplyDispatch.mandatory?'RE-SUPPLY-AUFTRAG STARTEN':'RE-SUPPLY ANFORDERN'}</button>`:`<p class="phase-note">AUFTRAG BLOCKIERT: ${esc(v.resupplyDispatch.reason||'UNBEKANNT')}</p>`}</section>`:'';
   const evac=v.event.evacState==='STARTED'?`<section class="card evac"><small class="card-kicker">EVAC // ACTIVE</small><h3>EVAKUIERUNG LÄUFT</h3><p>Normale Aktionen sind gesperrt. Folge ausschließlich deinem EVAC-Team und dem Last Secure Upload Point.</p><p class="phase-note">Nur bestätigte EVAC-Scans werden akzeptiert.</p><button id="evacPioneerOpen" class="primary">EVAC-AUFTRAG ÖFFNEN</button><div id="evacPioneerWork"></div></section>`:'';
-  const parallel=(v.assignedMissions||[]).length>1?`<section class="card"><small class="card-kicker">RE-SUPPLY // EINSATZPLAN</small><h3>${v.assignedMissions.length} ZIEL-NODES</h3><p>Jeder Auftrag wird einzeln abgeschlossen. Die N-Cores bleiben bis zur Buchung IN TRANSIT.</p>${v.assignedMissions.map((m,i)=>`<button type="button" class="metric" data-resupply-mission="${esc(m.id)}" aria-pressed="${selectedMissionId===m.id}"><small>AUFTRAG ${i+1}${selectedMissionId===m.id?" · AUSGEWÄHLT":""}</small><b>${esc(m.nodeId)} · ${m.energy} E</b><span>${fmt(m.remainingSeconds)} verbleibend</span></button>`).join('')}</section>`:'';
+  const parallel=(v.assignedMissions||[]).length>1?`<section class="card"><small class="card-kicker">RE-SUPPLY // EINSATZPLAN</small><h3>${v.assignedMissions.length} ZIEL-NODES</h3><p>Jeder Auftrag wird einzeln abgeschlossen. Die N-Cores bleiben bis zur Buchung IN TRANSIT.</p>${v.assignedMissions.map((m,i)=>`<button type="button" class="metric" data-resupply-mission="${esc(m.id)}" aria-pressed="${selectedMissionId===m.id}"><small>AUFTRAG ${i+1}${selectedMissionId===m.id?" · AUSGEWÄHLT":""}</small><b>${esc(m.nodeId)} · ${m.energy} E</b><span>${fmt(m.remainingSeconds)} verbleibend</span></button><button type="button" class="primary" data-hq-handover="${esc(m.id)}">HQ: N-CORE ${m.energy} E ÜBERNEHMEN</button>`).join('')}</section>`:'';
   return `<section class="card pioneer-inventory"><div class="pioneer-inventory-head"><span>N-CORE INVENTAR</span><strong>${v.inventory.energy} E</strong></div><div class="pioneer-capacity">${v.inventory.used} / ${v.inventory.capacity} SLOTS BELEGT</div><div class="slots pioneer-slots">${renderSlots(v)}</div></section>${protect}${transit}${renderMission(v)}${parallel}${dispatch}${supply}${v.event.evacState==='STARTED'?evac:`<section class="card" id="exchangeCard"><small class="card-kicker">NODE // EXCHANGE</small><h3>NODE-KONTAKT</h3><p>Erst Node scannen. Der Server bestimmt danach, welcher Tausch möglich ist.</p><button id="exchangeStart" class="primary">NODE SCANNEN</button><div id="exchangeWork"></div></section><section class="card" id="hqCard"><small class="card-kicker">HQ // SECURE UPLOAD</small><h3>UPLOAD ANMELDUNG</h3><div class="metrics"><div class="metric"><small>GESICHERTE ENERGIE</small><b>${v.securedEnergy} E</b></div><div class="metric"><small>FREIE PUNKTE</small><b>${v.hq.available}/${v.hq.total}</b></div></div><button id="hqOpen" class="primary" ${v.inventory.cores.some(c=>c.status==='FIELD')?'':'disabled title="Kein persönlicher N-Core für Upload vorhanden"'}>HQ-ZUGANG ÖFFNEN</button><div id="hqWork"></div></section>`}`;
 }
 function renderCatcher(v){
@@ -248,6 +248,7 @@ function updateFounderRegFields(){
 function bindRole(){
   $('exchangeStart')?.addEventListener('click',startExchange);
   $('missionStart')?.addEventListener('click',startMission);
+  document.querySelectorAll('[data-hq-handover]').forEach(button=>button.addEventListener('click',()=>confirmResupplyHandover(button.dataset.hqHandover)));
   document.querySelectorAll('[data-resupply-mission]').forEach(button=>button.addEventListener('click',()=>{selectedMissionId=button.dataset.resupplyMission;missionFlow=null;renderRole();}));
   $('restoreAssign')?.addEventListener('click',assignRestoreMission);
   $('resupplyAssign')?.addEventListener('click',assignResupplyMission);
@@ -706,6 +707,18 @@ async function endDesktopTest(){
   }catch(e){setFeedback('desktopTestOut',friendly(e),true);phase('error',friendly(e));}
 }
 
+async function confirmResupplyHandover(missionId){
+  try{
+    phase('scan','HQ-Tag scannen.');
+    const hqUid=await nfc('HQ-UPLOADPUNKT');
+    phase('scan','Zugewiesenen N-Core scannen.');
+    const uid=await nfc('RE-SUPPLY N-CORE');
+    phase('check','HQ-Übergabe wird serverseitig geprüft.');
+    const r=await api('/api/mission/hq-handover',{method:'POST',data:{missionId,hqUid,uid}});
+    phase('success',`HQ-Übergabe bestätigt: ${r.energy} E. Ziel-Node kann aufgesucht werden.`);
+    await refreshRole({quiet:true});
+  }catch(e){phase('error',friendly(e));}
+}
 async function assignResupplyMission(){
   try{phase('commit','Freier Slot und HQ-Versorgung werden geprüft.');const r=await api('/api/mission/assign-resupply',{method:'POST'});phase('success',`RE-SUPPLY zugewiesen // ${r.nodeId}.`);await refreshRole({quiet:true});}
   catch(e){phase('error',friendly(e));}
