@@ -11,6 +11,7 @@ import { seedTestDatabase } from './seed.mjs';
 import { labConfig } from './config.mjs';
 import { createLabEvacNfc } from './evac-lab-nfc.mjs';
 import { createFounderRegistry } from './founder-registry.mjs';
+import { createDesktopTest } from './desktop-test.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const CLIENT=join(ROOT,'client');
@@ -48,7 +49,7 @@ function createBlock06Realtest(core,mode){
     started_at INTEGER
   )`);
   const required=[['FOUNDER-TEST','FOUNDER'],['FOP-TEST','FOP'],['P9003','PIONEER'],['P9004','PIONEER'],['LOCAL-TEST','LOCAL'],['UNBOUND-TEST','UNBOUND']];
-  const requireMode=()=>{if(mode!=='registration')throw Error('REALTEST_REGISTRATION_MODE_REQUIRED')};
+  const requireMode=()=>{if(!['registration','desktop'].includes(mode))throw Error('REALTEST_REGISTRATION_MODE_REQUIRED')};
   const receipt=eventId=>{
     const r=db.prepare('SELECT * FROM lab_block06_setup WHERE event_id=?').get(eventId);
     if(!r)return null;
@@ -134,10 +135,10 @@ function createBlock06Realtest(core,mode){
     const p=phase(eventId,actorId);if(!p)return {eligible:false};
     const setup=receipt(eventId),reserved=setup?.plan?.resupply||'';
     const cargo=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' AND core_id<>? ORDER BY visible_energy ASC,core_id").all(eventId,reserved);
-    const locks=new Set(db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND kind='RESTORE' AND until_epoch>?").all(eventId,actorId,core.clock()).map(x=>x.node_id));
+    const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,core.clock()).map(x=>x.node_id):[]);
     const candidates=[];
     for(const n of db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId)){
-      if(locks.has(n.node_id))continue;
+      if(locks.has(n.node_id)||!isKnownNode(db,eventId,actorId,n.node_id))continue;
       if(db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>? LIMIT 1").get(eventId,n.node_id,core.clock()))continue;
       const cs=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy ASC,core_id").all(eventId,n.node_id);
       if(cs.length!==3||cs.some(coreRow=>coreRow.status!=='DEPLOYED'))continue;
@@ -176,8 +177,12 @@ function createBlock06Realtest(core,mode){
     const current=fopLoadoutStatus(eventId,fopId,nodeId);
     if(current.transit.length>=3)return {...current,replayed:true};
     if(current.transit.length!==0)throw Error('FOP_LOADOUT_PARTIAL_STATE');
-    const setup=receipt(eventId);if(!setup)throw Error('SETUP_RECEIPT_MISSING');
-    const protectedIds=new Set([...(setup.plan.restoreReserve||[]),setup.plan.resupply].filter(Boolean));
+    const setup=receipt(eventId);
+    if(mode==='registration'&&!setup)throw Error('SETUP_RECEIPT_MISSING');
+    const protectedIds=new Set();
+    if(mode==='registration'&&setup){
+      for(const id of [...(setup.plan.restoreReserve||[]),setup.plan.resupply].filter(Boolean))protectedIds.add(id);
+    }
     for(const m of db.prepare("SELECT core_id FROM missions WHERE event_id=? AND state='ASSIGNED' AND expires_at>?").all(eventId,core.clock()))protectedIds.add(m.core_id);
     const candidates=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY core_id").all(eventId).filter(x=>!protectedIds.has(x.core_id));
     if(candidates.length<3)throw Error('FOP_LOADOUT_UNAVAILABLE');
@@ -194,18 +199,77 @@ function createBlock06Realtest(core,mode){
   return {status,initialize,start,restoreStatus,assignRestore,fopLoadoutStatus,assignFopLoadout};
 }
 
+function resupplyOffer(db,eventId,actorId,now,enforceNodeLocks=false){
+ const a=db.prepare("SELECT capacity FROM actors WHERE event_id=? AND actor_id=? AND role='PIONEER'").get(eventId,actorId);
+ const used=db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,actorId).n;
+ const busy=activeMission(db,eventId,actorId,now);
+ const mandatory=used===0,capacity=a?.capacity||0;
+ if(!a||used>=capacity||busy)return {eligible:false,mandatory,used,capacity,reason:busy?'ACTIVE_MISSION':'NO_FREE_SLOT'};
+ const locks=new Set(enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
+ const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
+ const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
+ const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
+ const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
+ let availableNode=false;
+ for(const node of nodes){
+  if(!isKnownNode(db,eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
+  const cs=db.prepare("SELECT core_id,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=?").all(eventId,node.node_id);
+  if(cs.length===3&&cs.every(c=>c.status==='DEPLOYED'&&!blockedCores.has(c.core_id))){availableNode=true;break;}
+ }
+ const reserve=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").all(eventId).some(c=>!blockedCores.has(c.core_id));
+ return {eligible:availableNode&&reserve,mandatory,used,capacity,reason:!availableNode?'NO_KNOWN_AVAILABLE_NODE':!reserve?'NO_HQ_RESERVE':null};
+}
+function isKnownNode(db,eventId,actorId,nodeId){
+ if(db.prepare('SELECT 1 FROM pioneer_known_nodes WHERE event_id=? AND actor_id=? AND node_id=?').get(eventId,actorId,nodeId))return true;
+ // Existing confirmed exchanges are authoritative discovery evidence, including older saved games.
+ return !!db.prepare("SELECT 1 FROM lab_exchange_intents WHERE event_id=? AND actor_id=? AND node_id=? AND state='CONFIRMED' LIMIT 1").get(eventId,actorId,nodeId);
+}
+function assignResupply(core,eventId,actorId){
+ core.recoverExpiredMissions(eventId);
+ const db=core.db,now=core.clock();
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  const offer=resupplyOffer(db,eventId,actorId,now,core.enforceNodeLocks);
+  if(!offer.eligible)throw Error(offer.reason||'RESUPPLY_NOT_ELIGIBLE');
+  const locks=new Set(core.enforceNodeLocks?db.prepare("SELECT node_id FROM actor_node_locks WHERE event_id=? AND actor_id=? AND until_epoch>?").all(eventId,actorId,now).map(x=>x.node_id):[]);
+  const reservations=db.prepare("SELECT payload_json FROM reservations WHERE event_id=? AND expires_at>?").all(eventId,now).map(x=>JSON.parse(x.payload_json));
+  const blockedNodes=new Set(reservations.flatMap(x=>[x.nodeId,x.node_id,...(Array.isArray(x.nodeIds)?x.nodeIds:[])]));
+  const blockedCores=new Set(reservations.flatMap(x=>[x.coreId,x.core_id,...(Array.isArray(x.coreIds)?x.coreIds:[])]));
+  const nodes=db.prepare("SELECT node_id FROM nodes WHERE event_id=? AND state='INSTALLED' ORDER BY node_id").all(eventId);
+  let target;
+  for(const node of nodes){
+   if(!isKnownNode(db,eventId,actorId,node.node_id)||locks.has(node.node_id)||blockedNodes.has(node.node_id)||db.prepare("SELECT 1 FROM missions WHERE event_id=? AND node_id=? AND state='ASSIGNED' AND expires_at>?").get(eventId,node.node_id,now))continue;
+   const cs=db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy,core_id").all(eventId,node.node_id);
+   if(cs.length!==3||cs.some(c=>c.status!=='DEPLOYED'||blockedCores.has(c.core_id)))continue;
+   if(!target||cs[0].visible_energy<target.out.visible_energy)target={nodeId:node.node_id,out:cs[0]};
+  }
+  const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy,core_id").all(eventId).filter(x=>!blockedCores.has(x.core_id));
+  const cargo=target&&(reserve.find(x=>x.visible_energy>=target.out.visible_energy)||reserve[reserve.length-1]);
+  if(!cargo)throw Error('RESUPPLY_ASSIGNMENT_UNAVAILABLE');
+  const id='RS-LAB-'+randomUUID();
+  if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,cargo.core_id).changes!==1)throw Error('RESUPPLY_CARGO_CONFLICT');
+  db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,'ASSIGNED',?)").run(eventId,id,actorId,'RESUPPLY',target.nodeId,cargo.core_id,now+1800);
+  core.assertIntegrity(eventId);db.exec('COMMIT');return {missionId:id,kind:'RESUPPLY',nodeId:target.nodeId};
+ }catch(e){db.exec('ROLLBACK');throw e}
+}
+
 export function createLabApp(config=labConfig()){
   seedTestDatabase(config.dbPath,config.eventId,config.mode,config.sourceDbPath,config.sourceEventId);
   let labEvacNfc=null;
   const runtime=createV2GameplayRuntime(config.dbPath,{
     verifyRecoveryNfcProof:ctx=>labEvacNfc?.verifyRecovery(ctx)===true,
-    verifyUploadNfcProof:ctx=>labEvacNfc?.verifyUpload(ctx)===true
+    verifyUploadNfcProof:ctx=>labEvacNfc?.verifyUpload(ctx)===true,
+    enforceNodeLocks:!['desktop','registration'].includes(config.mode)
   });
   const core=runtime.core;
+  core.db.exec('CREATE TABLE IF NOT EXISTS pioneer_known_nodes (event_id TEXT NOT NULL, actor_id TEXT NOT NULL, node_id TEXT NOT NULL, discovered_at INTEGER NOT NULL, PRIMARY KEY(event_id,actor_id,node_id))');
+  function rememberNode(eventId,actorId,nodeId){core.db.prepare('INSERT OR IGNORE INTO pioneer_known_nodes(event_id,actor_id,node_id,discovered_at) VALUES (?,?,?,?)').run(eventId,actorId,nodeId,core.clock())}
+
   labEvacNfc=createLabEvacNfc(core);
   const store=createLabStore(core,{sessionTtl:config.sessionTtl,grantTtl:config.grantTtl,exchangeTtl:config.exchangeTtl});
-  const founderRegistry=createFounderRegistry(core.db);
+  const founderRegistry=createFounderRegistry(core.db,{mode:config.mode});
   const realtest=createBlock06Realtest(core,config.mode);
+  const desktopTest=createDesktopTest(core,config.mode);
 
   function evacSupportState(eventId){
     if(config.mode!=='evac')return null;
@@ -260,7 +324,7 @@ export function createLabApp(config=labConfig()){
     const started=performance.now();
     try{
       const u=new URL(req.url,'http://local');
-      if(req.method==='GET'&&u.pathname==='/health') return json(res,200,{ok:true,service:'NODIV-V2-MINIPC-LAB',eventId:config.eventId,db:'sqlite',uptimeSec:Math.round(process.uptime()),secure:req.socket.encrypted===true});
+      if(req.method==='GET'&&u.pathname==='/health') return json(res,200,{ok:true,service:'NODIV-V2-MINIPC-LAB',mode:config.mode,eventId:config.eventId,db:'sqlite',uptimeSec:Math.round(process.uptime()),secure:req.socket.encrypted===true});
       if(req.method==='GET'&&u.pathname==='/api/state'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.state(s)});}
       if(req.method==='GET'&&u.pathname==='/api/role/state'){
         const s=store.session(bearer(req)),view=runtime.roles.view({eventId:s.event_id,actorId:s.actor_id});
@@ -270,9 +334,28 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='READY')view.nextAction={code:'REALTEST_PREFLIGHT',label:view.realtest.canInitialize?'EVENT VORBEREITEN':'HARDWARE VERVOLLSTÄNDIGEN',detail:view.realtest.canInitialize?'Registrierung vollständig. Initialisierung kann gesichert werden.':'Registriere die noch fehlenden Access Cards, Nodes, N-Cores und den HQ-Tag.'};
           if(view.event.state==='INITIALIZED')view.nextAction={code:'REALTEST_START',label:view.realtest.canStart?'EVENT STARTEN':'START BLOCKIERT',detail:view.realtest.canStart?'Vorbereitung gespeichert. Feldbetrieb kann aktiviert werden.':'Start ist noch blockiert. Prüfe die Hardwareübersicht und den gespeicherten Teststand.'};
         }
-        if(config.mode==='registration'&&s.role==='PIONEER'&&!view.mission){view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(config.mode==='desktop'&&s.role==='FOP'){
+          const registered=core.db.prepare("SELECT n.state,COUNT(*) count FROM lab_node_tags t JOIN nodes n ON n.event_id=t.event_id AND n.node_id=t.node_id WHERE t.event_id=? GROUP BY n.state").all(s.event_id);
+          const actual=Object.fromEntries(registered.map(x=>[x.state,x.count]));
+          view.nodes={available:actual.AVAILABLE||0,installed:actual.INSTALLED||0,total:registered.reduce((sum,x)=>sum+x.count,0)};
+        }
+        if(config.mode==='desktop'&&s.role==='FOUNDER'){
+          view.hardware=founderRegistry.list(s.event_id);
+          view.desktopTest=desktopTest.status(s.event_id);
+          if(view.event.state==='READY')view.nextAction={code:'DESKTOP_TEST_PREP',label:'TESTSPIEL VORBEREITEN',detail:'Der aktuelle reale Hardwarebestand wird verwendet. Fehlende Rollen oder Hardware werden nicht erfunden.'};
+          if(view.event.state==='INITIALIZED')view.nextAction={code:'DESKTOP_TEST_START',label:'TESTSPIEL STARTEN',detail:'Der vorbereitete Bestand kann jetzt in den Feldbetrieb wechseln.'};
+          if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
+          if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Es wurde kein EVAC-Abschluss erzeugt.'};
+        }
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
+      }
+      // Read-only FOP custody inventory. Never expose another operator's transport.
+      if(req.method==='GET'&&u.pathname==='/api/fop/custody'){
+        const session=store.session(bearer(req));requireRole(session,'FOP');
+        const cores=core.db.prepare("SELECT c.core_id,c.visible_energy,c.status,x.unbound_id,x.received_at FROM fop_core_custody x JOIN cores c ON c.event_id=x.event_id AND c.core_id=x.core_id WHERE x.event_id=? AND x.fop_id=? AND x.returned_operation_id IS NULL AND c.owner_type='TRANSIT' AND c.owner_id=? AND c.status='FOP_CUSTODY' ORDER BY x.received_at,c.core_id").all(session.event_id,session.actor_id,session.actor_id);
+        return json(res,200,{ok:true,cores,count:cores.length});
       }
       if(req.method==='POST'&&u.pathname==='/api/session/start'){const b=await body(req);const s=store.startSession(config.eventId,b.uid);return json(res,200,{ok:true,...s});}
 
@@ -280,8 +363,9 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/scan'){
         const s=store.session(bearer(req)),b=await body(req);
         if(b.exchangeId){const result=store.scanExchangeCore(s,{exchangeId:b.exchangeId,uid:b.uid});return json(res,200,{ok:true,...result});}
-        const result=store.issueNodeGrant(s,b.uid);return json(res,200,{ok:true,purpose:'EXCHANGE_NODE',...result});
+        const result=store.issueNodeGrant(s,b.uid);if(s.role==='PIONEER'&&result.nodeId)rememberNode(s.event_id,s.actor_id,result.nodeId);return json(res,200,{ok:true,purpose:'EXCHANGE_NODE',...result});
       }
+      if(req.method==='GET'&&u.pathname==='/api/exchange/status'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.exchangeStatus(s,{exchangeId:u.searchParams.get('exchangeId')})});}
       if(req.method==='POST'&&u.pathname==='/api/exchange/prepare'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,{ok:true,...store.prepareExchange(s,b)});}
       if(req.method==='POST'&&u.pathname==='/api/exchange/confirm'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,store.confirmExchange(s,b));}
 
@@ -319,13 +403,39 @@ export function createLabApp(config=labConfig()){
         return json(res,200,runtime.hq.confirm({eventId:s.event_id,pioneerId:s.actor_id,orderId:b.orderId,operationId:b.operationId||('UPLOAD-'+randomUUID())}));
       }
 
+      // Physical HQ tag is required before a Local core can be secured.
+      if(req.method==='POST'&&u.pathname==='/api/local/hq/upload'){
+        const session=store.session(bearer(req));requireRole(session,'LOCAL');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim()||typeof b.coreId!=='string'||!b.coreId.trim())throw Error('LOCAL_UPLOAD_CONTEXT_REQUIRED');
+        store.uploadBayTarget(session,b.uid);
+        return json(res,200,runtime.localHqUpload({eventId:session.event_id,operationId:b.operationId,localId:session.actor_id,coreId:b.coreId}));
+      }
+      // Unbound initiates the complete handover by scanning the receiving FOP's Access Card.
+      if(req.method==='POST'&&u.pathname==='/api/unbound/fop/handover'){
+        const session=store.session(bearer(req));requireRole(session,'UNBOUND');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim())throw Error('HANDOVER_CONTEXT_REQUIRED');
+        const receiver=store.accessTarget(session,b.uid);
+        if(receiver.role!=='FOP')throw Error('HANDOVER_FOP_INVALID');
+        return json(res,200,runtime.unboundHandover({eventId:session.event_id,operationId:b.operationId,unboundId:session.actor_id,fopId:receiver.actor_id}));
+      }
+      // The returning FOP must physically scan the HQ terminal before transport cores are released.
+      if(req.method==='POST'&&u.pathname==='/api/fop/custody/return'){
+        const session=store.session(bearer(req));requireRole(session,'FOP');
+        const b=await body(req);
+        if(typeof b.operationId!=='string'||!b.operationId.trim())throw Error('RETURN_CONTEXT_REQUIRED');
+        store.uploadBayTarget(session,b.uid);
+        return json(res,200,runtime.fopHqReturn({eventId:session.event_id,operationId:b.operationId,fopId:session.actor_id,coreIds:b.coreIds}));
+      }
+
       // FOP: Node scan is read-only; all ownership changes are revalidated by the shared runtime.
       if(req.method==='POST'&&u.pathname==='/api/fop/scan'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),node=store.nodeTarget(s,b.uid);
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,coreCount:cores.length,transit,canRequestLoadout:config.mode==='registration'&&action==='INSTALL'&&transit.length<3});
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:action==='DEINSTALL'?store.fopPrimaryCode(s,node.node_id):null,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
@@ -340,7 +450,8 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==3)throw Error('FOP_THREE_CORES_REQUIRED');
         const ids=b.coreUids.map(uid=>store.coreTarget(s,uid)).map(c=>{if(c.owner_type!=='TRANSIT'||c.owner_id!==s.actor_id||c.status!=='IN_TRANSIT')throw Error('INSTALL_CARGO_INVALID');return c.core_id;});
-        return json(res,200,runtime.fop.install({eventId:s.event_id,operationId:b.operationId||('FOP-IN-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId,coreIds:ids}));
+        const installed=runtime.fop.install({eventId:s.event_id,operationId:b.operationId||('FOP-IN-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId,coreIds:ids});
+        return json(res,200,{...installed,mechanicalCode:store.fopPrimaryCode(s,b.nodeId)});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/deinstall'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
@@ -354,7 +465,10 @@ export function createLabApp(config=labConfig()){
         const uid=normalizeUid(b.uid),node=core.db.prepare('SELECT node_id FROM lab_node_tags WHERE event_id=? AND uid=?').get(s.event_id,uid);
         if(node){
           if(node.node_id!==mission.node_id)throw Error('MISSION_NODE_MISMATCH');
-          return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id});
+          const lowest=lowestNodeCore(core.db,s.event_id,mission.node_id);
+          const mechanical=core.db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(s.event_id,node.node_id);
+           if(!mechanical)throw Error('NODE_MECHANICAL_CODE_MISSING');
+           return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id,lowestCoreEnergy:lowest?.visible_energy??null,accessCode:mechanical.code});
         }
         const scanned=store.coreTarget(s,uid);
         if(scanned.core_id===mission.core_id)return json(res,200,{ok:true,kind:'MISSION_CARGO',coreId:scanned.core_id,energy:scanned.visible_energy});
@@ -436,7 +550,10 @@ export function createLabApp(config=labConfig()){
 
       if(req.method==='POST'&&u.pathname==='/api/founder/register'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
-        return json(res,200,{ok:true,...founderRegistry.register({eventId:s.event_id,...b})});
+        const registered=founderRegistry.register({eventId:s.event_id,...b});
+        const latePioneer=config.mode==='desktop'&&registered.kind==='CARD'&&registered.actorRole==='PIONEER'
+          ?desktopTest.attachLatePioneer(s.event_id,registered.id):null;
+        return json(res,200,{ok:true,...registered,...(latePioneer?{latePioneer}:{})});
       }
 
       if(req.method==='GET'&&u.pathname==='/api/founder/realtest/status'){
@@ -448,6 +565,20 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/founder/realtest/start'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...realtest.start(s.event_id)});
       }
+
+      if(req.method==='GET'&&u.pathname==='/api/founder/test/status'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.status(s.event_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/initialize'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.initialize(s.event_id,s.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/start'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.start(s.event_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/test/end'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.end(s.event_id,s.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/mission/assign-resupply'){const session=store.session(bearer(req));requireRole(session,'PIONEER');if(!['registration','desktop'].includes(config.mode))throw Error('MODE_DENIED');return json(res,200,{ok:true,...assignResupply(core,session.event_id,session.actor_id)});}
       if(req.method==='POST'&&u.pathname==='/api/mission/assign-next'){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');return json(res,200,{ok:true,...realtest.assignRestore(s.event_id,s.actor_id)});
       }

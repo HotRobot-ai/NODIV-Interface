@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import {ensureFounderRecovery,founderRecoveryKeyPath} from './founder-recovery.mjs';
 import { createV2GameplayRuntime } from '../../server/gameplay-runtime.mjs';
 import { installLabSchema, normalizeUid } from './lab-db.mjs';
 import { seedEvacRealtestDatabase } from './evac-realtest-fixture.mjs';
@@ -22,7 +23,7 @@ DEFAULT_UIDS.access=DEFAULT_UIDS.pioneerAccess;
 function envUid(name,fallback){return normalizeUid(process.env[name]||fallback);}
 
 export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV_LAB_MODE||'legacy',sourceDbPath,sourceEventId){
-  if(!['legacy','registration','evac'].includes(mode))throw Error('LAB_MODE_INVALID');
+  if(!['legacy','registration','desktop','evac'].includes(mode))throw Error('LAB_MODE_INVALID');
   if(mode==='evac') return seedEvacRealtestDatabase(dbPath,sourceDbPath,eventId,sourceEventId);
   mkdirSync(dirname(dbPath),{recursive:true});
   const runtime=createV2GameplayRuntime(dbPath);
@@ -30,18 +31,24 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
   installLabSchema(core.db);
   const exists=core.db.prepare('SELECT 1 FROM events WHERE event_id=?').get(eventId);
   if(!exists){
-    core.seedEvent(eventId,mode==='registration'?'READY':'FIELD_ACTIVE');
-    core.seedActor(eventId,'P9003','PIONEER',1);
-    if(mode==='registration') core.seedActor(eventId,'P9004','PIONEER',1);
-    core.seedActor(eventId,'FOP-TEST','FOP',0);
-    core.seedActor(eventId,'FOUNDER-TEST','FOUNDER',0);
-    core.seedActor(eventId,'LOCAL-TEST','LOCAL',1);
-    core.seedActor(eventId,'UNBOUND-TEST','UNBOUND',2);
-    if(mode==='registration'){
-      for(let i=1;i<=10;i++) core.seedNode(eventId,'NODE-'+String(i).padStart(3,'0'),'AVAILABLE');
+    if(mode==='desktop'){
+      core.seedEvent(eventId,'READY');
+      core.seedActor(eventId,'FOUNDER-TEST','FOUNDER',0);
+      for(let i=1;i<=15;i++) core.seedNode(eventId,'NODE-'+String(i).padStart(3,'0'),'AVAILABLE');
     }else{
-      core.seedNode(eventId,'NODE-001','INSTALLED');
-      core.seedNode(eventId,'NODE-002','AVAILABLE');
+      core.seedEvent(eventId,mode==='registration'?'READY':'FIELD_ACTIVE');
+      core.seedActor(eventId,'P9003','PIONEER',1);
+      if(mode==='registration') core.seedActor(eventId,'P9004','PIONEER',1);
+      core.seedActor(eventId,'FOP-TEST','FOP',0);
+      core.seedActor(eventId,'FOUNDER-TEST','FOUNDER',0);
+      core.seedActor(eventId,'LOCAL-TEST','LOCAL',1);
+      core.seedActor(eventId,'UNBOUND-TEST','UNBOUND',2);
+      if(mode==='registration'){
+        for(let i=1;i<=10;i++) core.seedNode(eventId,'NODE-'+String(i).padStart(3,'0'),'AVAILABLE');
+      }else{
+        core.seedNode(eventId,'NODE-001','INSTALLED');
+        core.seedNode(eventId,'NODE-002','AVAILABLE');
+      }
     }
     if(mode==='legacy'){
     core.seedCore(eventId,{id:'NC-P-001',uid:envUid('NODIV_UID_PIONEER_CORE',DEFAULT_UIDS.pioneerCore),energy:341,ownerType:'PIONEER',ownerId:'P9003',status:'FIELD'});
@@ -53,17 +60,24 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
     core.seedCore(eventId,{id:'NC-F-003',uid:envUid('NODIV_UID_FOP_CORE_3',DEFAULT_UIDS.fop3),energy:230,ownerType:'TRANSIT',ownerId:'FOP-TEST',status:'IN_TRANSIT'});
     }
   }
-  if(mode==='registration'){
+  if(mode==='registration'||mode==='desktop'){
     const state=core.db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId)?.state;
-    if(!['READY','INITIALIZED','FIELD_ACTIVE','COMPLETED'].includes(state))throw Error('REGISTRATION_DATABASE_STATE_INVALID');
-    if(['READY','INITIALIZED'].includes(state)){
+    const allowed=mode==='desktop'?['READY','INITIALIZED','FIELD_ACTIVE','TEST_ENDED']:['READY','INITIALIZED','FIELD_ACTIVE','COMPLETED'];
+    if(!allowed.includes(state))throw Error('REGISTRATION_DATABASE_STATE_INVALID');
+    if((mode==='desktop'&&['READY','INITIALIZED','FIELD_ACTIVE'].includes(state))||(mode==='registration'&&['READY','INITIALIZED'].includes(state))){
       if(!core.db.prepare('SELECT 1 FROM hq_upload_bays WHERE event_id=? AND bay_id=?').get(eventId,'HQ-01'))runtime.hq.seedBay(eventId,{id:'HQ-01',uid:'PENDING-HQ-01'});
-      const existing=core.db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,'FOUNDER-TEST');
+      const founderUid=normalizeUid(process.env.NODIV_UID_FOUNDER_CARD||'');
+      if(!/^[0-9A-F]{8,32}$/.test(founderUid))throw Error('REGISTRATION_FOUNDER_UID_REQUIRED');
+      const existing=core.db.prepare('SELECT uid FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,'FOUNDER-TEST');
       if(!existing){
-        const founderUid=normalizeUid(process.env.NODIV_UID_FOUNDER_CARD||'');
-        if(!/^[0-9A-F]{8,32}$/.test(founderUid))throw Error('REGISTRATION_FOUNDER_UID_REQUIRED');
         core.db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,founderUid,'FOUNDER-TEST');
+      }else if(existing.uid!==founderUid){
+        // A changed bootstrap UID must not silently replace the identity of an existing event.
+        // Preserve all event data and require an explicit recovery procedure instead.
+        throw Error('REGISTRATION_FOUNDER_UID_MISMATCH');
       }
+      const recovery=ensureFounderRecovery(core.db,{eventId,actorId:'FOUNDER-TEST',keyPath:founderRecoveryKeyPath(dbPath)});
+      if(!recovery.ready)console.warn('FOUNDER RECOVERY NICHT BEREIT: '+recovery.reason);
     }
     runtime.close();
     return {dbPath,eventId,created:!exists,mode};

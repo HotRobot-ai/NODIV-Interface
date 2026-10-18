@@ -1,61 +1,63 @@
-# NODIV V2 – BLOCK 06 REALTEST
+# NODIV V2 – BLOCK 07 DESKTOP TESTMODUS
 
-**TEST ONLY. Keine Produktivänderung. Mission Board und COM bleiben eingefroren.**
+**Isolierter Entwicklungsstand. Keine Produktivänderung. Mission Board und COM bleiben eingefroren.**
 
-Dieses Paket ist für den ersten zusammenhängenden BLOCK-06-Durchlauf auf Gaming-PC + Smartphone + NFC vorbereitet.
+Dieser Ordner ist der gemeinsame lokale Spielstand für Gaming-PC und Mini-PC. Es gibt keine getrennten PC-Versionen.
 
 ## Start
 
-Nicht die alten Ersttest-Skripte verwenden. Der verbindliche Einstieg ist:
+Verbindlicher Windows-Einstieg:
 
-im Release zuerst `NODIV-V2-BLOCK06A-STARTEN.cmd` (ruft intern `NODIV-V2-STARTER.cmd` auf)
+`NODIV-V2-SPIELEN.cmd`
 
-Der Starter bietet:
+Der Starter bietet nur:
 
 1. **Founder Access Card einmalig einrichten**
-2. **BLOCK 06 Haupttest starten**
-3. **EVAC Realtest** als separate Testkopie nach dem Hauptdurchlauf
+2. **NODIV V2 TESTMODUS starten**
 
-## Was vor dem Test benötigt wird
-
-- Node.js 24
-- Tailscale auf Gaming-PC und Smartphone
-- Android/Chrome mit Web NFC
-- reale Access Cards für Founder, FOP, Pioneer, Local und Unbound; ein zweiter Pioneer wird nur für den repräsentativen EVAC-Teamtest benötigt, nicht für Catch
-- vier reale Node-Tags für den kompakten 1/2/3-Exchange-Durchlauf
-- mindestens zwölf reale N-Cores für diesen Test mit ihren tatsächlich eingravierten E-Werten; die Founder-Verwaltung selbst ist nicht auf zwölf begrenzt
-- realer HQ-Upload-Tag
+Node.js 24 und Tailscale müssen auf dem Windows-PC vorhanden sein. Für echte NFC-Scans wird Android Chrome über die private HTTPS-Adresse verwendet.
 
 ## Datenhaltung
 
-Der Haupttest verwendet:
+Standarddatenbank:
 
-`data/nodiv-v2-registration.sqlite`
+`data/nodiv-v2-desktop.sqlite`
 
-Die Datei wird beim normalen Start **nicht gelöscht**. Registrierung, Eventzustand und Spieltransaktionen bleiben über Serverneustarts erhalten.
+Sie wird beim normalen Start **nicht gelöscht**. Founder-Registrierungen, Rollen, Node-Tags, N-Core-E-Werte, Besitzstände, Missionen und Historie bleiben nach einem Serverneustart erhalten.
 
-Der EVAC-Realtest verwendet getrennt:
+## TESTMODUS
 
-`data/nodiv-v2-evac-realtest.sqlite`
+Founder kann mit dem tatsächlich vorhandenen Bestand arbeiten. Es gibt keine Mindestzahl für Spieler, Nodes oder N-Cores.
 
-Synthetische EVAC-Supportdaten existieren ausschließlich dort und niemals im realen Registrierungsbestand.
+Founder registriert:
+- FOP-, Pioneer-, Local- und Unbound-Access-Cards nach Bedarf,
+- reale Node-Tags; die interne Node-Kennung wird automatisch vergeben,
+- reale N-Cores mit UID und tatsächlich eingraviertem E-Wert,
+- den realen HQ-Tag.
 
-## Wichtig
+Vor `TESTSPIEL STARTEN` zeigt Founder, welche Funktionen mit dem aktuellen Bestand erreichbar sind. Fehlende Voraussetzungen sperren nur die betroffene Funktion.
 
-- Founder-Hardware wird rollen- und scanorientiert registriert; technische Core-Kennungen werden automatisch vergeben.\n- Passive Statusupdates dürfen aktive Formulare, Auswahl oder Fokus nicht zerstören.\n
-- Keine erfundenen UIDs oder E-Werte eintragen.
-- Bei einem Fehler die SQLite-Datei nicht löschen.
-- Fehlermeldung und vorherige Aktion festhalten und den bestehenden Zustand erhalten.
-- Die V1-Google-Owner-Recovery ist nicht als gleichwertige lokale V2-Recovery migriert. Für BLOCK 06 wird die reale Founder-Karte einmalig als Bootstrap gesetzt; es existiert absichtlich kein schwächerer Recovery-Backdoor.
+Der Test kann kontrolliert als `TEST_ENDED` beendet werden. Das ist **kein** regulärer EVAC-/Eventabschluss. Offene Missionen oder Transaktionen werden dabei nicht künstlich als abgeschlossen markiert.
 
-## Verbindlicher Testablauf
+## Rolleninterfaces
 
-Siehe `BLOCK06-REALTEST.md`.
+Der gemeinsame V2-Runtime-Kern wird über die bestehenden NODIV-Rollenoberflächen bedient:
 
-Dort ist der vollständige Durchlauf dokumentiert:
+- Founder – Hardware, Testbestand, Start, Testende, reguläre EVAC-Freigaben nur bei echten Gates
+- FOP – Node-Installation und Rückbau, EVAC erst nach tatsächlichem EVAC-Start
+- Pioneer – Inventar, Exchange, RESTORE, HQ Upload, Secure Approach, RE-SUPPLY
+- Local – Catch
+- Unbound – Catch
 
-Founder-Registrierung → Persistenz → Eventstart → FOP → P9004 Secure Approach → P9003 Exchange 1/2/3 → RESTORE #1/#2 → Teil-/Voll-Upload → RE-SUPPLY → Catch/Ghost → FOP-Rückbau → EVAC bis Founder `COMPLETED`.
+Außerhalb `FIELD_ACTIVE` werden Feldaktionen sichtbar gesperrt statt technische Formulare anzubieten.
 
-## Keine Produktivfreigabe
+## Sicherheit
 
-Ein grüner automatisierter Test oder ein erfolgreicher BLOCK-06-Realtest veröffentlicht nichts produktiv. Merge, Deployment und produktiver Eventstart benötigen weiterhin eine gesonderte Founder-Freigabe.
+- keine automatisch erfundenen Hardware-UIDs,
+- keine automatisch erfundenen N-Cores oder E-Werte,
+- keine doppelte UID,
+- keine automatische Datenbanklöschung,
+- reguläre Exchange-/RESTORE-/Catch-/Upload-/FOP-/EVAC-Sicherheitsregeln bleiben unverändert,
+- kein Merge nach `main`, kein Deployment und keine produktive Eventinitialisierung durch dieses Paket.
+
+Details und Abnahmestand: `BLOCK07-DESKTOP.md`.
