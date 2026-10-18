@@ -27,7 +27,16 @@ function statusFor(code){
   return 500;
 }
 function serveStatic(req,res){
-  const url=new URL(req.url,'http://local'); let path=url.pathname==='/'?'/index.html':url.pathname;
+  const url=new URL(req.url,'http://local');
+  if(url.pathname==='/nodiv-background.png'){
+    const bundled=join(CLIENT,'nodiv-background.png');
+    const source=resolve(ROOT,'../../f6072312-e4b9-448b-84ee-3283e200b198.png');
+    const asset=existsSync(bundled)?bundled:source;
+    if(!existsSync(asset)){json(res,404,{ok:false,error:'NODIV_BACKGROUND_MISSING'});return;}
+    res.writeHead(200,{'content-type':'image/png','cache-control':'no-store','x-content-type-options':'nosniff'});
+    createReadStream(asset).pipe(res);return;
+  }
+  let path=url.pathname==='/'?'/index.html':url.pathname;
   path=normalize(path).replace(/^(\.\.[/\\])+/, ''); const full=join(CLIENT,path);
   if(!full.startsWith(CLIENT)||!existsSync(full)){json(res,404,{ok:false,error:'NOT_FOUND'});return;}
   res.writeHead(200,{'content-type':MIME[extname(full)]||'application/octet-stream','cache-control':'no-store','x-content-type-options':'nosniff'});createReadStream(full).pipe(res);
