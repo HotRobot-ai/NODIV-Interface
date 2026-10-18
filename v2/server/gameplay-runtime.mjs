@@ -138,6 +138,11 @@ export function createV2GameplayRuntime(path=':memory:', {
   // Local handover at HQ: server-side ownership and energy checks are atomic.
   function localHqUpload({eventId,operationId,localId,coreId}){
     requiredStrings([eventId,operationId,localId,coreId],'LOCAL_UPLOAD_CONTEXT_REQUIRED');
+    const replay=replayCustodyOperation({eventId,operationId,actorId:localId,kind:'LOCAL_HQ_UPLOAD',expectedDestination:{type:'HQ',id:'HQ'}});
+    if(replay){
+      if(replay.moved.length!==1||replay.moved[0]!==coreId) throw new GameError('IDEMPOTENCY_CONFLICT');
+      return replay;
+    }
     const c=core.core(eventId,coreId);
     if(!c||c.owner_type!=='PIONEER'||c.owner_id!==localId||c.status!=='FIELD') throw new GameError('LOCAL_UPLOAD_CORE_INVALID');
     return core.run({eventId,operationId,actorId:localId,kind:'LOCAL_HQ_UPLOAD',
