@@ -370,6 +370,10 @@ export function createLabApp(config=labConfig()){
           if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
           if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Es wurde kein EVAC-Abschluss erzeugt.'};
         }
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'){
+          const now=core.clock();
+          view.assignedMissions=core.db.prepare("SELECT m.mission_id id,m.kind,m.node_id nodeId,m.expires_at expiresAt,c.visible_energy energy FROM missions m JOIN cores c ON c.event_id=m.event_id AND c.core_id=m.core_id WHERE m.event_id=? AND m.actor_id=? AND m.state='ASSIGNED' AND m.expires_at>? AND m.kind='RESUPPLY' ORDER BY m.node_id,m.mission_id").all(s.event_id,s.actor_id,now).map(m=>({...m,remainingSeconds:Math.max(0,m.expiresAt-now)}));
+        }
         if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
         if(config.mode==='evac'&&s.role==='FOUNDER')view.evacSupport=evacSupportState(s.event_id);
         return json(res,200,{ok:true,...view});
