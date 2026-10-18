@@ -488,7 +488,11 @@ async function openFopCustody(){
 async function returnFopCustody(coreIds){
   try {
     const uid=await nfc('HQ UPLOAD-TAG');
-    await api('/api/fop/custody/return',{method:'POST',data:{uid,operationId:'FOP-RETURN-'+crypto.randomUUID(),coreIds}});
+    const key='nodiv-fop-return-'+view.actor.id;
+    let operationId=sessionStorage.getItem(key);
+    if(!operationId){operationId=op('FOP-RETURN');sessionStorage.setItem(key,operationId);}
+    await api('/api/fop/custody/return',{method:'POST',data:{uid,operationId,coreIds}});
+    sessionStorage.removeItem(key);
     await openFopCustody();
     phase('success','N-Cores am HQ zurückgegeben.');
   } catch(e){setFeedback('fopCustodyWork',friendly(e),true);phase('error',friendly(e));}
