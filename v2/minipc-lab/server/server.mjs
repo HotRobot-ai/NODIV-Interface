@@ -244,7 +244,7 @@ function ensureResupplyHandover(db){
 function verifyResupplyHandover(db,eventId,actorId,missionId,coreId){
  ensureResupplyHandover(db);
  const row=db.prepare("SELECT confirmed_at FROM lab_resupply_handover WHERE event_id=? AND mission_id=? AND actor_id=? AND core_id=?").get(eventId,missionId,actorId,coreId);
- if(row&&!row.confirmed_at)throw Error('RESUPPLY_HQ_HANDOVER_REQUIRED');
+ if(!row||!row.confirmed_at)throw Error('RESUPPLY_HQ_HANDOVER_REQUIRED');
 }
 function assignResupply(core,eventId,actorId,count=1){
  if(!Number.isInteger(count)||count<1||count>2)throw Error('RESUPPLY_COUNT_INVALID');
@@ -270,7 +270,7 @@ function assignResupply(core,eventId,actorId,count=1){
   if(targets.length<count)throw Error('NO_KNOWN_AVAILABLE_NODE');
   const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy,core_id").all(eventId).filter(x=>!blockedCores.has(x.core_id));
   if(reserve.length<count)throw Error('NO_HQ_RESERVE');
-  if(count===2)ensureResupplyHandover(db);
+  ensureResupplyHandover(db);
   const assignments=[];
   for(const target of targets.slice(0,count)){
    const index=reserve.findIndex(x=>x.visible_energy>=target.out.visible_energy);
@@ -278,7 +278,7 @@ function assignResupply(core,eventId,actorId,count=1){
    const id='RS-LAB-'+randomUUID();
    if(db.prepare("UPDATE cores SET owner_type='TRANSIT',owner_id=?,status='IN_TRANSIT',version=version+1 WHERE event_id=? AND core_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE'").run(actorId,eventId,cargo.core_id).changes!==1)throw Error('RESUPPLY_CARGO_CONFLICT');
    db.prepare("INSERT INTO missions(event_id,mission_id,actor_id,kind,node_id,core_id,state,expires_at) VALUES (?,?,?,?,?,?,'ASSIGNED',?)").run(eventId,id,actorId,'RESUPPLY',target.nodeId,cargo.core_id,now+1800);
-   if(count===2)db.prepare("INSERT INTO lab_resupply_handover(event_id,mission_id,actor_id,core_id) VALUES (?,?,?,?)").run(eventId,id,actorId,cargo.core_id);
+   db.prepare("INSERT INTO lab_resupply_handover(event_id,mission_id,actor_id,core_id) VALUES (?,?,?,?)").run(eventId,id,actorId,cargo.core_id);
    assignments.push({missionId:id,kind:'RESUPPLY',nodeId:target.nodeId});
   }
   core.assertIntegrity(eventId);db.exec('COMMIT');
