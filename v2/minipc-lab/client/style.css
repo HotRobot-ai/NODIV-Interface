@@ -189,3 +189,8 @@ main{min-width:0}
 #roleShell[data-role="PIONEER"] .pioneer-next small{font-size:10px}
 #roleShell[data-role="PIONEER"] .pioneer-next strong{font-size:15px}
 #roleShell[data-role="PIONEER"] .pioneer-next p{font-size:12px;line-height:1.35}
+
+/* Pioneer header: retain original artwork, remove redundant decoration. */
+#roleShell[data-role="PIONEER"] .role-sigil,#roleShell[data-role="PIONEER"] #roleChannel{display:none}
+#roleShell[data-role="PIONEER"] .role-head{position:relative;min-height:225px;padding-top:78px;background-image:linear-gradient(180deg,transparent 25%,#03121eea 100%),url('/nodiv-background.png');background-position:center,center top;background-size:100% 100%,100% auto;background-repeat:no-repeat}
+#roleShell[data-role="PIONEER"] .role-head::before{content:"NODIV";position:absolute;top:15px;left:18px;color:#e0faff;font-size:clamp(24px,7vw,34px);font-weight:900;letter-spacing:.14em;text-shadow:0 0 16px #2fd2f8}
