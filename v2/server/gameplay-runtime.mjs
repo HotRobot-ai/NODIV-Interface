@@ -135,6 +135,15 @@ export function createV2GameplayRuntime(path=':memory:', {
     ]});
   }
 
+  // Local handover at HQ: server-side ownership and energy checks are atomic.
+  function localHqUpload({eventId,operationId,localId,coreId}){
+    requiredStrings([eventId,operationId,localId,coreId],'LOCAL_UPLOAD_CONTEXT_REQUIRED');
+    const c=core.core(eventId,coreId);
+    if(!c||c.owner_type!=='PIONEER'||c.owner_id!==localId||c.status!=='FIELD') throw new GameError('LOCAL_UPLOAD_CORE_INVALID');
+    return core.run({eventId,operationId,actorId:localId,kind:'LOCAL_HQ_UPLOAD',
+      moves:[move(coreId,'PIONEER',localId,'HQ','HQ','SECURED')],energyCredit:c.actual_energy});
+  }
+
   function fopInstall({eventId,operationId,fopId,nodeId,coreIds}){
     requiredStrings([eventId,operationId,fopId,nodeId],'FOP_CONTEXT_REQUIRED');uniqueStrings(coreIds,'FOP_CORES_REQUIRED');
     if(coreIds.length!==3)throw new GameError('FOP_THREE_CORES_REQUIRED');
@@ -153,7 +162,7 @@ export function createV2GameplayRuntime(path=':memory:', {
 
   return {
     core,
-    exchange,restore,upload,resupply,hq,roles,
+    exchange,restore,upload,resupply,localHqUpload,hq,roles,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{start:evacStart,teams:evacTeams,flow:evacFlow,completion:evacCompletion},
