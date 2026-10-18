@@ -118,7 +118,7 @@ function roleInteractionActive(){
 }
 async function refreshRole({quiet=false,passive=false}={}){
   if(!token)return;
-  try{view=await api('/api/role/state');renderRole({passive});if(!quiet)phase('success','Serverzustand aktualisiert.');}
+  try{view=await api('/api/role/state');ghostSnapshotAt=Date.now();ghostSnapshotRemaining=Number(view.protection?.remainingSeconds)||0;renderRole({passive});if(!quiet)phase('success','Serverzustand aktualisiert.');}
   catch(e){if(!quiet)phase('error',friendly(e));}
 }
 
@@ -161,7 +161,7 @@ function renderMission(v){
 }
 function renderPioneer(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
-  const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
+  const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer" id="ghostCountdown">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
   const supply=v.resupplyDispatch&&!v.mission?`<section class="card" id="resupplyCard"><small class="card-kicker">HQ // RE-SUPPLY</small><h3>${v.resupplyDispatch.mandatory?'VERSORGUNG ERFORDERLICH':'FREIER N-CORE-SLOT'}</h3><p>${v.resupplyDispatch.mandatory?'Ohne persönlichen N-Core ist eine Versorgungsmission erforderlich.':'Du kannst einen N-Core aus der HQ-Reserve über einen Ziel-Node übernehmen.'}</p>${v.resupplyDispatch.eligible?`<button id="resupplyAssign" class="primary">${v.resupplyDispatch.mandatory?'RE-SUPPLY-AUFTRAG STARTEN':'RE-SUPPLY ANFORDERN'}</button>`:`<p class="phase-note">AUFTRAG BLOCKIERT: ${esc(v.resupplyDispatch.reason||'UNBEKANNT')}</p>`}</section>`:'';
@@ -172,7 +172,7 @@ function renderCatcher(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
   const role=v.actor.role;
   const evac=v.event.evacState==='STARTED';
-  return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>`;
+  return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>STATUS</small><b>${evac?'EVAC':'READY'}</b></div></div><div class="slots">${(v.inventory.cores||[]).filter(c=>c.status==='FIELD').map((c,i)=>`<div class="slot"><small>SLOT 0${i+1}</small><b>${esc(c.energy)} E</b></div>`).join('')||'<p class="phase-note">NOCH KEIN N-CORE ERBEUTET</p>'}</div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>`;
 }
 function renderFop(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
@@ -669,8 +669,10 @@ $('btnRestartCompare').onclick=async()=>{try{const raw=localStorage.getItem(BLOC
 function percentile(sorted,p){return sorted[Math.min(sorted.length-1,Math.max(0,Math.ceil(sorted.length*p)-1))]}
 $('btnLatency').onclick=async()=>{const b=$('btnLatency');b.disabled=true;setFeedback('latencyOut','3 Warmups + 25 HTTPS-Roundtrips …');try{for(let i=0;i<3;i++)await api(`/health?warmup=${Date.now()}-${i}`,{auth:false});const values=[];for(let i=0;i<25;i++){const t=performance.now();await api(`/health?block02=${Date.now()}-${i}`,{auth:false});values.push(performance.now()-t);}const sorted=[...values].sort((a,b)=>a-b),avg=values.reduce((a,b)=>a+b,0)/values.length;setFeedback('latencyOut',`25/25 · MIN ${sorted[0].toFixed(1)} ms · Ø ${avg.toFixed(1)} ms · P50 ${percentile(sorted,.5).toFixed(1)} ms · P95 ${percentile(sorted,.95).toFixed(1)} ms · MAX ${sorted.at(-1).toFixed(1)} ms`);}catch(e){setFeedback('latencyOut',friendly(e),true)}finally{b.disabled=false}};
 
+function tickGhost(){const el=$('ghostCountdown');if(!el||!view?.protection?.active)return;const elapsed=Math.floor((Date.now()-ghostSnapshotAt)/1000);el.textContent=fmt(Math.max(0,ghostSnapshotRemaining-elapsed));}
+let ghostSnapshotAt=Date.now(),ghostSnapshotRemaining=0;
 function tickClock(){$('clock').textContent=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}
 $('roleContent').addEventListener('input',()=>{$('roleContent').dataset.userEditing='1'});
 $('roleContent').addEventListener('change',()=>{$('roleContent').dataset.userEditing='1'});
 $('roleContent').addEventListener('focusin',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))$('roleContent').dataset.userEditing='1'});
-refreshHealth();tickClock();setInterval(tickClock,15000);setInterval(refreshHealth,30000);setInterval(()=>{if(token)refreshRole({quiet:true,passive:true})},10000);
+refreshHealth();tickClock();setInterval(tickClock,15000);setInterval(tickGhost,250);setInterval(refreshHealth,30000);setInterval(()=>{if(token)refreshRole({quiet:true,passive:true})},10000);
