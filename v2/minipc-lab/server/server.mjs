@@ -500,7 +500,10 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');
         const b=await body(req),now=core.clock(),mission=selectedMission(core.db,s.event_id,s.actor_id,now,b.missionId);
         if(!mission||mission.kind!=='RESUPPLY')throw Error('MISSION_NOT_ASSIGNED');
-        store.uploadBayTarget(s,b.hqUid);
+        const authorizer=store.session(b.authorizerToken);
+        if(authorizer.event_id!==s.event_id||!['FOUNDER','FOP'].includes(authorizer.role)||authorizer.actor_id===s.actor_id)throw Error('RESUPPLY_AUTHORIZER_DENIED');
+        const card=core.db.prepare("SELECT actor_id FROM lab_access_cards WHERE event_id=? AND uid=?").get(s.event_id,normalizeUid(b.authorizerUid));
+        if(!card||card.actor_id!==authorizer.actor_id)throw Error('RESUPPLY_AUTHORIZER_CARD_MISMATCH');
         const scanned=store.coreTarget(s,normalizeUid(b.uid));
         if(scanned.core_id!==mission.core_id||scanned.owner_type!=='TRANSIT'||scanned.owner_id!==s.actor_id||scanned.status!=='IN_TRANSIT')throw Error('RESUPPLY_CARGO_CONFLICT');
         ensureResupplyHandover(core.db);
