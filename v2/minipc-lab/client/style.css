@@ -171,3 +171,21 @@ main{min-width:0}
 
 /* Finish the access card top border now that the status row is in diagnostics. */
 .access-hero{border-top:1px solid #4d9db5;margin-top:0}
+
+/* Pioneer field terminal: retain V2 action bindings, restore V1 inventory emphasis. */
+#roleShell[data-role="PIONEER"] .role-head{background:linear-gradient(180deg,#03111b22,#04111de8),url('/nodiv-background.png') center 20%/cover no-repeat,#071925;min-height:174px;border:1px solid #4388a0;border-radius:16px;padding:18px;align-items:end}
+#roleShell[data-role="PIONEER"] .role-head h2{font-size:clamp(26px,7vw,40px);text-shadow:0 0 15px #00b8ee80}
+#roleShell[data-role="PIONEER"] .role-head .role-sigil{opacity:.65}
+#roleShell[data-role="PIONEER"] .pioneer-inventory{border-color:#40879f;background:linear-gradient(145deg,#0b2a3b,#06141f)}
+#roleShell[data-role="PIONEER"] .pioneer-inventory-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:800;letter-spacing:.09em;color:#c7f4ff}
+#roleShell[data-role="PIONEER"] .pioneer-inventory-head strong{font-size:22px;color:#8ceaff;white-space:nowrap}
+#roleShell[data-role="PIONEER"] .pioneer-capacity{font-size:11px;color:#90b4c4;margin:4px 0 13px;letter-spacing:.05em}
+#roleShell[data-role="PIONEER"] .pioneer-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#roleShell[data-role="PIONEER"] .pioneer-slots .slot{min-width:0;min-height:104px;border:1px solid #3d9db9;border-radius:12px;background:radial-gradient(circle at 50% 25%,#1d759055,#071925 80%);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:13px 4px;gap:12px;text-align:center}
+#roleShell[data-role="PIONEER"] .pioneer-slots .slot b{font-size:clamp(16px,4vw,22px);color:#d8faff;white-space:nowrap}
+#roleShell[data-role="PIONEER"] .pioneer-slots .slot.locked{border-color:#344d5a;background:#0b1b26}
+#roleShell[data-role="PIONEER"] .pioneer-slots .slot.locked b{font-size:12px;color:#819ba9}
+#roleShell[data-role="PIONEER"] .pioneer-next{padding:12px 15px;gap:4px;border-left:3px solid #4dbbdc}
+#roleShell[data-role="PIONEER"] .pioneer-next small{font-size:10px}
+#roleShell[data-role="PIONEER"] .pioneer-next strong{font-size:15px}
+#roleShell[data-role="PIONEER"] .pioneer-next p{font-size:12px;line-height:1.35}
