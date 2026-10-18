@@ -434,7 +434,9 @@ export function createLabApp(config=labConfig()){
         if(node){
           if(node.node_id!==mission.node_id)throw Error('MISSION_NODE_MISMATCH');
           const lowest=lowestNodeCore(core.db,s.event_id,mission.node_id);
-          return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id,lowestCoreEnergy:lowest?.visible_energy??null});
+          const mechanical=core.db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(s.event_id,node.node_id);
+           if(!mechanical)throw Error('NODE_MECHANICAL_CODE_MISSING');
+           return json(res,200,{ok:true,kind:'MISSION_NODE',nodeId:node.node_id,lowestCoreEnergy:lowest?.visible_energy??null,accessCode:mechanical.code});
         }
         const scanned=store.coreTarget(s,uid);
         if(scanned.core_id===mission.core_id)return json(res,200,{ok:true,kind:'MISSION_CARGO',coreId:scanned.core_id,energy:scanned.visible_energy});
