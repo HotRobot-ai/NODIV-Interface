@@ -19,7 +19,7 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   db.prepare("UPDATE actors SET capacity=3 WHERE event_id=? AND actor_id='P9003'").run(eventId);
   for(const nodeId of ['NODE-001','NODE-002']){
    db.prepare("UPDATE nodes SET state='INSTALLED' WHERE event_id=? AND node_id=?").run(eventId,nodeId);
-   db.prepare("INSERT INTO pioneer_known_nodes(event_id,actor_id,node_id) VALUES (?,?,?)").run(eventId,'P9003',nodeId);
+   db.prepare("INSERT INTO pioneer_known_nodes(event_id,actor_id,node_id,discovered_at) VALUES (?,?,?,?)").run(eventId,'P9003',nodeId,Math.floor(Date.now()/1000));
   }
   let n=0;
   for(const nodeId of ['NODE-001','NODE-002']){
