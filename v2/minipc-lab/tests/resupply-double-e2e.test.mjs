@@ -59,6 +59,19 @@ test('two RE-SUPPLY assignments require separate Founder/FOP handovers and persi
   await call('/api/mission/hq-handover',{token:pioneer.token,data:payload(missions[1],fop,DEFAULT_UIDS.fopAccess)});
   state=await call('/api/role/state',{token:pioneer.token});
   assert.ok(state.assignedMissions.every(m=>m.handoverConfirmed));
+  // Each assigned transit core must be booked at its own known Node, never at the other target.
+  for(const m of missions){
+   const nodeId=db.prepare('SELECT node_id FROM missions WHERE event_id=? AND mission_id=?').get(eventId,m.mission_id).node_id;
+   const nodeUid=nodeId==='NODE-001'?DEFAULT_UIDS.node:DEFAULT_UIDS.node2;
+   const out=db.prepare("SELECT core_id,uid FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY visible_energy,core_id LIMIT 1").get(eventId,nodeId);
+   const result=await call('/api/mission/confirm',{token:pioneer.token,data:{missionId:m.mission_id,nodeUid,cargoUid:coreUid(m.core_id),outUid:out.uid,operationId:'RS-E2E-'+m.mission_id}});
+   assert.ok(result);
+   assert.equal(db.prepare('SELECT state FROM missions WHERE event_id=? AND mission_id=?').get(eventId,m.mission_id).state,'COMPLETED');
+   assert.equal(db.prepare('SELECT owner_type FROM cores WHERE event_id=? AND core_id=?').get(eventId,m.core_id).owner_type,'NODE');
+   assert.equal(app.core.assertIntegrity(eventId).ok,true);
+  }
+  state=await call('/api/role/state',{token:pioneer.token});
+  assert.equal(state.assignedMissions.length,0);
   assert.equal(app.core.assertIntegrity(eventId).ok,true);
  }finally{await app.close();if(prior===undefined)delete process.env.NODIV_UID_FOUNDER_CARD;else process.env.NODIV_UID_FOUNDER_CARD=prior;rmSync(dir,{recursive:true,force:true});}
 });
