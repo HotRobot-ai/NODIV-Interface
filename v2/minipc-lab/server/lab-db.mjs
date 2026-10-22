@@ -15,6 +15,15 @@ export function installLabSchema(db) {
       event_id TEXT NOT NULL, uid TEXT NOT NULL, actor_id TEXT NOT NULL,
       PRIMARY KEY(event_id, uid)
     );
+    CREATE TABLE IF NOT EXISTS lab_player_profiles (
+      event_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+      real_name TEXT NOT NULL,
+      callsign TEXT NOT NULL COLLATE NOCASE,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      first_access_at INTEGER,
+      PRIMARY KEY(event_id, actor_id),
+      UNIQUE(event_id, callsign)
+    );
     CREATE TABLE IF NOT EXISTS lab_node_tags (
       event_id TEXT NOT NULL, uid TEXT NOT NULL, node_id TEXT NOT NULL,
       PRIMARY KEY(event_id, uid)
@@ -103,7 +112,13 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
       if(!actor||actor.active!==1||!['FOUNDER','FOP','PIONEER','LOCAL','UNBOUND'].includes(actor.role)) throw Error('SESSION_ACTOR_DENIED');
       const token=randomBytes(32).toString('base64url'), now=clock();
       db.prepare('INSERT INTO lab_sessions(token_hash,event_id,actor_id,created_at,expires_at) VALUES (?,?,?,?,?)').run(tokenHash(token),eventId,card.actor_id,now,now+sessionTtl);
-      return {token,actorId:card.actor_id,role:actor.role,expiresAt:now+sessionTtl};
+      const profile=db.prepare('SELECT callsign,first_access_at FROM lab_player_profiles WHERE event_id=? AND actor_id=?').get(eventId,card.actor_id);
+      let firstAccess=false;
+      if(profile&&profile.first_access_at===null){
+        const marked=db.prepare('UPDATE lab_player_profiles SET first_access_at=?,updated_at=? WHERE event_id=? AND actor_id=? AND first_access_at IS NULL').run(now,now,eventId,card.actor_id);
+        firstAccess=marked.changes===1;
+      }
+      return {token,actorId:card.actor_id,role:actor.role,expiresAt:now+sessionTtl,callsign:profile?.callsign||null,firstAccess};
     },
     session(token){
       clean();
