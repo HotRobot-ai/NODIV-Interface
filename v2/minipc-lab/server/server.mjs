@@ -365,6 +365,8 @@ export function createLabApp(config=labConfig()){
       if(req.method==='GET'&&u.pathname==='/api/state'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.state(s)});}
       if(req.method==='GET'&&u.pathname==='/api/role/state'){
         const s=store.session(bearer(req)),view=runtime.roles.view({eventId:s.event_id,actorId:s.actor_id});
+        view.actor.callsign=founderRegistry.publicIdentity(s.event_id,s.actor_id).callsign;
+        if(s.role==='FOUNDER')view.players=founderRegistry.players(s.event_id);
         if(config.mode==='registration'&&s.role==='FOUNDER'){
           view.hardware=founderRegistry.list(s.event_id);
           view.realtest=realtest.status(s.event_id);
@@ -610,6 +612,11 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
         if(!runtime.evac.flow)throw Error('EVAC_NFC_VERIFIER_REQUIRED');
         return json(res,200,{ok:true,...runtime.evac.flow.upload({eventId:s.event_id,teamId:b.teamId,carrierId:s.actor_id,operationId:b.operationId,coreIds:b.coreIds,selectedCoreId:b.selectedCoreId,nfcProof:{id:b.proofId},nfcGrantId:b.nfcGrantId})});
+      }
+
+      if(req.method==='POST'&&u.pathname==='/api/founder/player/profile'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
+        return json(res,200,{ok:true,...founderRegistry.upsertPlayerProfile({eventId:s.event_id,actorId:b.actorId,realName:b.realName,callsign:b.callsign})});
       }
 
       if(req.method==='POST'&&u.pathname==='/api/founder/register'){
