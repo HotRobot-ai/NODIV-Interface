@@ -4,7 +4,31 @@ const ROLES=new Set(['FOUNDER','FOP','PIONEER','LOCAL','UNBOUND']);
 const DYNAMIC_ROLES=new Set(['FOP','PIONEER','LOCAL','UNBOUND']);
 const CAPACITY={FOUNDER:0,FOP:0,PIONEER:1,LOCAL:1,UNBOUND:2};
 const ID=/^[A-Z0-9][A-Z0-9_-]{1,39}$/;
+const CALLSIGN=/^[\p{L}\p{N}][\p{L}\p{N} _-]{1,23}$/u;
 function reject(code){throw Error(code)}
+function normalizeHumanName(value){
+  const name=String(value||'').trim().replace(/\s+/g,' ');
+  if(name.length<2||name.length>80||/[\u0000-\u001F\u007F]/.test(name))reject('PLAYER_REAL_NAME_INVALID');
+  return name;
+}
+function normalizeCallsign(value){
+  const callsign=String(value||'').trim().replace(/\s+/g,' ');
+  if(!CALLSIGN.test(callsign))reject('PLAYER_CALLSIGN_INVALID');
+  return callsign;
+}
+function ensurePlayerProfileSchema(db){
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lab_player_profiles (
+      event_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+      real_name TEXT NOT NULL,
+      callsign TEXT NOT NULL COLLATE NOCASE,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      first_access_at INTEGER,
+      PRIMARY KEY(event_id, actor_id),
+      UNIQUE(event_id, callsign)
+    );
+  `);
+}
 function nextActorId(db,eventId,role){
   const prefix={FOP:'FOP-',PIONEER:'P',LOCAL:'LOCAL-',UNBOUND:'UNBOUND-'}[role];
   const width=role==='PIONEER'?4:3;
@@ -33,9 +57,27 @@ function nextNodeId(db,eventId){
   if(!row)reject('REGISTRATION_NODE_CAPACITY_EXHAUSTED');
   return row.node_id;
 }
-export function createFounderRegistry(db,{mode='registration'}={}){
+export function createFounderRegistry(db,{mode='registration',clock=()=>Math.floor(Date.now()/1000)}={}){
   const desktop=mode==='desktop';
-  function register({eventId,role,uid,id,energy,actorRole}){
+  ensurePlayerProfileSchema(db);
+  function savePlayerProfile({eventId,actorId,realName,callsign}){
+    const actor=db.prepare('SELECT role,active FROM actors WHERE event_id=? AND actor_id=?').get(eventId,actorId);
+    if(!actor||actor.active!==1||!DYNAMIC_ROLES.has(actor.role))reject('PLAYER_ACTOR_INVALID');
+    const cleanName=normalizeHumanName(realName),cleanCallsign=normalizeCallsign(callsign);
+    const duplicate=db.prepare('SELECT actor_id FROM lab_player_profiles WHERE event_id=? AND callsign=? COLLATE NOCASE').get(eventId,cleanCallsign);
+    if(duplicate&&duplicate.actor_id!==actorId)reject('PLAYER_CALLSIGN_DUPLICATE');
+    const now=clock();
+    db.prepare(`
+      INSERT INTO lab_player_profiles(event_id,actor_id,real_name,callsign,created_at,updated_at)
+      VALUES (?,?,?,?,?,?)
+      ON CONFLICT(event_id,actor_id) DO UPDATE SET
+        real_name=excluded.real_name,
+        callsign=excluded.callsign,
+        updated_at=excluded.updated_at
+    `).run(eventId,actorId,cleanName,cleanCallsign,now,now);
+    return {actorId,role:actor.role,realName:cleanName,callsign:cleanCallsign};
+  }
+  function register({eventId,role,uid,id,energy,actorRole,realName,callsign}){
     const tag=normalizeUid(uid);
     if(!/^[0-9A-F]{8,32}$/.test(tag))reject('REGISTRATION_INVALID');
     const event=db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId);
@@ -78,6 +120,10 @@ export function createFounderRegistry(db,{mode='registration'}={}){
       if(db.prepare('SELECT 1 FROM lab_access_cards WHERE event_id=? AND actor_id=?').get(eventId,key))reject('REGISTRATION_TARGET_DUPLICATE');
       db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,tag,key);
       resolvedActorRole=actor.role;
+      if(realName!==undefined||callsign!==undefined){
+        if(realName===undefined||callsign===undefined)reject('PLAYER_PROFILE_INCOMPLETE');
+        savePlayerProfile({eventId,actorId:key,realName,callsign});
+      }
     }else if(kind==='NODE'){
       if(!db.prepare('SELECT 1 FROM nodes WHERE event_id=? AND node_id=? AND state=?').get(eventId,key,'AVAILABLE'))reject('REGISTRATION_NODE_UNAVAILABLE');
       if(db.prepare('SELECT 1 FROM lab_node_tags WHERE event_id=? AND node_id=?').get(eventId,key))reject('REGISTRATION_TARGET_DUPLICATE');
@@ -94,11 +140,20 @@ export function createFounderRegistry(db,{mode='registration'}={}){
     return {kind,id:key,uid:tag,...(kind==='CORE'?{energy}:{}),...(kind==='CARD'?{actorRole:resolvedActorRole}:{})};
   }
   function list(eventId){
-    const cards=db.prepare("SELECT c.actor_id id,a.role,c.uid FROM lab_access_cards c JOIN actors a ON a.event_id=c.event_id AND a.actor_id=c.actor_id WHERE c.event_id=? ORDER BY CASE a.role WHEN 'FOUNDER' THEN 0 WHEN 'FOP' THEN 1 WHEN 'PIONEER' THEN 2 WHEN 'LOCAL' THEN 3 ELSE 4 END,c.actor_id").all(eventId);
+    const cards=db.prepare("SELECT c.actor_id id,a.role,c.uid,p.real_name realName,p.callsign FROM lab_access_cards c JOIN actors a ON a.event_id=c.event_id AND a.actor_id=c.actor_id LEFT JOIN lab_player_profiles p ON p.event_id=c.event_id AND p.actor_id=c.actor_id WHERE c.event_id=? ORDER BY CASE a.role WHEN 'FOUNDER' THEN 0 WHEN 'FOP' THEN 1 WHEN 'PIONEER' THEN 2 WHEN 'LOCAL' THEN 3 ELSE 4 END,c.actor_id").all(eventId);
     const nodes=db.prepare('SELECT t.node_id id,t.uid,n.state FROM lab_node_tags t JOIN nodes n ON n.event_id=t.event_id AND n.node_id=t.node_id WHERE t.event_id=? ORDER BY t.node_id').all(eventId);
     const cores=db.prepare('SELECT core_id id,uid,visible_energy energy,status,owner_type ownerType,owner_id ownerId FROM cores WHERE event_id=? ORDER BY core_id').all(eventId);
     const hq=db.prepare("SELECT bay_id id,uid,active FROM hq_upload_bays WHERE event_id=? AND uid NOT LIKE 'PENDING-%' ORDER BY bay_id").all(eventId);
     return {cards,nodes,cores,hq};
+  }
+  function players(eventId){
+    return list(eventId).cards
+      .filter(x=>x.role!=='FOUNDER')
+      .map(x=>({id:x.id,role:x.role,realName:x.realName||null,callsign:x.callsign||null,profileReady:!!(x.realName&&x.callsign),cardBound:true}));
+  }
+  function publicIdentity(eventId,actorId){
+    const row=db.prepare('SELECT callsign FROM lab_player_profiles WHERE event_id=? AND actor_id=?').get(eventId,actorId);
+    return {callsign:row?.callsign||null};
   }
   return {
     register:(data)=>{
@@ -106,6 +161,13 @@ export function createFounderRegistry(db,{mode='registration'}={}){
       try{const result=register(data);db.exec('COMMIT');return result}
       catch(e){db.exec('ROLLBACK');throw e}
     },
-    list
+    upsertPlayerProfile:(data)=>{
+      db.exec('BEGIN IMMEDIATE');
+      try{const result=savePlayerProfile(data);db.exec('COMMIT');return result}
+      catch(e){db.exec('ROLLBACK');throw e}
+    },
+    list,
+    players,
+    publicIdentity
   };
 }
