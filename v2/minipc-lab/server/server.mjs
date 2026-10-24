@@ -646,6 +646,13 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/founder/deployment/prepare'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...initialDeployment.prepare(s.event_id,s.actor_id)});
       }
+      if(req.method==='POST'&&u.pathname==='/api/founder/deployment/issue'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req),p=store.accessTarget(s,b.pioneerUid);
+        if(p.role!=='PIONEER')throw Error('INITIAL_PIONEER_INVALID');
+        if(!Array.isArray(b.coreUids)||b.coreUids.length!==4||new Set(b.coreUids.map(normalizeUid)).size!==4)throw Error('INITIAL_ISSUE_CORE_MISMATCH');
+        const ids=b.coreUids.map(uid=>store.coreTarget(s,uid).core_id);
+        return json(res,200,{ok:true,...initialDeployment.issuePioneerKit(s.event_id,s.actor_id,p.actor_id,ids)});
+      }
       if(req.method==='POST'&&u.pathname==='/api/founder/deployment/start'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...initialDeployment.start(s.event_id,s.actor_id)});
       }
