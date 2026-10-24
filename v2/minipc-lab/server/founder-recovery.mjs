@@ -52,7 +52,10 @@ export function ensureFounderRecovery(db,{eventId,actorId='FOUNDER-TEST',keyPath
       ? {ready:true,created:false}
       : {ready:false,created:false,reason:'FOUNDER_RECOVERY_KEY_INVALID'};
   }
-  if(existsSync(keyPath))throw Error('FOUNDER_RECOVERY_UNCLAIMED_KEY_PRESENT');
+  // A key may belong to an earlier event after a backed-up database is restored.
+  // Preserve it untouched; disable recovery enrollment for this event rather than
+  // blocking normal gameplay or silently claiming/replacing another event's key.
+  if(existsSync(keyPath))return {ready:false,created:false,reason:'FOUNDER_RECOVERY_UNCLAIMED_KEY_PRESENT'};
   const secret=randomBytes(32).toString('base64url');
   writeFileSync(keyPath,secret+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
   try{chmodSync(keyPath,0o600)}catch{}
