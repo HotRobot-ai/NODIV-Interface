@@ -2,7 +2,7 @@ name: V2 Block07 Desktop Playable
 
 on:
   push:
-    branches: [feature/v2-block07-desktop-playable, feature/v2-nodiv-identity-polish, feature/v2-initial-deployment, fix/v2-initial-core-auto-assignment]
+    branches: [feature/v2-block07-desktop-playable, feature/v2-nodiv-identity-polish, feature/v2-initial-deployment]
   pull_request:
     branches: [feature/v2-block06a-test-prep]
   workflow_dispatch:
