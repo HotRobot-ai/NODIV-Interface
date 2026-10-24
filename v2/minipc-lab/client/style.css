@@ -194,3 +194,36 @@ main{min-width:0}
 #roleShell[data-role="PIONEER"] .role-sigil,#roleShell[data-role="PIONEER"] #roleChannel{display:none}
 #roleShell[data-role="PIONEER"] .role-head{position:relative;min-height:225px;padding-top:78px;background-image:linear-gradient(180deg,transparent 25%,#03121eea 100%),url('/nodiv-background.png');background-position:center,center top;background-size:100% 100%,100% auto;background-repeat:no-repeat}
 #roleShell[data-role="PIONEER"] .role-head::before{content:none;position:absolute;top:15px;left:18px;color:#e0faff;font-size:clamp(24px,7vw,34px);font-weight:900;letter-spacing:.14em;text-shadow:0 0 16px #2fd2f8}
+
+
+/* INITIAL DEPLOYMENT — one guided action, high-contrast field states. */
+.deployment-hero{position:relative;overflow:hidden;border-color:#4aa9c6;background:radial-gradient(circle at 90% 0,#52ddff1e,transparent 38%),linear-gradient(160deg,#0a2836,#06131c 66%)}
+.deployment-hero:after{content:"";position:absolute;right:-45px;top:-45px;width:150px;height:150px;border:1px solid #6de7ff33;border-radius:50%;box-shadow:0 0 32px #35d6ff22,inset 0 0 28px #35d6ff18;pointer-events:none}
+.team-code{margin:10px 0 12px;padding:12px 14px;border:1px solid #68dff4;background:#061a24;box-shadow:inset 0 0 24px #2bcff218,0 0 18px #2bcff214;color:#e8fcff;font-size:clamp(25px,8vw,40px);font-weight:950;letter-spacing:.13em;text-align:center}
+.deployment-person{margin-top:12px;padding:16px;border:1px solid #315b6a;border-radius:12px;background:#06141b}
+.deployment-person>div:first-child{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:end}
+.deployment-person>div:first-child small{grid-column:1/-1;color:#78a7b7;font-size:10px;font-weight:900;letter-spacing:.12em}
+.deployment-person>div:first-child strong{font-size:clamp(21px,6vw,28px);letter-spacing:.06em}
+.deployment-person>div:first-child span{font-size:10px;font-weight:900;letter-spacing:.07em;color:#9ab7c1}
+.deployment-status{margin:10px 0;padding:8px 10px;border-left:3px solid #5cdcf7;background:#0a202a;color:#bdeef7;font-size:11px;font-weight:900;letter-spacing:.08em}
+.initial-deployment-founder{border-color:#8b7742;background:radial-gradient(circle at 85% 0,#e3c86c14,transparent 36%),linear-gradient(180deg,#15140d,#071116)}
+.initial-deployment-founder .team-code{border-color:#d8bd72;box-shadow:inset 0 0 20px #d8bd7215;color:#fff1bd}
+.deployment-team-summary{margin:12px 0;padding:14px;border:1px solid #5e5939;border-radius:10px;background:#0c110f}
+.deployment-team-summary p{margin:7px 0}
+.deployment-config-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.deployment-config-grid>div{padding:12px;border:1px solid #4c4932;border-radius:10px;background:#090f11;min-width:0}
+.deployment-config-grid h4{margin:0 0 8px;color:#f0dda0;letter-spacing:.08em}
+.deployment-config-grid select{font-size:14px}
+.founder-players{border-color:#756a43;background:linear-gradient(180deg,#15150d,#071116)}
+.feedback-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.feedback-grid label{margin-top:8px}
+.feedback-grid select{min-height:54px}
+.slot.transit span,.slot span{margin-top:6px;color:#90aeb9;font-size:9px;font-weight:850;letter-spacing:.05em}
+@media(max-width:430px){
+  .deployment-config-grid,.feedback-grid{grid-template-columns:1fr}
+  .deployment-config-grid>div{padding:10px}
+  .deployment-person{padding:13px}
+  .team-code{letter-spacing:.08em}
+  .deployment-person .slots{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .deployment-person .slot{min-height:78px}
+}
