@@ -12,11 +12,13 @@ import { labConfig } from './config.mjs';
 import { createLabEvacNfc } from './evac-lab-nfc.mjs';
 import { createFounderRegistry } from './founder-registry.mjs';
 import { createDesktopTest } from './desktop-test.mjs';
+import { createInitialDeployment } from './initial-deployment.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const CLIENT=join(ROOT,'client');
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8'};
 function json(res,status,data){const body=JSON.stringify(data);res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','content-length':Buffer.byteLength(body),'x-content-type-options':'nosniff'});res.end(body);}
+function raw(res,status,data,type='text/plain; charset=utf-8',filename=''){const body=String(data);res.writeHead(status,{'content-type':type,'cache-control':'no-store','content-length':Buffer.byteLength(body),'x-content-type-options':'nosniff',...(filename?{'content-disposition':`attachment; filename="${filename}"`}:{})});res.end(body);}
 async function body(req){let raw='';for await(const c of req){raw+=c;if(raw.length>64*1024)throw Error('BODY_TOO_LARGE');}return raw?JSON.parse(raw):{};}
 function bearer(req){const h=req.headers.authorization||'';return h.startsWith('Bearer ')?h.slice(7):'';}
 function errCode(e){return e?.code||e?.message||'INTERNAL_ERROR';}
@@ -307,6 +309,7 @@ export function createLabApp(config=labConfig()){
   const founderRegistry=createFounderRegistry(core.db,{mode:config.mode});
   const realtest=createBlock06Realtest(core,config.mode);
   const desktopTest=createDesktopTest(core,config.mode);
+  const initialDeployment=createInitialDeployment(core);
 
   function evacSupportState(eventId){
     if(config.mode!=='evac')return null;
@@ -359,12 +362,17 @@ export function createLabApp(config=labConfig()){
   }
   const handler=async(req,res)=>{
     const started=performance.now();
+    let requestError=null;
     try{
       const u=new URL(req.url,'http://local');
       if(req.method==='GET'&&u.pathname==='/health') return json(res,200,{ok:true,service:'NODIV-V2-MINIPC-LAB',mode:config.mode,eventId:config.eventId,db:'sqlite',uptimeSec:Math.round(process.uptime()),secure:req.socket.encrypted===true});
       if(req.method==='GET'&&u.pathname==='/api/state'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.state(s)});}
       if(req.method==='GET'&&u.pathname==='/api/role/state'){
         const s=store.session(bearer(req)),view=runtime.roles.view({eventId:s.event_id,actorId:s.actor_id});
+        const playerProfile=founderRegistry.getProfile(s.event_id,s.actor_id);
+        if(playerProfile){view.actor.realName=playerProfile.realName;view.actor.callsign=playerProfile.callsign;view.actor.callsignSource=playerProfile.callsignSource;}
+        if(config.mode==='desktop')view.initialDeployment=s.role==='FOUNDER'?initialDeployment.status(s.event_id):initialDeployment.actorState(s.event_id,s.actor_id);
+        if(view.initialDeployment?.active&&!view.initialDeployment.released)view.nextAction=view.initialDeployment.nextAction;
         if(config.mode==='registration'&&s.role==='FOUNDER'){
           view.hardware=founderRegistry.list(s.event_id);
           view.realtest=realtest.status(s.event_id);
@@ -379,17 +387,26 @@ export function createLabApp(config=labConfig()){
         if(config.mode==='desktop'&&s.role==='FOUNDER'){
           view.hardware=founderRegistry.list(s.event_id);
           view.desktopTest=desktopTest.status(s.event_id);
-          if(view.event.state==='READY')view.nextAction={code:'DESKTOP_TEST_PREP',label:'TESTSPIEL VORBEREITEN',detail:'Der aktuelle reale Hardwarebestand wird verwendet. Fehlende Rollen oder Hardware werden nicht erfunden.'};
-          if(view.event.state==='INITIALIZED')view.nextAction={code:'DESKTOP_TEST_START',label:'TESTSPIEL STARTEN',detail:'Der vorbereitete Bestand kann jetzt in den Feldbetrieb wechseln.'};
-          if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
-          if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Es wurde kein EVAC-Abschluss erzeugt.'};
+          const idp=view.initialDeployment;
+          if(idp?.configured){
+            view.desktopTest.canRegister=idp.canEdit;
+            if(view.event.state==='READY')view.nextAction={code:'INITIAL_DEPLOYMENT_PREP',label:idp.canPrepare?'INITIAL DEPLOYMENT VORBEREITEN':'TEAMPLAN VERVOLLSTÄNDIGEN',detail:idp.canPrepare?'Team, Nodes und sechs Deployment-Cores sind eindeutig gebunden.':'Prüfe Rollen, Access Cards, Nodes und N-Core-Zuordnungen.'};
+            if(view.event.state==='INITIALIZED')view.nextAction={code:'INITIAL_DEPLOYMENT_START',label:idp.canStart?'RENDEZVOUS STARTEN':'START BLOCKIERT',detail:'Der strukturierte Spielstart wird erst nach vollständiger Vorbereitung freigegeben.'};
+            if(view.event.state==='FIELD_ACTIVE'&&!idp.released)view.nextAction={code:'INITIAL_DEPLOYMENT_ACTIVE',label:'INITIAL DEPLOYMENT LÄUFT',detail:'Teamaktivierung, Materialübergabe und beide Node-Inbetriebnahmen müssen abgeschlossen werden.'};
+            if(view.event.state==='FIELD_ACTIVE'&&idp.released)view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'FELDBETRIEB FREIGEGEBEN',detail:'Initial Deployment vollständig. Bestehendes Gameplay ist freigegeben.'};
+          }else{
+            if(view.event.state==='READY')view.nextAction={code:'DESKTOP_TEST_PREP',label:'TESTSPIEL VORBEREITEN',detail:'Alternativer flexibler Schreibtischmodus ohne strukturiertes Initial Deployment.'};
+            if(view.event.state==='INITIALIZED')view.nextAction={code:'DESKTOP_TEST_START',label:'TESTSPIEL STARTEN',detail:'Der vorbereitete Bestand kann jetzt in den Feldbetrieb wechseln.'};
+            if(view.event.state==='FIELD_ACTIVE')view.nextAction={code:'DESKTOP_TEST_ACTIVE',label:'TESTSPIEL LÄUFT',detail:'Nutze die registrierten Rolleninterfaces oder beende den Test kontrolliert.'};
+          }
+          if(view.event.state==='TEST_ENDED')view.nextAction={code:'DESKTOP_TEST_ENDED',label:'TESTSPIEL BEENDET',detail:'Der tatsächliche Endzustand wurde gespeichert. Auswertung ist verfügbar.'};
         }
         if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'){
           const now=core.clock();
           ensureResupplyHandover(core.db);
           view.assignedMissions=core.db.prepare("SELECT m.mission_id id,m.kind,m.node_id nodeId,m.expires_at expiresAt,c.visible_energy energy,h.confirmed_at handoverAt,h.mission_id handoverRequired FROM missions m JOIN cores c ON c.event_id=m.event_id AND c.core_id=m.core_id LEFT JOIN lab_resupply_handover h ON h.event_id=m.event_id AND h.mission_id=m.mission_id AND h.actor_id=m.actor_id AND h.core_id=m.core_id WHERE m.event_id=? AND m.actor_id=? AND m.state='ASSIGNED' AND m.expires_at>? AND m.kind='RESUPPLY' ORDER BY m.node_id,m.mission_id").all(s.event_id,s.actor_id,now).map(m=>({...m,handoverRequired:!!m.handoverRequired,handoverConfirmed:!!m.handoverAt,remainingSeconds:Math.max(0,m.expiresAt-now)}));
         }
-        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
+        if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'&&!view.mission&&view.event.state==='FIELD_ACTIVE'&&!(view.initialDeployment?.active&&!view.initialDeployment.released)){view.resupplyDispatch=resupplyOffer(core.db,s.event_id,s.actor_id,core.clock(),core.enforceNodeLocks);view.restoreDispatch=realtest.restoreStatus(s.event_id,s.actor_id);if(view.restoreDispatch.eligible)view.nextAction={code:'RESTORE_ASSIGN',label:'SYSTEMAUFTRAG ABRUFEN',detail:`RESTORE #${view.restoreDispatch.phase} ist freigeschaltet.`};}
         if(['registration','desktop'].includes(config.mode)&&s.role==='PIONEER'){
           const pendingHandover=(view.assignedMissions||[]).find(m=>m.kind==='RESUPPLY'&&m.handoverRequired&&!m.handoverConfirmed);
           if(pendingHandover)view.nextAction={code:'RESUPPLY_HQ_HANDOVER',label:'HQ-ÜBERGABE BESTÄTIGEN',detail:`Am HQ Founder- oder FOP-Access-Card und anschließend den ${pendingHandover.energy}-E-N-Core scannen. Erst danach zu ${pendingHandover.nodeId} gehen.`};
@@ -407,18 +424,19 @@ export function createLabApp(config=labConfig()){
 
       // Existing BLOCK 01/02 Exchange path retained; now supports 1..3 server-authorized cores.
       if(req.method==='POST'&&u.pathname==='/api/scan'){
-        const s=store.session(bearer(req)),b=await body(req);
+        const s=store.session(bearer(req)),b=await body(req);if(s.role==='PIONEER')initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);
         if(b.exchangeId){const result=store.scanExchangeCore(s,{exchangeId:b.exchangeId,uid:b.uid});return json(res,200,{ok:true,...result});}
         const result=store.issueNodeGrant(s,b.uid);if(s.role==='PIONEER'&&result.nodeId)rememberNode(s.event_id,s.actor_id,result.nodeId);return json(res,200,{ok:true,purpose:'EXCHANGE_NODE',...result});
       }
-      if(req.method==='GET'&&u.pathname==='/api/exchange/status'){const s=store.session(bearer(req));return json(res,200,{ok:true,...store.exchangeStatus(s,{exchangeId:u.searchParams.get('exchangeId')})});}
-      if(req.method==='POST'&&u.pathname==='/api/exchange/prepare'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,{ok:true,...store.prepareExchange(s,b)});}
-      if(req.method==='POST'&&u.pathname==='/api/exchange/confirm'){const s=store.session(bearer(req)),b=await body(req);return json(res,200,store.confirmExchange(s,b));}
+      if(req.method==='GET'&&u.pathname==='/api/exchange/status'){const s=store.session(bearer(req));initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);return json(res,200,{ok:true,...store.exchangeStatus(s,{exchangeId:u.searchParams.get('exchangeId')})});}
+      if(req.method==='POST'&&u.pathname==='/api/exchange/prepare'){const s=store.session(bearer(req)),b=await body(req);initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);return json(res,200,{ok:true,...store.prepareExchange(s,b)});}
+      if(req.method==='POST'&&u.pathname==='/api/exchange/confirm'){const s=store.session(bearer(req)),b=await body(req);initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);return json(res,200,store.confirmExchange(s,b));}
 
       // Local / Unbound: physical Pioneer Access Card scan -> server preview -> explicit commit.
       if(req.method==='POST'&&u.pathname==='/api/catch/preview'){
         const s=store.session(bearer(req));requireRole(s,'LOCAL','UNBOUND');const b=await body(req),target=store.accessTarget(s,b.uid);
         if(target.role!=='PIONEER')throw Error('CATCH_TARGET_INVALID');
+        initialDeployment.assertPioneerReleased(s.event_id,target.actor_id);
         const result=runtime.catch.preview({eventId:s.event_id,catcherId:s.actor_id,targetId:target.actor_id});
         return json(res,200,{ok:true,...result});
       }
@@ -429,23 +447,23 @@ export function createLabApp(config=labConfig()){
 
       // Pioneer HQ: authoritative terminal state, optional Secure Approach, physical bay claim and upload.
       if(req.method==='GET'&&u.pathname==='/api/hq/state'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);
         return json(res,200,{ok:true,...runtime.hq.terminalState({eventId:s.event_id,pioneerId:s.actor_id})});
       }
       if(req.method==='POST'&&u.pathname==='/api/hq/secure'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req);
         return json(res,200,runtime.hq.activateSecureApproach({eventId:s.event_id,pioneerId:s.actor_id,requestId:b.requestId}));
       }
       if(req.method==='POST'&&u.pathname==='/api/hq/claim'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),bay=store.uploadBayTarget(s,b.uid);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req),bay=store.uploadBayTarget(s,b.uid);
         return json(res,200,runtime.hq.claim({eventId:s.event_id,pioneerId:s.actor_id,bayId:bay.bay_id,operationId:b.operationId||('CLAIM-'+randomUUID())}));
       }
       if(req.method==='POST'&&u.pathname==='/api/hq/authorize'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req);
         return json(res,200,runtime.hq.authorize({eventId:s.event_id,pioneerId:s.actor_id,orderId:b.orderId,coreIds:b.coreIds}));
       }
       if(req.method==='POST'&&u.pathname==='/api/hq/confirm'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req);
         return json(res,200,runtime.hq.confirm({eventId:s.event_id,pioneerId:s.actor_id,orderId:b.orderId,operationId:b.operationId||('UPLOAD-'+randomUUID())}));
       }
 
@@ -478,13 +496,14 @@ export function createLabApp(config=labConfig()){
       // FOP: Node scan is read-only; all ownership changes are revalidated by the shared runtime.
       if(req.method==='POST'&&u.pathname==='/api/fop/scan'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),node=store.nodeTarget(s,b.uid);
+        initialDeployment.assertFopNodeScan(s.event_id,s.actor_id,node.node_id);
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
         const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
         return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:action==='DEINSTALL'?store.fopPrimaryCode(s,node.node_id):null,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
-        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);initialDeployment.assertFopLoadoutAllowed(s.event_id,s.actor_id);
         return json(res,200,{ok:true,...realtest.assignFopLoadout(s.event_id,s.actor_id,b.nodeId)});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/core/check'){
@@ -496,16 +515,18 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==3)throw Error('FOP_THREE_CORES_REQUIRED');
         const ids=b.coreUids.map(uid=>store.coreTarget(s,uid)).map(c=>{if(c.owner_type!=='TRANSIT'||c.owner_id!==s.actor_id||c.status!=='IN_TRANSIT')throw Error('INSTALL_CARGO_INVALID');return c.core_id;});
+        const gate=initialDeployment.authorizeInstall(s.event_id,s.actor_id,b.nodeId,ids);
         const installed=runtime.fop.install({eventId:s.event_id,operationId:b.operationId||('FOP-IN-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId,coreIds:ids});
-        return json(res,200,{...installed,mechanicalCode:store.fopPrimaryCode(s,b.nodeId)});
+        if(gate.structured)initialDeployment.markInstalled(s.event_id,s.actor_id,b.nodeId,ids);
+        return json(res,200,{...installed,initialDeployment:gate.structured,mechanicalCode:store.fopPrimaryCode(s,b.nodeId)});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/deinstall'){
-        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);initialDeployment.assertFopNormalAllowed(s.event_id,s.actor_id);
         return json(res,200,runtime.fop.deinstall({eventId:s.event_id,operationId:b.operationId||('FOP-OUT-'+randomUUID()),fopId:s.actor_id,nodeId:b.nodeId}));
       }
 
       if(req.method==='POST'&&u.pathname==='/api/mission/hq-handover'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);
         const b=await body(req),now=core.clock(),mission=selectedMission(core.db,s.event_id,s.actor_id,now,b.missionId);
         if(!mission||mission.kind!=='RESUPPLY')throw Error('MISSION_NOT_ASSIGNED');
         const authorizer=store.session(b.authorizerToken);
@@ -523,7 +544,7 @@ export function createLabApp(config=labConfig()){
 
       // Pioneer RESTORE / RE-SUPPLY: scan values never choose the rule outcome.
       if(req.method==='POST'&&u.pathname==='/api/mission/check'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
         if(!mission)throw Error('MISSION_NOT_ASSIGNED');
         const uid=normalizeUid(b.uid),node=core.db.prepare('SELECT node_id FROM lab_node_tags WHERE event_id=? AND uid=?').get(s.event_id,uid);
         if(node){
@@ -540,7 +561,7 @@ export function createLabApp(config=labConfig()){
         throw Error('MISSION_CORE_MISMATCH');
       }
       if(req.method==='POST'&&u.pathname==='/api/mission/confirm'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);const b=await body(req),mission=selectedMission(core.db,s.event_id,s.actor_id,runtime.core.clock(),b.missionId);
         if(!mission)throw Error('MISSION_NOT_ASSIGNED');
         const node=store.nodeTarget(s,b.nodeUid),cargo=store.coreTarget(s,b.cargoUid),out=store.coreTarget(s,b.outUid),low=lowestNodeCore(core.db,s.event_id,mission.node_id);
         if(node.node_id!==mission.node_id||cargo.core_id!==mission.core_id||out.core_id!==low?.core_id)throw Error('MISSION_SCAN_MISMATCH');
@@ -612,6 +633,43 @@ export function createLabApp(config=labConfig()){
         return json(res,200,{ok:true,...runtime.evac.flow.upload({eventId:s.event_id,teamId:b.teamId,carrierId:s.actor_id,operationId:b.operationId,coreIds:b.coreIds,selectedCoreId:b.selectedCoreId,nfcProof:{id:b.proofId},nfcGrantId:b.nfcGrantId})});
       }
 
+      if(req.method==='POST'&&u.pathname==='/api/founder/player'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);return json(res,200,{ok:true,...founderRegistry.createPlayer({eventId:s.event_id,...b})});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/player/update'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);return json(res,200,{ok:true,...founderRegistry.updatePlayer({eventId:s.event_id,...b})});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/deployment/configure'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);return json(res,200,{ok:true,...initialDeployment.configureTeam(s.event_id,s.actor_id,b)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/deployment/prepare'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...initialDeployment.prepare(s.event_id,s.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/founder/deployment/start'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...initialDeployment.start(s.event_id,s.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/fop/deployment/confirm-pioneer'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),p=store.accessTarget(s,b.uid);if(p.role!=='PIONEER')throw Error('INITIAL_PIONEER_INVALID');return json(res,200,{ok:true,...initialDeployment.confirmPioneer(s.event_id,s.actor_id,p.actor_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/fop/deployment/handover'){
+        const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),p=store.accessTarget(s,b.pioneerUid);if(p.role!=='PIONEER')throw Error('INITIAL_PIONEER_INVALID');
+        if(!Array.isArray(b.coreUids)||b.coreUids.length!==3||new Set(b.coreUids.map(normalizeUid)).size!==3)throw Error('INITIAL_SIX_CORES_REQUIRED');
+        const ids=b.coreUids.map(uid=>store.coreTarget(s,uid).core_id);
+        return json(res,200,{ok:true,...initialDeployment.handover(s.event_id,s.actor_id,p.actor_id,ids)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/pioneer/deployment/activate'){
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');const b=await body(req),node=store.nodeTarget(s,b.uid);return json(res,200,{ok:true,...initialDeployment.activateNode(s.event_id,s.actor_id,node.node_id)});
+      }
+      if(req.method==='POST'&&u.pathname==='/api/test/feedback'){
+        const s=store.session(bearer(req));const b=await body(req);return json(res,200,{ok:true,...initialDeployment.saveFeedback(s.event_id,s.actor_id,b)});
+      }
+      if(req.method==='GET'&&u.pathname==='/api/founder/test/report'){
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');const format=(u.searchParams.get('format')||'json').toLowerCase();
+        if(format==='csv')return raw(res,200,initialDeployment.reportCsv(s.event_id),'text/csv; charset=utf-8','NODIV-'+s.event_id+'-AUSWERTUNG.csv');
+        if(format==='html')return raw(res,200,initialDeployment.reportHtml(s.event_id),'text/html; charset=utf-8','NODIV-'+s.event_id+'-AUSWERTUNG.html');
+        return json(res,200,{ok:true,...initialDeployment.report(s.event_id)});
+      }
+
       if(req.method==='POST'&&u.pathname==='/api/founder/register'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req);
         const registered=founderRegistry.register({eventId:s.event_id,...b});
@@ -634,17 +692,17 @@ export function createLabApp(config=labConfig()){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.status(s.event_id)});
       }
       if(req.method==='POST'&&u.pathname==='/api/founder/test/initialize'){
-        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.initialize(s.event_id,s.actor_id)});
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');initialDeployment.assertFlexibleAllowed(s.event_id);return json(res,200,{ok:true,...desktopTest.initialize(s.event_id,s.actor_id)});
       }
       if(req.method==='POST'&&u.pathname==='/api/founder/test/start'){
-        const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.start(s.event_id)});
+        const s=store.session(bearer(req));requireRole(s,'FOUNDER');initialDeployment.assertFlexibleAllowed(s.event_id);return json(res,200,{ok:true,...desktopTest.start(s.event_id)});
       }
       if(req.method==='POST'&&u.pathname==='/api/founder/test/end'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');return json(res,200,{ok:true,...desktopTest.end(s.event_id,s.actor_id)});
       }
-      if(req.method==='POST'&&u.pathname==='/api/mission/assign-resupply'){const session=store.session(bearer(req));requireRole(session,'PIONEER');if(!['registration','desktop'].includes(config.mode))throw Error('MODE_DENIED');const b=await body(req);return json(res,200,{ok:true,...assignResupply(core,session.event_id,session.actor_id,b.count===undefined?1:b.count)});}
+      if(req.method==='POST'&&u.pathname==='/api/mission/assign-resupply'){const session=store.session(bearer(req));requireRole(session,'PIONEER');initialDeployment.assertPioneerReleased(session.event_id,session.actor_id);if(!['registration','desktop'].includes(config.mode))throw Error('MODE_DENIED');const b=await body(req);return json(res,200,{ok:true,...assignResupply(core,session.event_id,session.actor_id,b.count===undefined?1:b.count)});}
       if(req.method==='POST'&&u.pathname==='/api/mission/assign-next'){
-        const s=store.session(bearer(req));requireRole(s,'PIONEER');return json(res,200,{ok:true,...realtest.assignRestore(s.event_id,s.actor_id)});
+        const s=store.session(bearer(req));requireRole(s,'PIONEER');initialDeployment.assertPioneerReleased(s.event_id,s.actor_id);return json(res,200,{ok:true,...realtest.assignRestore(s.event_id,s.actor_id)});
       }
 
       // Founder EVAC remains the existing authoritative EVAC path; Block06 test initialization above is Lab-only.
@@ -667,8 +725,8 @@ export function createLabApp(config=labConfig()){
       if(u.pathname.startsWith('/api/'))return json(res,404,{ok:false,error:'API_NOT_FOUND'});
       if(req.method==='GET')return serveStatic(req,res);
       return json(res,405,{ok:false,error:'METHOD_NOT_ALLOWED'});
-    }catch(e){const code=errCode(e);json(res,statusFor(code),{ok:false,error:code,...(e?.blockers?{blockers:e.blockers}:{})});}
-    finally{const ms=performance.now()-started;if(req.url.startsWith('/api/')||req.url==='/health')console.log(JSON.stringify({ts:new Date().toISOString(),method:req.method,path:req.url,status:res.statusCode,ms:Number(ms.toFixed(2))}));}
+    }catch(e){const code=errCode(e);requestError=code;json(res,statusFor(code),{ok:false,error:code,...(e?.blockers?{blockers:e.blockers}:{})});}
+    finally{try{const p=new URL(req.url,'http://local').pathname;initialDeployment.recordHttp({eventId:config.eventId,method:req.method,path:p,status:res.statusCode,errorCode:requestError});}catch{}const ms=performance.now()-started;if(req.url.startsWith('/api/')||req.url==='/health')console.log(JSON.stringify({ts:new Date().toISOString(),method:req.method,path:req.url,status:res.statusCode,ms:Number(ms.toFixed(2))}));}
   };
   const tls=config.tlsKey&&config.tlsCert;
   const server=tls?https.createServer({key:readFileSync(config.tlsKey),cert:readFileSync(config.tlsCert)},handler):http.createServer(handler);
