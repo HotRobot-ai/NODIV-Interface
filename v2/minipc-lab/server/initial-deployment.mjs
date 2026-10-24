@@ -192,9 +192,9 @@ export function createInitialDeployment(core){
     validateTeamResources(eventId,data);
     const old=teamById(eventId,teamId);
     if(old&&!['CONFIGURED'].includes(old.state))fail('INITIAL_TEAM_ALREADY_STARTED');
-    const plan=selectDeploymentCores(eventId,teamId);
     db.exec('BEGIN IMMEDIATE');
     try{
+      const plan=selectDeploymentCores(eventId,teamId);
       db.prepare('DELETE FROM lab_initial_core_assignments WHERE event_id=? AND team_id=?').run(eventId,teamId);
       db.prepare(`INSERT INTO lab_initial_teams(event_id,team_id,fop_id,pioneer_a_id,pioneer_b_id,node_a_id,node_b_id,state,configured_at)
         VALUES (?,?,?,?,?,?,?,'CONFIGURED',?)
@@ -214,12 +214,12 @@ export function createInitialDeployment(core){
     if(eventState(eventId)!=='READY')fail('INITIAL_PREPARE_STATE_INVALID');
     if(actor(eventId,founderId)?.role!=='FOUNDER')fail('INITIAL_FOUNDER_REQUIRED');
     const rows=teams(eventId);if(!rows.length||rows.some(t=>t.state!=='CONFIGURED'))fail('INITIAL_TEAM_CONFIGURATION_REQUIRED');
-    const deploymentIds=new Set(db.prepare('SELECT core_id FROM lab_initial_core_assignments WHERE event_id=?').all(eventId).map(x=>x.core_id));
-    const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy DESC,core_id").all(eventId).filter(x=>!deploymentIds.has(x.core_id));
-    if(reserve.length<rows.length*2)fail('INITIAL_PERSONAL_START_CORES_REQUIRED');
-    let cursor=0;
     db.exec('BEGIN IMMEDIATE');
     try{
+      const deploymentIds=new Set(db.prepare('SELECT core_id FROM lab_initial_core_assignments WHERE event_id=?').all(eventId).map(x=>x.core_id));
+      const reserve=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy DESC,core_id").all(eventId).filter(x=>!deploymentIds.has(x.core_id));
+      if(reserve.length<rows.length*2)fail('INITIAL_PERSONAL_START_CORES_REQUIRED');
+      let cursor=0;
       for(const t of rows){
         const starts=[reserve[cursor++],reserve[cursor++]];
         for(const [pioneerId,c] of [[t.pioneer_a_id,starts[0]],[t.pioneer_b_id,starts[1]]]){
@@ -248,12 +248,10 @@ export function createInitialDeployment(core){
     const personal=coreRow(eventId,startCoreId);
     if(!personal||personal.owner_type!=='PIONEER'||personal.owner_id!==pioneerId||personal.status!=='FIELD')fail('INITIAL_ISSUE_OWNERSHIP_CHANGED',{coreId:startCoreId});
     for(const id of deployment){const x=coreRow(eventId,id);if(!x||x.owner_type!=='TRANSIT'||x.owner_id!==pioneerId||x.status!=='DEPLOYMENT_TRANSIT')fail('INITIAL_ISSUE_OWNERSHIP_CHANGED',{coreId:id});}
-    const prior=db.prepare('SELECT issued_at FROM lab_initial_pioneer_issue WHERE event_id=? AND team_id=? AND pioneer_id=?').get(eventId,t.team_id,pioneerId);
-    if(prior)return {teamId:t.team_id,pioneerId,replayed:true,issued:issues(eventId,t.team_id).length,energies:expected.map(id=>coreRow(eventId,id)?.visible_energy)};
-    db.prepare('INSERT INTO lab_initial_pioneer_issue(event_id,team_id,pioneer_id,issued_at) VALUES (?,?,?,?)').run(eventId,t.team_id,pioneerId,core.clock());
+    const inserted=db.prepare('INSERT OR IGNORE INTO lab_initial_pioneer_issue(event_id,team_id,pioneer_id,issued_at) VALUES (?,?,?,?)').run(eventId,t.team_id,pioneerId,core.clock()).changes===1;
     const count=issues(eventId,t.team_id).length;
-    log(eventId,founderId,'INITIAL_PIONEER_KIT_ISSUED','OK',null,{teamId:t.team_id,pioneerId,startCoreId,deploymentCoreIds:deployment});
-    return {teamId:t.team_id,pioneerId,replayed:false,issued:count,energies:expected.map(id=>coreRow(eventId,id)?.visible_energy)};
+    if(inserted)log(eventId,founderId,'INITIAL_PIONEER_KIT_ISSUED','OK',null,{teamId:t.team_id,pioneerId,startCoreId,deploymentCoreIds:deployment});
+    return {teamId:t.team_id,pioneerId,replayed:!inserted,issued:count,energies:expected.map(id=>coreRow(eventId,id)?.visible_energy)};
   }
 
   function start(eventId,founderId){
