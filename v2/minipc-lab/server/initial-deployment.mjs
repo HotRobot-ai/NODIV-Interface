@@ -9,6 +9,21 @@ function tableExists(db,name){return !!db.prepare("SELECT 1 FROM sqlite_master W
 
 export function createInitialDeployment(core){
   const db=core.db;
+  // Older desktop events used a different team schema. CREATE TABLE IF NOT EXISTS
+  // does not upgrade it. Only migrate an EMPTY legacy table, preserving all
+  // registrations and refusing to overwrite any existing team history.
+  const legacyTeamColumns=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lab_initial_teams'").get()
+    ? db.prepare("PRAGMA table_info(lab_initial_teams)").all().map(x=>x.name)
+    : [];
+  if(legacyTeamColumns.length&&!legacyTeamColumns.includes('pioneer_a_id')){
+    const count=db.prepare('SELECT COUNT(*) AS n FROM lab_initial_teams').get().n;
+    if(count!==0)throw Error('INITIAL_LEGACY_TEAMS_REQUIRE_MANUAL_MIGRATION');
+    db.exec('BEGIN IMMEDIATE');
+    try{
+      db.exec('DROP TABLE lab_initial_teams');
+      db.exec('COMMIT');
+    }catch(error){db.exec('ROLLBACK');throw error}
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS lab_initial_teams(
       event_id TEXT NOT NULL,
