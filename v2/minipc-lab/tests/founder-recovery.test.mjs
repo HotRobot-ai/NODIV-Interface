@@ -82,3 +82,19 @@ test('recovery enrollment is stable and never rotates silently',()=>{
     assert.equal(f.db.prepare('SELECT created_at FROM lab_founder_recovery WHERE event_id=?').get(f.eventId).created_at,100);
   }finally{f.close()}
 });
+
+test('orphaned key from another event does not block startup or claim recovery authority',()=>{
+  const f=fixture();
+  try{
+    const original=readFileSync(f.keyPath,'utf8');
+    const newEvent='DESKTOP-TEST-002';
+    f.runtime.core.seedEvent(newEvent,'READY');
+    f.runtime.core.seedActor(newEvent,'FOUNDER-TEST','FOUNDER',0);
+    f.db.prepare('INSERT INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(newEvent,'04AAAABB','FOUNDER-TEST');
+    const result=ensureFounderRecovery(f.db,{eventId:newEvent,keyPath:f.keyPath});
+    assert.deepEqual(result,{ready:false,created:false,reason:'FOUNDER_RECOVERY_UNCLAIMED_KEY_PRESENT'});
+    assert.equal(readFileSync(f.keyPath,'utf8'),original);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM lab_founder_recovery WHERE event_id=?').get(newEvent).n,0);
+    assert.equal(ensureFounderRecovery(f.db,{eventId:f.eventId,keyPath:f.keyPath}).ready,true);
+  }finally{f.close()}
+});
