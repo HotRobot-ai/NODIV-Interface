@@ -57,9 +57,18 @@ Damit bleiben persönliche Slot-Grenzen und Deployment-Material getrennt.
 
 ## Automatisierte Abnahme
 
-Status bei Erstellung dieses Berichts: **CI-Lauf für diesen Branch noch ausstehend.**
+Referenzlauf: **GitHub Actions #40119434210, erfolgreich** auf Funktionsstand `3a151777f121ed1c8100350d49211f72612c003c`.
 
-Der finale Status wird erst nach einem vollständigen GitHub-Actions-Lauf gesetzt. Der Workflow prüft:
+Nachweis aus diesem Lauf:
+- gemeinsame V2-Serverregression: **143/143 bestanden**,
+- Desktop-/Labregression einschließlich neuem Initial-Deployment-End-to-End-Test: **39/39 bestanden**,
+- Browser-/Server-Syntax: bestanden,
+- Paketbau und Paket-Smoke: bestanden,
+- Windows-Starterpfad: bestanden,
+- PowerShell-Syntax: bestanden,
+- Windows-Paketimport: bestanden.
+
+Der Workflow prüft:
 - gemeinsame V2-Serverregression,
 - vollständige Desktop-/Labregression,
 - Initial-Deployment-End-to-End-Test,
@@ -72,7 +81,23 @@ Der finale Status wird erst nach einem vollständigen GitHub-Actions-Lauf gesetz
 
 ## VERIFIZIERT
 
-Noch nichts aus dem neuen Initial-Deployment-Branch wird in diesem Bericht vor dem CI-Lauf als automatisiert verifiziert bezeichnet.
+Automatisiert verifiziert:
+- vollständiger strukturierter Start mit 1 FOP + 2 Pioneers,
+- sechs eindeutige Deployment-Cores plus getrennte persönliche Start-Cores,
+- serverseitiger Gameplay-Lock vor 2/2 Node-Aktivierungen,
+- falsche/doppelte Pioneer-, Core- und Node-Kombinationen,
+- idempotente Wiederholung der Pioneer-Bestätigung,
+- Blockade des direkten HQ-FOP-Loadouts während Initial Deployment,
+- beide Node-Installationen über den bestehenden gemeinsamen FOP-Kern,
+- Restart-Recovery einschließlich rekonstruiertem Installationsmarker,
+- erster normaler Exchange nach Teamfreigabe,
+- Core-Integritätsprüfung,
+- kontrolliertes TEST_ENDED,
+- HTML-/CSV-Report mit getrenntem Spielerfeedback,
+- bestehende V2-Regressionssuite ohne festgestellte Regression,
+- gebaute Windows-Testpaketstruktur und Starter-Smoke.
+
+Der Bericht wurde nach diesem erfolgreichen Funktionslauf aktualisiert; diese Dokumentationsänderung verändert keinen Gameplay-Code.
 
 ## OFFEN
 
@@ -85,7 +110,7 @@ Noch nichts aus dem neuen Initial-Deployment-Branch wird in diesem Bericht vor d
 
 ## BLOCKIERT
 
-Kein technischer Blocker bekannt. Die Hardwareabnahme kann nur am vorhandenen physischen Testaufbau durchgeführt werden.
+Kein technischer Code-Blocker bekannt. Die verbleibende Hardwareabnahme kann nur am vorhandenen physischen Testaufbau durchgeführt werden.
 
 ## Produktgrenze
 
