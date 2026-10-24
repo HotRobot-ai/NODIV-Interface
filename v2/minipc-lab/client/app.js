@@ -783,7 +783,7 @@ async function issueInitialKit(expectedId){
     coreUids.push(await nfc(`PERSÖNLICHER START-CORE // ${pioneer.startCoreEnergy} E`));
     for(let i=0;i<cargo.length;i++)coreUids.push(await nfc(`${pioneer.nodeId} // DEPLOYMENT ${i+1}/3 // ${cargo[i].energy} E`));
     phase('commit',`Start-Kit für ${pioneer.callsign} wird gegen die serverseitige Zuteilung geprüft.`);
-    const r=await api('/api/founder/deployment/issue',{method:'POST',data:{pioneerUid,coreUids}});
+    const r=await api('/api/founder/deployment/issue',{method:'POST',data:{expectedPioneerId:expectedId,pioneerUid,coreUids}});
     if(r.pioneerId!==expectedId)throw Error('INITIAL_PIONEER_NOT_ASSIGNED');
     phase('success',`${pioneer.callsign} // 4/4 N-Cores ausgegeben und bestätigt.`);await refreshRole({quiet:true});
   }catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
