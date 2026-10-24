@@ -43,6 +43,23 @@ const ERROR_TEXT={
   REGISTRATION_PHASE_DENIED:'Hardware kann in diesem Testzustand nicht mehr registriert werden.',
   REGISTRATION_UID_DUPLICATE:'Diese NFC-UID ist bereits im Testbestand registriert.',
   REGISTRATION_ENERGY_INVALID:'E-Wert ungültig. Bitte den tatsächlich eingravierten Wert erfassen.',
+  PLAYER_NAME_INVALID:'Bitte einen echten Namen mit mindestens zwei Zeichen eingeben.',
+  PLAYER_CALLSIGN_INVALID:'Callsign: 2–24 Zeichen, Buchstaben, Zahlen, Leerzeichen oder Bindestrich.',
+  PLAYER_CALLSIGN_DUPLICATE:'Dieser Callsign ist bereits vergeben.',
+  INITIAL_PLAYER_PROFILE_REQUIRED:'Für alle Teammitglieder müssen Name und Callsign vorbereitet sein.',
+  INITIAL_ACCESS_CARD_REQUIRED:'Für alle Teammitglieder muss eine Access Card zugeordnet sein.',
+  INITIAL_SIX_CORES_REQUIRED:'Für jeden Pioneer werden exakt drei unterschiedliche Deployment-Cores benötigt.',
+  INITIAL_CORE_DUPLICATE:'Ein Deployment-Core wurde doppelt ausgewählt.',
+  INITIAL_CORE_UNAVAILABLE:'Mindestens ein ausgewählter N-Core ist nicht mehr frei im HQ.',
+  INITIAL_NODE_UNAVAILABLE:'Mindestens ein Start-Node ist nicht frei oder nicht registriert.',
+  INITIAL_DEPLOYMENT_LOCKED:'Feldaktionen bleiben bis zur Aktivierung beider Start-Nodes gesperrt.',
+  INITIAL_PIONEER_NOT_ASSIGNED:'Diese Pioneer-Karte gehört nicht zu diesem Team.',
+  INITIAL_HANDOVER_CORE_MISMATCH:'Die drei gescannten N-Cores gehören nicht zu diesem Pioneer.',
+  INITIAL_INSTALL_CORE_MISMATCH:'Diese drei N-Cores gehören nicht zu diesem Start-Node.',
+  INITIAL_PIONEER_NODE_MISMATCH:'Dieser Start-Node gehört zum anderen Pioneer.',
+  INITIAL_NODE_HANDOVER_INCOMPLETE:'Die Core-Übergabe für diesen Node ist noch nicht vollständig.',
+  INITIAL_DIRECT_HQ_LOADOUT_BLOCKED:'Initial Deployment aktiv: Cores müssen zuerst vom zugeordneten Pioneer an den FOP übergeben werden.',
+  INITIAL_STRUCTURED_MODE_ACTIVE:'Der strukturierte Initial-Deployment-Ablauf ist aktiv.',
   'WEB NFC NICHT VERFÜGBAR':'Web NFC ist hier nicht verfügbar. Auf Android Chrome über die HTTPS-Adresse öffnen.'
 };
 function friendly(error){const code=String(error?.message||error||'UNBEKANNTER FEHLER');return ERROR_TEXT[code]||code.replaceAll('_',' ');}
@@ -127,7 +144,7 @@ function renderRole({passive=false}={}){
   if(!view)return;
   $('roleShell').dataset.role=view.actor.role;
   $('roleChannel').textContent=ROLE_CHANNEL[view.actor.role]||'NODIV';
-  $('roleIdentity').textContent=view.actor.id;
+  $('roleIdentity').textContent=view.actor.callsign||view.actor.id;
   $('roleName').textContent=ROLE_LABEL[view.actor.role]||view.actor.role;
   const pendingHandover=view.actor.role==='PIONEER'&&(view.assignedMissions||[]).some(m=>m.kind==='RESUPPLY'&&m.handoverRequired&&!m.handoverConfirmed);
   $('nextTitle').textContent=pendingHandover?'HQ-ÜBERGABE BESTÄTIGEN':view.nextAction?.label||'STATUS PRÜFEN';
@@ -146,10 +163,12 @@ function renderRole({passive=false}={}){
 }
 function eventActionBlocked(v){
   if(v.event?.state==='FIELD_ACTIVE')return '';
-  const title=v.event?.state==='TEST_ENDED'?'TESTSPIEL BEENDET':'TESTSPIEL NOCH NICHT AKTIV';
-  const detail=v.event?.state==='TEST_ENDED'?'Dieser Teststand ist kontrolliert beendet. Es werden keine weiteren Feldaktionen angenommen.':'Founder muss den Testbestand vorbereiten und das TESTSPIEL starten.';
-  return `<section class="card"><small class="card-kicker">NODIV // TESTMODUS</small><h3>${title}</h3><p>${detail}</p><div class="status-pill warn">${esc(v.event?.state||'UNKNOWN')}</div></section>`;
+  const ended=v.event?.state==='TEST_ENDED',title=ended?'TESTSPIEL BEENDET':'TESTSPIEL NOCH NICHT AKTIV';
+  const detail=ended?'Dieser Teststand ist kontrolliert beendet. Es werden keine weiteren Feldaktionen angenommen.':'Founder muss den Testbestand vorbereiten und das TESTSPIEL starten.';
+  const feedback=ended&&v.actor?.role!=='FOUNDER'?'<section class="card"><small class="card-kicker">TEST // FEEDBACK</small><h3>DEIN EINDRUCK</h3><p>1 = schlecht / unklar · 5 = sehr gut. Dieses Feedback wird in der Auswertung klar von automatisch protokollierten Fakten getrennt.</p><div class="feedback-grid"><label>VERSTÄNDLICHKEIT<select id="fbClarity">'+ratingOptions()+'</select></label><label>BEDIENBARKEIT<select id="fbUsability">'+ratingOptions()+'</select></label><label>SCANNEN<select id="fbScanning">'+ratingOptions()+'</select></label><label>ATMOSPHÄRE<select id="fbAtmosphere">'+ratingOptions()+'</select></label></div><label>VERBESSERUNGSVORSCHLAG<textarea id="fbSuggestion" maxlength="2000" rows="3"></textarea></label><button id="testFeedbackSubmit" class="primary">FEEDBACK SPEICHERN</button><div id="testFeedbackOut" class="feedback"></div></section>':'';
+  return `<section class="card"><small class="card-kicker">NODIV // TESTMODUS</small><h3>${title}</h3><p>${detail}</p><div class="status-pill warn">${esc(v.event?.state||'UNKNOWN')}</div></section>${feedback}`;
 }
+function ratingOptions(){return [1,2,3,4,5].map(x=>`<option value="${x}" ${x===4?'selected':''}>${x}</option>`).join('')}
 
 function renderSlots(v){
   const fields=v.inventory.cores.filter(c=>c.status==='FIELD');
@@ -165,8 +184,15 @@ function renderMission(v){
   const name=current.kind==='RESUPPLY'?'RE-SUPPLY':current.kind.replace('_',' #');
   return `<section class="card" id="missionCard"><small class="card-kicker">SYSTEMAUFTRAG // ${esc(name)}</small><h3>${esc(current.nodeId)}</h3><p>${current.kind==='RESUPPLY'?'Persönliches Inventar wiederherstellen.':'Ziel-Node stabilisieren.'} Transit-Core bleibt getrennt vom persönlichen Inventar.</p><div class="metrics"><div class="metric"><small>TRANSIT</small><b>${current.cargo?.energy??'—'} E</b></div><div class="metric"><small>ZEIT</small><b>${fmt(current.remainingSeconds)}</b></div></div>${current.kind==='RESUPPLY'&&selected&&!selected.handoverConfirmed?`<p class="phase-note">ZUERST AM HQ: Founder- oder FOP-Access-Card und anschließend den zugewiesenen ${selected.energy}-E-N-Core scannen. Die Übergabe wird erst nach der Serverbestätigung gültig.</p><button type="button" class="primary" data-hq-handover="${esc(selected.id)}">HQ-ÜBERGABE ${selected.energy} E BESTÄTIGEN</button>`:`<p class="phase-note"><strong>AM ZIEL-NODE:</strong> Drücke die Schaltfläche unten und scanne den NFC-Tag des Ziel-Nodes, nicht deine Access Card.</p><button id="missionStart" class="primary">1. ZIEL-NODE JETZT SCANNEN</button>`}<div id="missionProgress" class="feedback"></div></section>`;
 }
+function renderInitialPioneer(v){
+  const d=v.initialDeployment,cores=(d.cores||[]).map((x,i)=>`<div class="slot ${x.handedOver?'transit':''}"><small>DEPLOYMENT 0${i+1}</small><b>${x.energy} E</b><span>${x.installed?'IM NODE':x.handedOver?'AN FOP ÜBERGEBEN':'IN TRANSIT'}</span></div>`).join('');
+  const action=d.nodeReady&&!d.activated?'<button id="initialNodeActivate" class="primary">START-NODE JETZT SCANNEN</button>':'';
+  const synced=d.teamActivatedNodes||0;
+  return `<section class="card deployment-hero"><small class="card-kicker">INITIAL DEPLOYMENT // ${esc(d.teamId)}</small><h3>CALLSIGN ${esc(d.callsign||v.actor.callsign||v.actor.id)}</h3><p class="lead">Zuständiger Field Operator: <strong>${esc(d.fopCallsign||d.fopId)}</strong></p><div class="metrics"><div class="metric"><small>TEAMSTATUS</small><b>${esc(d.state)}</b></div><div class="metric"><small>NODE SYNC</small><b>${synced}/2</b></div></div><p class="phase-note">${esc(d.nextAction?.detail||'Folge der nächsten bestätigten Handlung.')}</p>${action}<div id="initialPioneerOut" class="feedback"></div></section><section class="card"><small class="card-kicker">DEPLOYMENT CARGO</small><h3>3 N-CORES // KEINE INVENTARSLOTS</h3><p>Diese Cores gehören zum Startauftrag und sind vom persönlichen Start-Core getrennt.</p><div class="slots">${cores}</div></section>`;
+}
 function renderPioneer(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
+  if(v.initialDeployment?.active&&!v.initialDeployment.released)return renderInitialPioneer(v);
   const protect=v.protection?.active?`<section class="card protect"><small class="card-kicker">NODIV // PROTECTION</small><h3>CATCH-SCHUTZ AKTIV</h3><div class="timer" id="ghostCountdown">${fmt(v.protection.remainingSeconds)}</div><p>Nur der verbleibende Schutz ist relevant. Danach gilt wieder der normale Catch-Status.</p></section>`:'';
   const transit=v.transit?.length?`<section class="card"><small class="card-kicker">MISSION CARGO // IN TRANSIT</small><div class="slots">${v.transit.slice(0,3).map(c=>`<div class="slot transit"><small>TRANSIT</small><b>${c.energy} E</b></div>`).join('')}</div></section>`:'';
   const dispatch=v.restoreDispatch?.eligible&&!v.mission?`<section class="card"><small class="card-kicker">NODIV // SYSTEMAUFTRAG</small><h3>RESTORE #${v.restoreDispatch.phase} FREIGESCHALTET</h3><p>Die Qualifikation wurde serverseitig bestätigt. Erst beim Abruf wird ein realer HQ-Core als IN TRANSIT gebunden.</p><button id="restoreAssign" class="primary">SYSTEMAUFTRAG ABRUFEN</button></section>`:'';
@@ -183,10 +209,43 @@ function renderCatcher(v){
   const evac=v.event.evacState==='STARTED';
   return `<section class="card"><small class="card-kicker">${role} // ACCESS</small><h3>${evac?'CATCH GESPERRT':'PIONEER FINDEN'}</h3><p>${evac?'Während EVAC sind normale Catch-Aktionen eingefroren.':'Der Pioneer hält seine Access Card an dein Smartphone. Schutz, Ziel-Core und Kapazität prüft ausschließlich der Server.'}</p><div class="metrics"><div class="metric"><small>INVENTAR</small><b>${v.inventory.used}/${v.inventory.capacity}</b></div><div class="metric"><small>GESICHERTE ENERGIE</small><b>${esc(v.securedEnergy??0)} E</b></div></div><div class="slots">${(v.inventory.cores||[]).filter(c=>c.status==='FIELD').map((c,i)=>`<div class="slot"><small>SLOT 0${i+1}</small><b>${esc(c.energy)} E</b></div>`).join('')||'<p class="phase-note">NOCH KEIN N-CORE ERBEUTET</p>'}</div><button id="catchScan" class="primary" ${evac?'disabled':''}>PIONEER-KARTE SCANNEN</button><button id="catchConfirm" hidden>CATCH BESTÄTIGEN</button><div id="catchOut" class="feedback"></div></section>${evac?"":`<section class="card"><h3>${role==="LOCAL"?"HQ UPLOAD":"FOP ÜBERGABE"}</h3><p>${role==="LOCAL"?"HQ-Tag scannen, um den N-Core zu sichern.":"Alle getragenen N-Cores werden vollständig an den FOP übergeben."}</p><div class="slots">${(v.inventory.cores||[]).filter(c=>c.status==="FIELD").map((c,i)=>`<div class="slot"><small>ÜBERGABE ${i+1}</small><b>${esc(c.energy)} E</b></div>`).join("")||"<p class=\"phase-note\">KEINE N-CORES VORHANDEN</p>"}</div><div class="metric"><small>${role==="LOCAL"?"ZU SICHERN":"GESAMTE ÜBERGABE"}</small><b>${(v.inventory.cores||[]).filter(c=>c.status==="FIELD").reduce((sum,c)=>sum+Number(c.energy||0),0)} E</b></div><button id="custodyAction" class="primary" ${v.inventory.used===0?"disabled":""}>${role==="LOCAL"?"HQ-TAG SCANNEN":"FOP-KARTE SCANNEN"}</button><div id="custodyOut" class="feedback"></div></section>`}`;
 }
+function renderInitialFop(v){
+  const d=v.initialDeployment;
+  const pioneers=(d.pioneers||[]).map(p=>`<section class="deployment-person"><div><small>PIONEER</small><strong>${esc(p.callsign)}</strong><span>${p.confirmed?'ACCESS BESTÄTIGT':'ACCESS AUSSTEHEND'}</span></div><div class="deployment-status">${p.activated?'NODE AKTIV':p.installed?'INSTALLIERT':p.handedOver?'CARGO ÜBERNOMMEN':p.confirmed?'BEREIT ZUR ÜBERGABE':'RENDEZVOUS'}</div><div class="slots">${(p.cores||[]).map((x,i)=>`<div class="slot"><small>CORE 0${i+1}</small><b>${x.energy} E</b></div>`).join('')}</div>${d.confirmed===2&&!p.handedOver?`<button class="primary" data-initial-handover="${esc(p.id)}">PIONEER-CARGO ÜBERNEHMEN</button>`:''}</section>`).join('');
+  const confirm=d.confirmed<2?'<button id="initialConfirmPioneer" class="primary">PIONEER ACCESS CARD SCANNEN</button>':'<div class="status-pill ok">TEAM ACTIVATED</div>';
+  const install=d.confirmed===2&&(d.pioneers||[]).some(p=>p.handedOver&&!p.installed)?'<button id="fopNodeScan" class="primary">START-NODE SCANNEN / INSTALLIEREN</button><div id="fopWork"></div>':'';
+  return `<section class="card deployment-hero"><small class="card-kicker">FIELD OPERATOR // INITIAL DEPLOYMENT</small><div class="team-code">${esc(d.teamId)}</div><h3>${d.confirmed===2?'TEAM ACTIVATED':'TEAM RENDEZVOUS'}</h3><div class="metrics"><div class="metric"><small>PIONEER</small><b>${d.confirmed}/2</b></div><div class="metric"><small>NODE AKTIV</small><b>${d.activatedNodes}/2</b></div></div>${confirm}<div id="initialFopOut" class="feedback"></div></section>${pioneers}${install}`;
+}
 function renderFop(v){
   if(v.event?.state!=='FIELD_ACTIVE')return eventActionBlocked(v);
+  if(v.initialDeployment?.active&&!v.initialDeployment.released)return renderInitialFop(v);
   const evac=v.evacVisible?`<section class="card evac"><small class="card-kicker">FOUNDER // EVAC DIRECTIVE</small><h3>EVAKUIERUNG AKTIV</h3><p>Die EVAC-Steuerung ist jetzt sichtbar. Normale FOP-Node-Aktionen bleiben gesperrt.</p><button id="evacFopOpen" class="primary">EVAC-TEAM ÖFFNEN</button><div id="evacFopWork"></div></section>`:'';
   return `<section class="card"><small class="card-kicker">FIELD OPERATOR // NODE OPS</small><h3>EINSATZTERMINAL</h3><div class="metrics"><div class="metric"><small>INSTALLIERT</small><b>${v.nodes.installed}</b></div><div class="metric"><small>VERFÜGBAR</small><b>${v.nodes.available}</b></div></div><p>Node scannen. Der Server entscheidet Installation oder Deinstallation.</p><button id="fopNodeScan" class="primary" ${v.evacVisible?'disabled':''}>NODE SCANNEN</button><div id="fopWork"></div><h3>N-CORE TRANSPORT</h3><p>Aktuell transportierte N-Cores. Rückgabe nur am HQ.</p><div id="fopCustodyWork" class="feedback" role="status">Transportinventar wird geladen …</div><button id="fopCustodyOpen">INVENTAR AKTUALISIEREN</button></section>${evac}`;
+}
+function founderPlayers(v){
+  const h=v.hardware||{},players=h.players||[],editable=v.initialDeployment?.canEdit!==false&&v.event?.state==='READY';
+  const rows=players.map(p=>`<div class="hardware-row"><span>${esc(p.realName)}</span><strong>${esc(p.callsign)} · ${esc(ROLE_LABEL[p.role]||p.role)}</strong><small>${p.cardAssigned?'EINSATZBEREIT · ACCESS CARD GEBUNDEN':'VORBEREITET · ACCESS CARD FEHLT'}</small></div>`).join('');
+  const form=editable?`<div class="founder-register"><label>ECHTER NAME<input id="playerRealName" maxlength="80" placeholder="z. B. Anna Müller"></label><label>ROLLE<select id="playerRole"><option value="FOP">Field Operator</option><option value="PIONEER">Pioneer</option><option value="LOCAL">Local</option><option value="UNBOUND">Unbound</option></select></label><label>CALLSIGN · OPTIONAL<input id="playerCallsign" maxlength="24" placeholder="leer = NODIV vergibt einen"></label><button id="playerCreate" class="primary">SPIELER VORBEREITEN</button><div id="playerOut" class="feedback"></div></div>`:''; 
+  return `<section class="card founder-players"><small class="card-kicker">FOUNDER // SPIELERIDENTITÄT</small><h3>ECHTER NAME → CALLSIGN → ACCESS CARD</h3><p>Der echte Name bleibt in der Founder-Verwaltung. Im Einsatzinterface erscheint nur der Callsign.</p>${form}<div class="hardware-rows">${rows||'<p class="empty-state">Noch keine Spieler vorbereitet.</p>'}</div></section>`;
+}
+function founderInitialDeployment(v){
+  const d=v.initialDeployment,h=v.hardware||{};
+  if(!d||!v.desktopTest)return '';
+  if(d.configured){
+    const teams=(d.teams||[]).map(t=>`<div class="deployment-team-summary"><div class="team-code">${esc(t.team_id)}</div><p><b>FOP ${esc(t.fop.callsign)}</b> · ${t.pioneers.map(p=>esc(p.callsign)).join(' + ')}</p><p>Nodes: ${t.pioneers.map(p=>esc(p.nodeId)).join(' · ')}</p><p>Deployment-Cores: ${t.assignments.map(a=>a.energy+' E').join(' · ')}</p><div class="status-pill ${t.state==='RELEASED'?'ok':'warn'}">${esc(t.state)}</div></div>`).join('');
+    const prepare=d.canPrepare?'<button id="initialPrepare" class="primary">INITIAL DEPLOYMENT VORBEREITEN</button>':'';
+    const start=d.canStart?'<button id="initialStart" class="primary">TEAM-RENDEZVOUS STARTEN</button>':'';
+    return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>STARTKONTROLLE</h3>${teams}${prepare}${start}<div id="initialFounderOut" class="feedback"></div></section>`;
+  }
+  if(v.event?.state!=='READY')return '';
+  const readyPlayers=(h.players||[]).filter(p=>p.cardAssigned),fops=readyPlayers.filter(p=>p.role==='FOP'),pioneers=readyPlayers.filter(p=>p.role==='PIONEER');
+  const nodes=(h.nodes||[]).filter(n=>n.state==='AVAILABLE'),cores=(h.cores||[]).filter(x=>x.ownerType==='HQ'&&x.status==='RESERVE');
+  const playerOpt=(arr,i=0)=>arr.map((p,n)=>`<option value="${esc(p.id)}" ${n===i?'selected':''}>${esc(p.callsign)} · ${esc(p.realName)}</option>`).join('');
+  const nodeOpt=(i=0)=>nodes.map((n,x)=>`<option value="${esc(n.id)}" ${x===i?'selected':''}>${esc(n.id)}</option>`).join('');
+  const coreOpt=(i=0)=>cores.map((x,n)=>`<option value="${esc(x.id)}" ${n===i?'selected':''}>${x.energy} E · ${esc(x.id)}</option>`).join('');
+  const enough=fops.length>=1&&pioneers.length>=2&&nodes.length>=2&&cores.length>=8;
+  if(!enough)return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAMPLAN NOCH BLOCKIERT</h3><p>Benötigt: 1 FOP + 2 Pioneer jeweils mit Access Card, 2 freie Nodes und mindestens 8 HQ-Cores (6 Deployment + 2 persönliche Start-Cores).</p><div class="status-pill warn">FOP ${fops.length}/1 · PIONEER ${pioneers.length}/2 · NODES ${nodes.length}/2 · CORES ${cores.length}/8</div></section>`;
+  return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAM-01 KONFIGURIEREN</h3><p>Zwei Pioneer, zwei Start-Nodes und sechs konkrete Deployment-Cores. Die persönlichen Start-Cores werden erst beim Vorbereiten aus der verbleibenden HQ-Reserve gebunden.</p><label>TEAMKENNUNG<input id="initialTeamId" value="TEAM-01" maxlength="32"></label><label>FIELD OPERATOR<select id="initialFop">${playerOpt(fops)}</select></label><div class="deployment-config-grid"><div><h4>PIONEER A</h4><select id="initialPioneerA">${playerOpt(pioneers,0)}</select><select id="initialNodeA">${nodeOpt(0)}</select>${[0,1,2].map((x,i)=>`<select id="initialCoreA${i+1}">${coreOpt(x)}</select>`).join('')}</div><div><h4>PIONEER B</h4><select id="initialPioneerB">${playerOpt(pioneers,1)}</select><select id="initialNodeB">${nodeOpt(1)}</select>${[3,4,5].map((x,i)=>`<select id="initialCoreB${i+1}">${coreOpt(x)}</select>`).join('')}</div></div><button id="initialConfigure" class="primary">INITIAL DEPLOYMENT SPEICHERN</button><div id="initialFounderOut" class="feedback"></div></section>`;
 }
 function founderHardwareRows(v){
   const h=v.hardware||{cards:[],nodes:[],cores:[],hq:[]};
@@ -200,6 +259,7 @@ function founderHardwareRows(v){
   return rows.length?rows.join(''):'<p class="empty-state">Noch keine zusätzliche Hardware registriert.</p>';
 }
 function renderFounder(v){
+  const players=founderPlayers(v),initialDeployment=founderInitialDeployment(v);
   const counts=Object.fromEntries((v.overview.roles||[]).map(x=>[x.role,x.count]));
   const nodes=Object.fromEntries((v.overview.nodes||[]).map(x=>[x.state,x.count]));
   const canEvac=v.allowedActions.includes('EVAC_START');
@@ -222,7 +282,8 @@ function renderFounder(v){
     return `<section class="card desktop-test"><small class="card-kicker">TESTMODUS // SCHREIBTISCHBETRIEB</small><h3>${esc(dt.eventState)}</h3><div class="founder-grid"><div class="metric"><small>ACCESS CARDS</small><b>${dt.counts.cards}</b></div><div class="metric"><small>NODES</small><b>${dt.counts.nodes}</b></div><div class="metric"><small>N-CORES</small><b>${dt.counts.cores}</b></div><div class="metric"><small>HQ</small><b>${dt.counts.hq}</b></div></div><p class="phase-note">Pioneer ${roles.PIONEER||0} · FOP ${roles.FOP||0} · Local ${roles.LOCAL||0} · Unbound ${roles.UNBOUND||0}. Beim Vorbereiten werden höchstens ${assignedP} reale Pioneer-Start-Cores und ${assignedF}/3 reale FOP-Transit-Cores gebunden.</p><h4>MIT DIESEM BESTAND SPIELBAR</h4><div class="capability-list">${features}</div>${prepare}${start}${end}<div id="desktopTestOut" class="feedback"></div>${ended}</section>`;
   })():'';
   const evacSupport=es?`<section class="card evac"><small class="card-kicker">BLOCK 06 // EVAC SUPPORT</small><h3>${es.done?'SUPPORT VOLLSTÄNDIG':es.ready?'REALES TEAM BESTÄTIGT':'REALES TEAM ZUERST'}</h3><div class="founder-grid"><div class="metric"><small>REAL RECOVERY</small><b>${es.physicalRecoveries}/2</b></div><div class="metric"><small>REAL FINAL</small><b>${es.physicalUploads}/2</b></div><div class="metric"><small>GESAMT RECOVERY</small><b>${es.totalRecoveries}/10</b></div><div class="metric"><small>GESAMT FINAL</small><b>${es.totalUploads}/10</b></div></div><p>${es.done?'Alle fünf Teams haben die regulären EVAC-Runtime-Regeln erfüllt. Founder-Abschluss ist der nächste Schritt.':es.ready?'Das reale Team ist vollständig. Die vier nicht-physischen Support-Teams dürfen jetzt über denselben EVAC-Kern abgearbeitet werden.':'FOP + Pioneer A + Pioneer B müssen zuerst NODE-001/002 und beide Final Uploads real per NFC abschließen.'}</p>${es.ready?'<button id="founderEvacSupport" class="primary">SUPPORT-TEAMS DURCHLAUFEN</button>':''}<div id="evacSupportOut" class="feedback"></div></section>`:'';
-  return `${hardware}${desktop}${realtest}${evacSupport}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Der TESTMODUS schwächt keine EVAC-Regel ab.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>REGULÄRER EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Das ist ausdrücklich nicht derselbe Vorgang wie TESTSPIEL BEENDEN.</p><button id="founderEvacComplete" class="danger">EVENT REGULÄR ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
+  const report=`<section class="card"><small class="card-kicker">TEST // AUSWERTUNG</small><h3>EVENTREPORT</h3><p>Automatisch protokollierte Fakten und subjektives Spielerfeedback werden getrennt ausgewertet.</p><button id="reportHtml">HTML-AUSWERTUNG</button><button id="reportCsv">CSV-EXPORT</button><div id="reportOut" class="feedback"></div></section>`;
+  return `${players}${hardware}${initialDeployment}${desktop}${realtest}${evacSupport}${report}<section class="card"><small class="card-kicker">FOUNDER // ROOT AUTHORITY</small><h3>EVENTSTATUS</h3><strong class="big">${esc(v.event.state)}</strong><div class="founder-grid"><div class="metric"><small>NODES INSTALLIERT</small><b>${nodes.INSTALLED||0}</b></div><div class="metric"><small>PIONEER</small><b>${counts.PIONEER||0}</b></div><div class="metric"><small>FOP</small><b>${counts.FOP||0}</b></div><div class="metric"><small>LOCAL / UNBOUND</small><b>${(counts.LOCAL||0)+(counts.UNBOUND||0)}</b></div></div></section>${canEvac?`<section class="card evac"><small class="card-kicker">EVACUATION READY</small><h3>FOUNDER-FREIGABE VERFÜGBAR</h3><p>Diese Aktion startet die bestehende EVAC-Mechanik. Der TESTMODUS schwächt keine EVAC-Regel ab.</p><button id="founderEvacStart" class="danger">EVAKUIERUNG STARTEN</button><div id="founderOut" class="feedback"></div></section>`:''}${canComplete?`<section class="card evac"><small class="card-kicker">EVACUATION COMPLETE</small><h3>REGULÄRER EVENTABSCHLUSS FREIGEGEBEN</h3><p>Alle erforderlichen EVAC-Nachweise sind serverseitig vollständig. Das ist ausdrücklich nicht derselbe Vorgang wie TESTSPIEL BEENDEN.</p><button id="founderEvacComplete" class="danger">EVENT REGULÄR ABSCHLIESSEN</button><div id="founderOut" class="feedback"></div></section>`:''}`;
 }
 
 function updateFounderRegFields(){
@@ -234,8 +295,9 @@ function updateFounderRegFields(){
   if(energy)energy.hidden=kind!=='CORE';
   if(kind==='CARD'){
     if(desktop){
-      const targets=[['AUTO:FOP','Field Operator'],['AUTO:PIONEER','Pioneer'],['AUTO:LOCAL','Local'],['AUTO:UNBOUND','Unbound']];
-      wrap.innerHTML=`<label>2 · ROLLE<select id="regTarget">${targets.map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('')}</select></label><p class="field-help">NODIV vergibt die interne Kennung automatisch. Es gibt keine künstliche Mindestzahl an Spielern.</p>`;
+      const prepared=(hw.players||[]).filter(p=>!p.cardAssigned);
+      if(prepared.length)wrap.innerHTML=`<label>2 · SPIELER<select id="regTarget">${prepared.map(p=>`<option value="${esc(p.id)}">${esc(p.realName)} · ${esc(p.callsign)} · ${esc(ROLE_LABEL[p.role]||p.role)}</option>`).join('')}</select></label><p class="field-help">Die Karte wird jetzt dauerhaft dieser vorbereiteten Spieleridentität zugeordnet.</p>`;
+      else wrap.innerHTML='<div class="auto-target"><small>2 · SPIELER</small><strong>ZUERST SPIELER VORBEREITEN</strong><span>Name, Rolle und Callsign festlegen; danach Access Card scannen.</span></div>';
     }else{
       const targets=[['FOP-TEST','FOP · Field Operator'],['P9003','Pioneer A · Exchange / Catch-Ziel'],['P9004','Pioneer B · EVAC-Partner (nicht für Catch nötig)'],['LOCAL-TEST','Local · Catch'],['UNBOUND-TEST','Unbound · Catch'],['AUTO:FOP','+ weitere FOP-Karte'],['AUTO:PIONEER','+ weitere Pioneer-Karte'],['AUTO:LOCAL','+ weitere Local-Karte'],['AUTO:UNBOUND','+ weitere Unbound-Karte']];
       wrap.innerHTML=`<label>2 · ROLLE / KARTE<select id="regTarget">${targets.map(([id,label])=>`<option value="${id}" ${cards.has(id)?'disabled':''}>${esc(label)}${cards.has(id)?' · registriert':''}</option>`).join('')}</select></label><p class="field-help">Founder ist bereits über den einmaligen Bootstrap gebunden. Zusätzliche Spieler-Karten sind nicht auf zwei Pioneer begrenzt.</p>`;
@@ -251,6 +313,16 @@ function updateFounderRegFields(){
 
 function bindRole(){
   $('exchangeStart')?.addEventListener('click',startExchange);
+  $('initialNodeActivate')?.addEventListener('click',activateInitialNode);
+  $('initialConfirmPioneer')?.addEventListener('click',confirmInitialPioneer);
+  document.querySelectorAll('[data-initial-handover]').forEach(button=>button.addEventListener('click',()=>handoverInitialPioneer(button.dataset.initialHandover)));
+  $('playerCreate')?.addEventListener('click',createFounderPlayer);
+  $('initialConfigure')?.addEventListener('click',configureInitialDeployment);
+  $('initialPrepare')?.addEventListener('click',prepareInitialDeployment);
+  $('initialStart')?.addEventListener('click',startInitialDeployment);
+  $('reportHtml')?.addEventListener('click',()=>downloadTestReport('html'));
+  $('reportCsv')?.addEventListener('click',()=>downloadTestReport('csv'));
+  $('testFeedbackSubmit')?.addEventListener('click',submitTestFeedback);
   $('missionStart')?.addEventListener('click',startMission);
   document.querySelectorAll('[data-hq-handover]').forEach(button=>button.addEventListener('click',()=>confirmResupplyHandover(button.dataset.hqHandover)));
   document.querySelectorAll('[data-resupply-mission]').forEach(button=>button.addEventListener('click',()=>{selectedMissionId=button.dataset.resupplyMission;missionFlow=null;renderRole();}));
@@ -664,6 +736,62 @@ async function confirmEvacFinal(){
     const r=await api('/api/evac/final/confirm',{method:'POST',data:{teamId:evacFlow.teamId,operationId:evacFlow.operationId,coreIds:evacFlow.coreIds,selectedCoreId:evacFlow.selectedCoreId,proofId:evacFlow.proofId,nfcGrantId:evacFlow.nfcGrantId}});
     sessionStorage.removeItem('nodiv-v2-evac-final-op');phase('success',`Final Upload abgeschlossen // ${r.energy} E gesichert.`);await refreshRole({quiet:true});await openPioneerEvac();
   }catch(e){phase('error',friendly(e));}
+}
+
+async function createFounderPlayer(){
+  try{
+    const realName=$('playerRealName')?.value||'',role=$('playerRole')?.value||'',callsign=$('playerCallsign')?.value||'';
+    phase('commit','Spieleridentität wird angelegt. Ohne Callsign vergibt NODIV automatisch einen eindeutigen Rufnamen.');
+    const r=await api('/api/founder/player',{method:'POST',data:{realName,role,callsign}});
+    setFeedback('playerOut',`${r.realName} // ${r.callsign} // ${ROLE_LABEL[r.role]||r.role}`);phase('success','Spieler vorbereitet. Jetzt Access Card zuordnen.');await refreshRole({quiet:true});
+  }catch(e){setFeedback('playerOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function configureInitialDeployment(){
+  try{
+    const value=id=>$(id)?.value||'';
+    const data={teamId:value('initialTeamId'),fopId:value('initialFop'),pioneerA:value('initialPioneerA'),pioneerB:value('initialPioneerB'),nodeA:value('initialNodeA'),nodeB:value('initialNodeB'),coreIdsA:[1,2,3].map(i=>value('initialCoreA'+i)),coreIdsB:[1,2,3].map(i=>value('initialCoreB'+i))};
+    phase('check','Team, Nodes und sechs Deployment-Cores werden auf Doppelbelegung geprüft.');
+    await api('/api/founder/deployment/configure',{method:'POST',data});phase('success','Initial Deployment eindeutig gespeichert.');await refreshRole({quiet:true});
+  }catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function prepareInitialDeployment(){
+  try{phase('commit','Persönliche Start-Cores und sechs Deployment-Cores werden transaktionssicher gebunden.');await api('/api/founder/deployment/prepare',{method:'POST'});phase('success','Vorbereitung gespeichert. Noch kein Feldbetrieb.');await refreshRole({quiet:true});}
+  catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function startInitialDeployment(){
+  try{phase('commit','Team-Rendezvous wird freigegeben. Normales Pioneer-Gameplay bleibt serverseitig gesperrt.');await api('/api/founder/deployment/start',{method:'POST'});phase('success','RENDEZVOUS AKTIV. FOP bestätigt jetzt beide Pioneer.');await refreshRole({quiet:true});}
+  catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function confirmInitialPioneer(){
+  try{const uid=await nfc('PIONEER ACCESS CARD');phase('check','Teamzugehörigkeit wird geprüft.');const r=await api('/api/fop/deployment/confirm-pioneer',{method:'POST',data:{uid}});phase('success',r.teamActivated?'TEAM ACTIVATED // 2/2':'Pioneer bestätigt // '+r.confirmed+'/2');await refreshRole({quiet:true});}
+  catch(e){setFeedback('initialFopOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function handoverInitialPioneer(expectedId){
+  try{
+    const pioneerUid=await nfc('PIONEER ACCESS CARD'),coreUids=[];
+    for(let i=0;i<3;i++)coreUids.push(await nfc(`DEPLOYMENT N-CORE ${i+1}/3`));
+    phase('commit','Pioneer und 3/3 Cores werden als zusammengehöriges Transitset geprüft und an den FOP gebucht.');
+    const r=await api('/api/fop/deployment/handover',{method:'POST',data:{pioneerUid,coreUids,expectedId}});
+    phase('success',`N-CORE-Übergabe bestätigt // ${(r.energies||[]).join(' / ')} E`);await refreshRole({quiet:true});
+  }catch(e){setFeedback('initialFopOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function activateInitialNode(){
+  try{const uid=await nfc('INSTALLIERTEN START-NODE');phase('check','Pioneer, Team, Node und installierter 3-Core-Satz werden geprüft.');const r=await api('/api/pioneer/deployment/activate',{method:'POST',data:{uid}});phase('success',r.released?'TEAM RELEASED // FELDBETRIEB FREIGEGEBEN':`START-NODE AKTIV // ${r.activated}/2`);await refreshRole({quiet:true});}
+  catch(e){setFeedback('initialPioneerOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function downloadTestReport(format){
+  try{
+    phase('check','Testauswertung wird aus Serverprotokoll, Core-Bilanz und Spielerfeedback erzeugt.');
+    const r=await fetch('/api/founder/test/report?format='+encodeURIComponent(format),{headers:{authorization:'Bearer '+token},cache:'no-store'});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw Error(j.error||'REPORT_EXPORT_FAILED');}
+    const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`NODIV-AUSWERTUNG.${format}`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);phase('success',`${format.toUpperCase()}-Auswertung erstellt.`);
+  }catch(e){setFeedback('reportOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function submitTestFeedback(){
+  try{
+    const data={clarity:Number($('fbClarity')?.value),usability:Number($('fbUsability')?.value),scanning:Number($('fbScanning')?.value),atmosphere:Number($('fbAtmosphere')?.value),suggestion:$('fbSuggestion')?.value||''};
+    await api('/api/test/feedback',{method:'POST',data});setFeedback('testFeedbackOut','Feedback gespeichert. Danke.');phase('success','Spielerfeedback getrennt von den technischen Fakten gespeichert.');
+  }catch(e){setFeedback('testFeedbackOut',friendly(e),true);phase('error',friendly(e));}
 }
 
 async function registerFounderHardware(){
