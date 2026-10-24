@@ -99,15 +99,16 @@ test('INITIAL DEPLOYMENT: complete two-Pioneer start, negative guards, restart r
 
     await assert.rejects(fx.call('/api/founder/deployment/start',{method:'POST',token:founder.token}),/INITIAL_PIONEER_ISSUE_REQUIRED/);
     await assert.rejects(
-      fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p1Card,coreUids:[startAUid,setA[0],setA[1],setB[0]]}}),
+      fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{expectedPioneerId:p1Player.id,pioneerUid:p1Card,coreUids:[startAUid,setA[0],setA[1],setB[0]]}}),
       /INITIAL_ISSUE_CORE_MISMATCH/
     );
-    const issued1=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p1Card,coreUids:[startAUid,...setA]}});
+    await assert.rejects(fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{expectedPioneerId:p1Player.id,pioneerUid:p2Card,coreUids:[startBUid,...setB]}}),/INITIAL_PIONEER_NOT_ASSIGNED/);
+    const issued1=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{expectedPioneerId:p1Player.id,pioneerUid:p1Card,coreUids:[startAUid,...setA]}});
     assert.equal(issued1.issued,1);
     await assert.rejects(fx.call('/api/founder/deployment/start',{method:'POST',token:founder.token}),/INITIAL_PIONEER_ISSUE_REQUIRED/);
-    const issued2=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
+    const issued2=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{expectedPioneerId:p2Player.id,pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
     assert.equal(issued2.issued,2);
-    const replayIssue=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
+    const replayIssue=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{expectedPioneerId:p2Player.id,pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
     assert.equal(replayIssue.replayed,true);
 
     const beforeStart=await fx.call('/api/role/state',{token:founder.token});
@@ -132,9 +133,10 @@ test('INITIAL DEPLOYMENT: complete two-Pioneer start, negative guards, restart r
     assert.equal(confirm.teamActivated,true);
     await assert.rejects(fx.call('/api/fop/loadout',{method:'POST',token:fop.token,data:{nodeId:node1.id}}),/INITIAL_DIRECT_HQ_LOADOUT_BLOCKED/);
 
-    await assert.rejects(fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p1Card,coreUids:[setA[0],setA[1],setB[0]]}}),/INITIAL_HANDOVER_CORE_MISMATCH/);
-    await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p1Card,coreUids:setA}});
-    await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p2Card,coreUids:setB}});
+    await assert.rejects(fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{expectedId:p1Player.id,pioneerUid:p2Card,coreUids:setB}}),/INITIAL_PIONEER_NOT_ASSIGNED/);
+    await assert.rejects(fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{expectedId:p1Player.id,pioneerUid:p1Card,coreUids:[setA[0],setA[1],setB[0]]}}),/INITIAL_HANDOVER_CORE_MISMATCH/);
+    await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{expectedId:p1Player.id,pioneerUid:p1Card,coreUids:setA}});
+    await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{expectedId:p2Player.id,pioneerUid:p2Card,coreUids:setB}});
     assert.equal(db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT'").get(eventId,fopPlayer.id).n,6);
 
     await assert.rejects(fx.call('/api/fop/scan',{method:'POST',token:fop.token,data:{uid:node3.uid}}),/INITIAL_NODE_NOT_ASSIGNED/);
