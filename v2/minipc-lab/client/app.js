@@ -52,6 +52,10 @@ const ERROR_TEXT={
   INITIAL_CORE_DUPLICATE:'Ein Deployment-Core wurde doppelt ausgewählt.',
   INITIAL_CORE_UNAVAILABLE:'Mindestens ein ausgewählter N-Core ist nicht mehr frei im HQ.',
   INITIAL_NODE_UNAVAILABLE:'Mindestens ein Start-Node ist nicht frei oder nicht registriert.',
+  INITIAL_CORE_POOL_INSUFFICIENT:'Für die automatische N-Core-Zuteilung fehlen freie HQ-Cores. NODIV benötigt pro Team 6 Deployment-Cores plus 2 persönliche Start-Cores.',
+  INITIAL_PIONEER_ISSUE_REQUIRED:'Rendezvous gesperrt: Beide Pioneer-Startkits müssen zuerst physisch ausgegeben und bestätigt werden.',
+  INITIAL_ISSUE_CORE_MISMATCH:'Das gescannte Startkit passt nicht zur serverseitigen N-Core-Zuteilung dieses Pioneers.',
+  INITIAL_ISSUE_OWNERSHIP_CHANGED:'Der Bestand eines zugeteilten Startkit-Cores hat sich geändert. Founder-Status neu laden.',
   INITIAL_DEPLOYMENT_LOCKED:'Feldaktionen bleiben bis zur Aktivierung beider Start-Nodes gesperrt.',
   INITIAL_PIONEER_NOT_ASSIGNED:'Diese Pioneer-Karte gehört nicht zu diesem Team.',
   INITIAL_HANDOVER_CORE_MISMATCH:'Die drei gescannten N-Cores gehören nicht zu diesem Pioneer.',
@@ -232,20 +236,30 @@ function founderInitialDeployment(v){
   const d=v.initialDeployment,h=v.hardware||{};
   if(!d||!v.desktopTest)return '';
   if(d.configured){
-    const teams=(d.teams||[]).map(t=>`<div class="deployment-team-summary"><div class="team-code">${esc(t.team_id)}</div><p><b>FOP ${esc(t.fop.callsign)}</b> · ${t.pioneers.map(p=>esc(p.callsign)).join(' + ')}</p><p>Nodes: ${t.pioneers.map(p=>esc(p.nodeId)).join(' · ')}</p><p>Deployment-Cores: ${t.assignments.map(a=>a.energy+' E').join(' · ')}</p><div class="status-pill ${t.state==='RELEASED'?'ok':'warn'}">${esc(t.state)}</div></div>`).join('');
-    const prepare=d.canPrepare?'<button id="initialPrepare" class="primary">INITIAL DEPLOYMENT VORBEREITEN</button>':'';
-    const start=d.canStart?'<button id="initialStart" class="primary">TEAM-RENDEZVOUS STARTEN</button>':'';
-    return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>STARTKONTROLLE</h3>${teams}${prepare}${start}<div id="initialFounderOut" class="feedback"></div></section>`;
+    const prepared=d.eventState==='INITIALIZED';
+    const teams=(d.teams||[]).map(t=>{
+      const pioneerRows=(t.pioneers||[]).map(p=>{
+        const cargo=(t.assignments||[]).filter(a=>a.pioneerId===p.id);
+        const cargoSlots=cargo.map((a,i)=>`<div class="slot"><small>NODE CARGO 0${i+1}</small><b>${a.energy} E</b></div>`).join('');
+        const personal=p.startCoreEnergy!==null&&p.startCoreEnergy!==undefined?`<div class="slot"><small>PERSÖNLICH 1/3</small><b>${p.startCoreEnergy} E</b></div>`:'';
+        const issue=prepared?(p.issued?`<div class="status-pill ok">START-KIT AUSGEGEBEN</div>`:`<button class="primary" data-initial-issue="${esc(p.id)}">START-KIT AN ${esc(p.callsign)} AUSGEBEN</button>`):'';
+        return `<div class="deployment-person"><div><small>PIONEER // ${esc(p.nodeId)}</small><strong>${esc(p.callsign)}</strong><span>${p.issued?'4/4 CORES BESTÄTIGT':prepared?'AUSGABE AUSSTEHEND':'SYSTEM-ZUTEILUNG'}</span></div><div class="slots">${personal}${cargoSlots}</div>${issue}</div>`;
+      }).join('');
+      return `<div class="deployment-team-summary"><div class="team-code">${esc(t.team_id)}</div><p><b>FOP ${esc(t.fop.callsign)}</b> · NODIV hat die Node-Cores serverseitig zugeteilt.</p>${pioneerRows}<div class="status-pill ${t.state==='RELEASED'?'ok':'warn'}">${esc(t.state)}</div></div>`;
+    }).join('');
+    const prepare=d.canPrepare?'<button id="initialPrepare" class="primary">N-CORE-ZUTEILUNG VORBEREITEN</button>':'';
+    const issueHint=prepared&&!d.canStart?'<p class="phase-note"><strong>NÄCHSTER SCHRITT:</strong> Für jeden Pioneer zuerst seine Access Card, dann den persönlichen Start-Core und exakt die drei angezeigten Deployment-Cores scannen. Erst 2/2 bestätigte Start-Kits geben das Rendezvous frei.</p>':'';
+    const start=d.canStart?'<button id="initialStart" class="primary">2/2 START-KITS BESTÄTIGT // RENDEZVOUS STARTEN</button>':'';
+    return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>STARTKONTROLLE</h3>${teams}${prepare}${issueHint}${start}<div id="initialFounderOut" class="feedback"></div></section>`;
   }
   if(v.event?.state!=='READY')return '';
   const readyPlayers=(h.players||[]).filter(p=>p.cardAssigned),fops=readyPlayers.filter(p=>p.role==='FOP'),pioneers=readyPlayers.filter(p=>p.role==='PIONEER');
   const nodes=(h.nodes||[]).filter(n=>n.state==='AVAILABLE'),cores=(h.cores||[]).filter(x=>x.ownerType==='HQ'&&x.status==='RESERVE');
   const playerOpt=(arr,i=0)=>arr.map((p,n)=>`<option value="${esc(p.id)}" ${n===i?'selected':''}>${esc(p.callsign)} · ${esc(p.realName)}</option>`).join('');
   const nodeOpt=(i=0)=>nodes.map((n,x)=>`<option value="${esc(n.id)}" ${x===i?'selected':''}>${esc(n.id)}</option>`).join('');
-  const coreOpt=(i=0)=>cores.map((x,n)=>`<option value="${esc(x.id)}" ${n===i?'selected':''}>${x.energy} E · ${esc(x.id)}</option>`).join('');
   const enough=fops.length>=1&&pioneers.length>=2&&nodes.length>=2&&cores.length>=8;
-  if(!enough)return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAMPLAN NOCH BLOCKIERT</h3><p>Benötigt: 1 FOP + 2 Pioneer jeweils mit Access Card, 2 freie Nodes und mindestens 8 HQ-Cores (6 Deployment + 2 persönliche Start-Cores).</p><div class="status-pill warn">FOP ${fops.length}/1 · PIONEER ${pioneers.length}/2 · NODES ${nodes.length}/2 · CORES ${cores.length}/8</div></section>`;
-  return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAM-01 KONFIGURIEREN</h3><p>Zwei Pioneer, zwei Start-Nodes und sechs konkrete Deployment-Cores. Die persönlichen Start-Cores werden erst beim Vorbereiten aus der verbleibenden HQ-Reserve gebunden.</p><label>TEAMKENNUNG<input id="initialTeamId" value="TEAM-01" maxlength="32"></label><label>FIELD OPERATOR<select id="initialFop">${playerOpt(fops)}</select></label><div class="deployment-config-grid"><div><h4>PIONEER A</h4><select id="initialPioneerA">${playerOpt(pioneers,0)}</select><select id="initialNodeA">${nodeOpt(0)}</select>${[0,1,2].map((x,i)=>`<select id="initialCoreA${i+1}">${coreOpt(x)}</select>`).join('')}</div><div><h4>PIONEER B</h4><select id="initialPioneerB">${playerOpt(pioneers,1)}</select><select id="initialNodeB">${nodeOpt(1)}</select>${[3,4,5].map((x,i)=>`<select id="initialCoreB${i+1}">${coreOpt(x)}</select>`).join('')}</div></div><button id="initialConfigure" class="primary">INITIAL DEPLOYMENT SPEICHERN</button><div id="initialFounderOut" class="feedback"></div></section>`;
+  if(!enough)return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAMPLAN NOCH BLOCKIERT</h3><p>Benötigt: 1 FOP + 2 Pioneer jeweils mit Access Card, 2 freie Nodes und mindestens 8 HQ-Cores. Die sechs Deployment-Cores wählt NODIV selbst.</p><div class="status-pill warn">FOP ${fops.length}/1 · PIONEER ${pioneers.length}/2 · NODES ${nodes.length}/2 · CORES ${cores.length}/8</div></section>`;
+  return `<section class="card initial-deployment-founder"><small class="card-kicker">FOUNDER // INITIAL DEPLOYMENT</small><h3>TEAM-01 KONFIGURIEREN</h3><p>Du legst nur Team, Pioneer und Start-Nodes fest. <strong>NODIV bestimmt die sechs realen Deployment-Cores automatisch</strong>, reserviert die persönlichen Start-Cores und zeigt danach exakt, welches 4-Core-Kit an welchen Pioneer ausgegeben wird.</p><label>TEAMKENNUNG<input id="initialTeamId" value="TEAM-01" maxlength="32"></label><label>FIELD OPERATOR<select id="initialFop">${playerOpt(fops)}</select></label><div class="deployment-config-grid"><div><h4>PIONEER A</h4><select id="initialPioneerA">${playerOpt(pioneers,0)}</select><select id="initialNodeA">${nodeOpt(0)}</select></div><div><h4>PIONEER B</h4><select id="initialPioneerB">${playerOpt(pioneers,1)}</select><select id="initialNodeB">${nodeOpt(1)}</select></div></div><button id="initialConfigure" class="primary">TEAMPLAN SPEICHERN // NODIV ZUTEILEN LASSEN</button><div id="initialFounderOut" class="feedback"></div></section>`;
 }
 function founderHardwareRows(v){
   const h=v.hardware||{cards:[],nodes:[],cores:[],hq:[]};
@@ -319,6 +333,7 @@ function bindRole(){
   $('playerCreate')?.addEventListener('click',createFounderPlayer);
   $('initialConfigure')?.addEventListener('click',configureInitialDeployment);
   $('initialPrepare')?.addEventListener('click',prepareInitialDeployment);
+  document.querySelectorAll('[data-initial-issue]').forEach(button=>button.addEventListener('click',()=>issueInitialKit(button.dataset.initialIssue)));
   $('initialStart')?.addEventListener('click',startInitialDeployment);
   $('reportHtml')?.addEventListener('click',()=>downloadTestReport('html'));
   $('reportCsv')?.addEventListener('click',()=>downloadTestReport('csv'));
@@ -749,14 +764,29 @@ async function createFounderPlayer(){
 async function configureInitialDeployment(){
   try{
     const value=id=>$(id)?.value||'';
-    const data={teamId:value('initialTeamId'),fopId:value('initialFop'),pioneerA:value('initialPioneerA'),pioneerB:value('initialPioneerB'),nodeA:value('initialNodeA'),nodeB:value('initialNodeB'),coreIdsA:[1,2,3].map(i=>value('initialCoreA'+i)),coreIdsB:[1,2,3].map(i=>value('initialCoreB'+i))};
-    phase('check','Team, Nodes und sechs Deployment-Cores werden auf Doppelbelegung geprüft.');
-    await api('/api/founder/deployment/configure',{method:'POST',data});phase('success','Initial Deployment eindeutig gespeichert.');await refreshRole({quiet:true});
+    const data={teamId:value('initialTeamId'),fopId:value('initialFop'),pioneerA:value('initialPioneerA'),pioneerB:value('initialPioneerB'),nodeA:value('initialNodeA'),nodeB:value('initialNodeB')};
+    phase('check','Team und Nodes werden geprüft. NODIV wählt und balanciert die sechs Deployment-Cores serverseitig.');
+    await api('/api/founder/deployment/configure',{method:'POST',data});phase('success','Teamplan gespeichert // N-Core-Zuteilung durch NODIV festgelegt.');await refreshRole({quiet:true});
   }catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
 }
 async function prepareInitialDeployment(){
-  try{phase('commit','Persönliche Start-Cores und sechs Deployment-Cores werden transaktionssicher gebunden.');await api('/api/founder/deployment/prepare',{method:'POST'});phase('success','Vorbereitung gespeichert. Noch kein Feldbetrieb.');await refreshRole({quiet:true});}
+  try{phase('commit','Persönliche Start-Cores und sechs serverseitig zugeteilte Deployment-Cores werden transaktionssicher gebunden.');await api('/api/founder/deployment/prepare',{method:'POST'});phase('success','Zuteilung gebunden. Jetzt beide 4-Core-Startkits physisch ausgeben und bestätigen.');await refreshRole({quiet:true});}
   catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
+}
+async function issueInitialKit(expectedId){
+  try{
+    const team=(view.initialDeployment?.teams||[]).find(t=>(t.pioneers||[]).some(p=>p.id===expectedId));
+    const pioneer=team?.pioneers?.find(p=>p.id===expectedId);if(!team||!pioneer)throw Error('INITIAL_PIONEER_NOT_ASSIGNED');
+    const cargo=(team.assignments||[]).filter(a=>a.pioneerId===expectedId);
+    if(cargo.length!==3||pioneer.startCoreEnergy===null||pioneer.startCoreEnergy===undefined)throw Error('INITIAL_ISSUE_CORE_MISMATCH');
+    const pioneerUid=await nfc(`${pioneer.callsign} // ACCESS CARD`),coreUids=[];
+    coreUids.push(await nfc(`PERSÖNLICHER START-CORE // ${pioneer.startCoreEnergy} E`));
+    for(let i=0;i<cargo.length;i++)coreUids.push(await nfc(`${pioneer.nodeId} // DEPLOYMENT ${i+1}/3 // ${cargo[i].energy} E`));
+    phase('commit',`Start-Kit für ${pioneer.callsign} wird gegen die serverseitige Zuteilung geprüft.`);
+    const r=await api('/api/founder/deployment/issue',{method:'POST',data:{pioneerUid,coreUids}});
+    if(r.pioneerId!==expectedId)throw Error('INITIAL_PIONEER_NOT_ASSIGNED');
+    phase('success',`${pioneer.callsign} // 4/4 N-Cores ausgegeben und bestätigt.`);await refreshRole({quiet:true});
+  }catch(e){setFeedback('initialFounderOut',friendly(e),true);phase('error',friendly(e));}
 }
 async function startInitialDeployment(){
   try{phase('commit','Team-Rendezvous wird freigegeben. Normales Pioneer-Gameplay bleibt serverseitig gesperrt.');await api('/api/founder/deployment/start',{method:'POST'});phase('success','RENDEZVOUS AKTIV. FOP bestätigt jetzt beide Pioneer.');await refreshRole({quiet:true});}
