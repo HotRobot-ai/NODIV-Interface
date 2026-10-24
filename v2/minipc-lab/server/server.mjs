@@ -496,11 +496,12 @@ export function createLabApp(config=labConfig()){
       // FOP: Node scan is read-only; all ownership changes are revalidated by the shared runtime.
       if(req.method==='POST'&&u.pathname==='/api/fop/scan'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),node=store.nodeTarget(s,b.uid);
-        initialDeployment.assertFopNodeScan(s.event_id,s.actor_id,node.node_id);
+        const initialGate=initialDeployment.assertFopNodeScan(s.event_id,s.actor_id,node.node_id);
         const cores=core.db.prepare("SELECT core_id,visible_energy,status FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? ORDER BY core_id").all(s.event_id,node.node_id);
         const action=node.state==='INSTALLED'?'DEINSTALL':'INSTALL';
-        const transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
-        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,mechanicalCode:action==='DEINSTALL'?store.fopPrimaryCode(s,node.node_id):null,coreCount:cores.length,transit,canRequestLoadout:['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
+        let transit=action==='INSTALL'?core.db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='IN_TRANSIT' ORDER BY visible_energy DESC,core_id").all(s.event_id,s.actor_id):[];
+        if(initialGate.structured)transit=transit.filter(x=>initialGate.coreIds.includes(x.core_id));
+        return json(res,200,{ok:true,nodeId:node.node_id,state:node.state,action,initialDeployment:initialGate.structured,mechanicalCode:action==='DEINSTALL'?store.fopPrimaryCode(s,node.node_id):null,coreCount:cores.length,transit,canRequestLoadout:!initialGate.structured&&['registration','desktop'].includes(config.mode)&&action==='INSTALL'&&transit.length<3});
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/loadout'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req);initialDeployment.assertFopLoadoutAllowed(s.event_id,s.actor_id);
