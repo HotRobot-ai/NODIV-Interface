@@ -43,8 +43,8 @@ jobs:
           cp -R v2/server "$out/v2/server"
           cp v2/BLOCK07-DESKTOP.md "$out/SCHREIBTISCHTEST-ANLEITUNG.md"
           cp v2/INITIAL-DEPLOYMENT-TECHNICAL-REPORT.md "$out/TECHNISCHER-PRUEFBERICHT.md"
-          rm -rf "$out/v2/minipc-lab/tests" "$out/v2/minipc-lab/scripts"
-          find "$out/v2/server" -type f -name '*.test.mjs' -delete
+          # Keep source tests and support scripts in the handoff package.
+          # The binding work order requires the complete updated source plus automated tests.
           rm -f "$out/v2/minipc-lab/START-TEST.cmd" "$out/v2/minipc-lab/RESET-TEST.cmd"
           rm -f "$out/v2/minipc-lab/NODIV-V2-STARTER.cmd" "$out/v2/minipc-lab/NODIV-V2-STARTER.ps1"
           find "$out" -type f \( -name '.env' -o -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' \) -delete
@@ -62,6 +62,9 @@ jobs:
           test -f "$out/v2/minipc-lab/NODIV-V2-FOUNDER-RECOVERY.mjs"
           test -f "$out/v2/minipc-lab/server/founder-recovery.mjs"
           test -f "$out/v2/server/gameplay-runtime.mjs"
+          test -f "$out/v2/minipc-lab/tests/initial-deployment.test.mjs"
+          test -f "$out/v2/minipc-lab/scripts/api-precheck.mjs"
+          test -n "$(find "$out/v2/server" -maxdepth 1 -type f -name '*.test.mjs' -print -quit)"
           test ! -e "$out/v2/minipc-lab/NODIV-V2-STARTER.cmd"
           test ! -e "$out/v2/minipc-lab/RESET-TEST.cmd"
           if find "$out" -type f \( -name '.env' -o -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' \) | grep -q .; then
@@ -72,6 +75,11 @@ jobs:
           (
             cd "$out/v2/minipc-lab"
             node -e "import('./server/server.mjs').then(()=>console.log('BLOCK07 package import smoke PASS'))"
+            npm test
+          )
+          (
+            cd "$out/v2/server"
+            node --test *.test.mjs
           )
       - name: Upload BLOCK 07 desktop package
         uses: actions/upload-artifact@v4
