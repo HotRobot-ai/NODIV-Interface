@@ -57,30 +57,61 @@ test('INITIAL DEPLOYMENT: complete two-Pioneer start, negative guards, restart r
     }
 
     await assert.rejects(
-      fx.call('/api/founder/deployment/configure',{method:'POST',token:founder.token,data:{teamId:'TEAM-01',fopId:fopPlayer.id,pioneerA:p1Player.id,pioneerB:p1Player.id,nodeA:node1.id,nodeB:node2.id,coreIdsA:cores.slice(0,3).map(x=>x.id),coreIdsB:cores.slice(3,6).map(x=>x.id)}}),
+      fx.call('/api/founder/deployment/configure',{method:'POST',token:founder.token,data:{teamId:'TEAM-01',fopId:fopPlayer.id,pioneerA:p1Player.id,pioneerB:p1Player.id,nodeA:node1.id,nodeB:node2.id}}),
       /INITIAL_TEAM_ROLES_INVALID/
     );
-    await assert.rejects(
-      fx.call('/api/founder/deployment/configure',{method:'POST',token:founder.token,data:{teamId:'TEAM-01',fopId:fopPlayer.id,pioneerA:p1Player.id,pioneerB:p2Player.id,nodeA:node1.id,nodeB:node2.id,coreIdsA:cores.slice(0,3).map(x=>x.id),coreIdsB:[cores[2].id,cores[4].id,cores[5].id]}}),
-      /INITIAL_CORE_DUPLICATE/
-    );
 
+    // The client may suggest nothing about N-Cores. Even stale/malicious coreIds are ignored:
+    // NODIV alone chooses the six deployment cores.
     let configured=await fx.call('/api/founder/deployment/configure',{method:'POST',token:founder.token,data:{
       teamId:'TEAM-01',fopId:fopPlayer.id,pioneerA:p1Player.id,pioneerB:p2Player.id,nodeA:node1.id,nodeB:node2.id,
-      coreIdsA:cores.slice(0,3).map(x=>x.id),coreIdsB:cores.slice(3,6).map(x=>x.id)
+      coreIdsA:['CLIENT-MUST-NOT-CHOOSE-1','CLIENT-MUST-NOT-CHOOSE-2','CLIENT-MUST-NOT-CHOOSE-3'],
+      coreIdsB:['CLIENT-MUST-NOT-CHOOSE-4','CLIENT-MUST-NOT-CHOOSE-5','CLIENT-MUST-NOT-CHOOSE-6']
     }});
     assert.equal(configured.configured,true);
     assert.equal(configured.canPrepare,true);
     assert.equal(configured.teams[0].assignments.length,6);
+    assert.equal(new Set(configured.teams[0].assignments.map(x=>x.coreId)).size,6);
+    assert.ok(configured.teams[0].assignments.every(x=>cores.some(c=>c.id===x.coreId)));
+    assert.ok(!configured.teams[0].assignments.some(x=>String(x.coreId).startsWith('CLIENT-')));
 
-    await fx.call('/api/founder/deployment/prepare',{method:'POST',token:founder.token});
+    const uidById=new Map(cores.map(x=>[x.id,x.uid]));
+    const configuredTeam=configured.teams[0];
+    const assignmentA=configuredTeam.assignments.filter(x=>x.pioneerId===p1Player.id);
+    const assignmentB=configuredTeam.assignments.filter(x=>x.pioneerId===p2Player.id);
+    assert.equal(assignmentA.length,3);
+    assert.equal(assignmentB.length,3);
+    const setA=assignmentA.map(x=>uidById.get(x.coreId)),setB=assignmentB.map(x=>uidById.get(x.coreId));
+    // Strongest two remain available for the two personal 1/3 start slots.
+    assert.ok(!configuredTeam.assignments.some(x=>x.coreId===cores[9].id||x.coreId===cores[8].id));
+
+    const preparedStatus=await fx.call('/api/founder/deployment/prepare',{method:'POST',token:founder.token});
+    const preparedTeam=preparedStatus.teams[0];
+    const p1Prepared=preparedTeam.pioneers.find(x=>x.id===p1Player.id),p2Prepared=preparedTeam.pioneers.find(x=>x.id===p2Player.id);
+    const startAUid=uidById.get(p1Prepared.startCoreId),startBUid=uidById.get(p2Prepared.startCoreId);
     const db=fx.app.core.db;
     assert.equal(db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId).state,'INITIALIZED');
     assert.equal(db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,p1Player.id).n,1);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD'").get(eventId,p2Player.id).n,1);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='DEPLOYMENT_TRANSIT'").get(eventId,p1Player.id).n,3);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM cores WHERE event_id=? AND owner_type='TRANSIT' AND owner_id=? AND status='DEPLOYMENT_TRANSIT'").get(eventId,p2Player.id).n,3);
+    assert.equal(preparedStatus.canStart,false);
 
+    await assert.rejects(fx.call('/api/founder/deployment/start',{method:'POST',token:founder.token}),/INITIAL_PIONEER_ISSUE_REQUIRED/);
+    await assert.rejects(
+      fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p1Card,coreUids:[startAUid,setA[0],setA[1],setB[0]]}}),
+      /INITIAL_ISSUE_CORE_MISMATCH/
+    );
+    const issued1=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p1Card,coreUids:[startAUid,...setA]}});
+    assert.equal(issued1.issued,1);
+    await assert.rejects(fx.call('/api/founder/deployment/start',{method:'POST',token:founder.token}),/INITIAL_PIONEER_ISSUE_REQUIRED/);
+    const issued2=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
+    assert.equal(issued2.issued,2);
+    const replayIssue=await fx.call('/api/founder/deployment/issue',{method:'POST',token:founder.token,data:{pioneerUid:p2Card,coreUids:[startBUid,...setB]}});
+    assert.equal(replayIssue.replayed,true);
+
+    const beforeStart=await fx.call('/api/role/state',{token:founder.token});
+    assert.equal(beforeStart.initialDeployment.canStart,true);
     await fx.call('/api/founder/deployment/start',{method:'POST',token:founder.token});
     assert.equal(db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId).state,'FIELD_ACTIVE');
 
@@ -101,8 +132,6 @@ test('INITIAL DEPLOYMENT: complete two-Pioneer start, negative guards, restart r
     assert.equal(confirm.teamActivated,true);
     await assert.rejects(fx.call('/api/fop/loadout',{method:'POST',token:fop.token,data:{nodeId:node1.id}}),/INITIAL_DIRECT_HQ_LOADOUT_BLOCKED/);
 
-    const uidById=new Map(cores.map(x=>[x.id,x.uid]));
-    const setA=cores.slice(0,3).map(x=>x.uid),setB=cores.slice(3,6).map(x=>x.uid);
     await assert.rejects(fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p1Card,coreUids:[setA[0],setA[1],setB[0]]}}),/INITIAL_HANDOVER_CORE_MISMATCH/);
     await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p1Card,coreUids:setA}});
     await fx.call('/api/fop/deployment/handover',{method:'POST',token:fop.token,data:{pioneerUid:p2Card,coreUids:setB}});
@@ -112,7 +141,7 @@ test('INITIAL DEPLOYMENT: complete two-Pioneer start, negative guards, restart r
     const scan1=await fx.call('/api/fop/scan',{method:'POST',token:fop.token,data:{uid:node1.uid}});
     assert.equal(scan1.initialDeployment,true);
     assert.equal(scan1.transit.length,3);
-    assert.deepEqual(new Set(scan1.transit.map(x=>x.core_id)),new Set(cores.slice(0,3).map(x=>x.id)));
+    assert.deepEqual(new Set(scan1.transit.map(x=>x.core_id)),new Set(assignmentA.map(x=>x.coreId)));
     await assert.rejects(fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:node1.id,coreUids:setB,operationId:'IDP-WRONG-INSTALL'}}),/INITIAL_INSTALL_CORE_MISMATCH/);
     const installed1=await fx.call('/api/fop/install',{method:'POST',token:fop.token,data:{nodeId:node1.id,coreUids:setA,operationId:'IDP-INSTALL-1'}});
     assert.match(installed1.mechanicalCode,/^\d{4}$/);
