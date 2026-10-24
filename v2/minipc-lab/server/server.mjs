@@ -649,6 +649,7 @@ export function createLabApp(config=labConfig()){
       if(req.method==='POST'&&u.pathname==='/api/founder/deployment/issue'){
         const s=store.session(bearer(req));requireRole(s,'FOUNDER');const b=await body(req),p=store.accessTarget(s,b.pioneerUid);
         if(p.role!=='PIONEER')throw Error('INITIAL_PIONEER_INVALID');
+        if(!b.expectedPioneerId||p.actor_id!==b.expectedPioneerId)throw Error('INITIAL_PIONEER_NOT_ASSIGNED');
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==4||new Set(b.coreUids.map(normalizeUid)).size!==4)throw Error('INITIAL_ISSUE_CORE_MISMATCH');
         const ids=b.coreUids.map(uid=>store.coreTarget(s,uid).core_id);
         return json(res,200,{ok:true,...initialDeployment.issuePioneerKit(s.event_id,s.actor_id,p.actor_id,ids)});
@@ -661,6 +662,7 @@ export function createLabApp(config=labConfig()){
       }
       if(req.method==='POST'&&u.pathname==='/api/fop/deployment/handover'){
         const s=store.session(bearer(req));requireRole(s,'FOP');const b=await body(req),p=store.accessTarget(s,b.pioneerUid);if(p.role!=='PIONEER')throw Error('INITIAL_PIONEER_INVALID');
+        if(b.expectedId&&p.actor_id!==b.expectedId)throw Error('INITIAL_PIONEER_NOT_ASSIGNED');
         if(!Array.isArray(b.coreUids)||b.coreUids.length!==3||new Set(b.coreUids.map(normalizeUid)).size!==3)throw Error('INITIAL_SIX_CORES_REQUIRED');
         const ids=b.coreUids.map(uid=>store.coreTarget(s,uid).core_id);
         return json(res,200,{ok:true,...initialDeployment.handover(s.event_id,s.actor_id,p.actor_id,ids)});
