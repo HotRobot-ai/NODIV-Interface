@@ -2,7 +2,7 @@ name: V2 Block07 Desktop Playable
 
 on:
   push:
-    branches: [feature/v2-block07-desktop-playable, feature/v2-nodiv-identity-polish]
+    branches: [feature/v2-block07-desktop-playable, feature/v2-nodiv-identity-polish, feature/v2-initial-deployment]
   pull_request:
     branches: [feature/v2-block06a-test-prep]
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
           node --check client/app.js
           node --check server/server.mjs
           node --check server/desktop-test.mjs
+          node --check server/initial-deployment.mjs
           node --check server/founder-registry.mjs
           node --check server/founder-recovery.mjs
           node --check server/seed.mjs
@@ -35,12 +36,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out="NODIV-V2-BLOCK07-DESKTOP-RELEASE"
+          out="NODIV-V2-INITIAL-DEPLOYMENT-TESTPAKET"
           mkdir -p "$out/v2"
           cp -R v2/minipc-lab "$out/v2/minipc-lab"
           cp f6072312-e4b9-448b-84ee-3283e200b198.png "$out/v2/minipc-lab/client/nodiv-background.png"
           cp -R v2/server "$out/v2/server"
-          cp v2/BLOCK07-DESKTOP.md "$out/BLOCK07-DESKTOP.md"
+          cp v2/BLOCK07-DESKTOP.md "$out/SCHREIBTISCHTEST-ANLEITUNG.md"
+          cp v2/INITIAL-DEPLOYMENT-TECHNICAL-REPORT.md "$out/TECHNISCHER-PRUEFBERICHT.md"
           rm -rf "$out/v2/minipc-lab/tests" "$out/v2/minipc-lab/scripts"
           find "$out/v2/server" -type f -name '*.test.mjs' -delete
           rm -f "$out/v2/minipc-lab/START-TEST.cmd" "$out/v2/minipc-lab/RESET-TEST.cmd"
@@ -52,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out="NODIV-V2-BLOCK07-DESKTOP-RELEASE"
+          out="NODIV-V2-INITIAL-DEPLOYMENT-TESTPAKET"
           test -f "$out/NODIV-V2-SPIELEN.cmd"
           test -f "$out/v2/minipc-lab/NODIV-V2-SPIELEN.cmd"
           test -f "$out/v2/minipc-lab/NODIV-V2-SPIELEN.ps1"
@@ -74,8 +76,8 @@ jobs:
       - name: Upload BLOCK 07 desktop package
         uses: actions/upload-artifact@v4
         with:
-          name: NODIV-V2-BLOCK07-DESKTOP
-          path: NODIV-V2-BLOCK07-DESKTOP-RELEASE
+          name: NODIV-V2-INITIAL-DEPLOYMENT-TESTPAKET
+          path: NODIV-V2-INITIAL-DEPLOYMENT-TESTPAKET
           if-no-files-found: error
           retention-days: 14
 
@@ -88,7 +90,7 @@ jobs:
           node-version: '24'
       - uses: actions/download-artifact@v4
         with:
-          name: NODIV-V2-BLOCK07-DESKTOP
+          name: NODIV-V2-INITIAL-DEPLOYMENT-TESTPAKET
           path: package
       - name: Windows starter path smoke
         shell: cmd
