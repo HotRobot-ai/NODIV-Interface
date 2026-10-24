@@ -62,6 +62,13 @@ export function createInitialDeployment(core){
       confirmed_at INTEGER NOT NULL,
       PRIMARY KEY(event_id,team_id,pioneer_id)
     );
+    CREATE TABLE IF NOT EXISTS lab_initial_pioneer_issue(
+      event_id TEXT NOT NULL,
+      team_id TEXT NOT NULL,
+      pioneer_id TEXT NOT NULL,
+      issued_at INTEGER NOT NULL,
+      PRIMARY KEY(event_id,team_id,pioneer_id)
+    );
     CREATE TABLE IF NOT EXISTS lab_initial_node_activation(
       event_id TEXT NOT NULL,
       team_id TEXT NOT NULL,
@@ -123,6 +130,7 @@ export function createInitialDeployment(core){
     ORDER BY CASE WHEN a.pioneer_id=(SELECT pioneer_a_id FROM lab_initial_teams WHERE event_id=a.event_id AND team_id=a.team_id) THEN 0 ELSE 1 END,a.seq
   `).all(eventId,teamId);
   const confirmations=(eventId,teamId)=>db.prepare('SELECT pioneer_id,confirmed_at FROM lab_initial_pioneer_confirm WHERE event_id=? AND team_id=? ORDER BY pioneer_id').all(eventId,teamId);
+  const issues=(eventId,teamId)=>db.prepare('SELECT pioneer_id,issued_at FROM lab_initial_pioneer_issue WHERE event_id=? AND team_id=? ORDER BY pioneer_id').all(eventId,teamId);
   const activations=(eventId,teamId)=>db.prepare('SELECT pioneer_id,node_id,activated_at FROM lab_initial_node_activation WHERE event_id=? AND team_id=? ORDER BY node_id').all(eventId,teamId);
   function reconcile(eventId){
     for(const t of teams(eventId)){
@@ -138,7 +146,7 @@ export function createInitialDeployment(core){
     }
   }
 
-  function validateTeamResources(eventId,{teamId,fopId,pioneerA,pioneerB,nodeA,nodeB,coreIdsA,coreIdsB}){
+  function validateTeamResources(eventId,{teamId,fopId,pioneerA,pioneerB,nodeA,nodeB}){
     if(!TEAM_ID.test(String(teamId||'').trim().toUpperCase()))fail('INITIAL_TEAM_ID_INVALID');
     if(!fopId||!pioneerA||!pioneerB||pioneerA===pioneerB)fail('INITIAL_TEAM_ROLES_INVALID');
     const f=actor(eventId,fopId),a=actor(eventId,pioneerA),b=actor(eventId,pioneerB);
@@ -150,18 +158,30 @@ export function createInitialDeployment(core){
     }
     if(!nodeA||!nodeB||nodeA===nodeB)fail('INITIAL_NODES_INVALID');
     for(const id of [nodeA,nodeB]){const n=nodeRow(eventId,id);if(!n?.uid||n.state!=='AVAILABLE')fail('INITIAL_NODE_UNAVAILABLE',{nodeId:id});}
-    if(!Array.isArray(coreIdsA)||!Array.isArray(coreIdsB)||coreIdsA.length!==3||coreIdsB.length!==3)fail('INITIAL_SIX_CORES_REQUIRED');
-    const all=[...coreIdsA,...coreIdsB];
-    if(new Set(all).size!==6)fail('INITIAL_CORE_DUPLICATE');
-    for(const id of all){const c=coreRow(eventId,id);if(!c||c.owner_type!=='HQ'||c.owner_id!=='HQ'||c.status!=='RESERVE')fail('INITIAL_CORE_UNAVAILABLE',{coreId:id});}
     const current=teams(eventId).filter(t=>t.team_id!==String(teamId).trim().toUpperCase());
     for(const t of current){
       const actors=new Set([t.fop_id,t.pioneer_a_id,t.pioneer_b_id]);
       if([fopId,pioneerA,pioneerB].some(id=>actors.has(id)))fail('INITIAL_ACTOR_ALREADY_ASSIGNED');
       if([nodeA,nodeB].includes(t.node_a_id)||[nodeA,nodeB].includes(t.node_b_id))fail('INITIAL_NODE_ALREADY_ASSIGNED');
     }
-    const occupied=db.prepare('SELECT core_id FROM lab_initial_core_assignments WHERE event_id=? AND team_id<>?').all(eventId,String(teamId).trim().toUpperCase()).map(x=>x.core_id);
-    if(all.some(id=>occupied.includes(id)))fail('INITIAL_CORE_ALREADY_ASSIGNED');
+  }
+
+  function selectDeploymentCores(eventId,teamId){
+    const occupied=new Set(db.prepare('SELECT core_id FROM lab_initial_core_assignments WHERE event_id=? AND team_id<>?').all(eventId,teamId).map(x=>x.core_id));
+    const pool=db.prepare("SELECT core_id,visible_energy FROM cores WHERE event_id=? AND owner_type='HQ' AND owner_id='HQ' AND status='RESERVE' ORDER BY visible_energy DESC,core_id").all(eventId).filter(x=>!occupied.has(x.core_id));
+    const teamCount=teams(eventId).filter(t=>t.team_id!==teamId).length+1;
+    const personalReserveCount=teamCount*2;
+    if(pool.length<personalReserveCount+6)fail('INITIAL_CORE_POOL_INSUFFICIENT',{available:pool.length,required:personalReserveCount+6});
+    // Keep the strongest still-free cores available for the personal 1/3 start slots.
+    // NODIV chooses the next six and balances their visible energy across the two start nodes.
+    const selected=pool.slice(personalReserveCount,personalReserveCount+6);
+    const sets=[[],[]],sums=[0,0];
+    for(const row of selected){
+      const target=[0,1].filter(i=>sets[i].length<3).sort((a,b)=>sums[a]-sums[b]||sets[a].length-sets[b].length||a-b)[0];
+      sets[target].push(row);sums[target]+=Number(row.visible_energy)||0;
+    }
+    if(sets.some(x=>x.length!==3))fail('INITIAL_CORE_POOL_INSUFFICIENT');
+    return {coreSetA:sets[0],coreSetB:sets[1],personalReserve:pool.slice(0,personalReserveCount)};
   }
 
   function configureTeam(eventId,founderId,input){
@@ -172,6 +192,7 @@ export function createInitialDeployment(core){
     validateTeamResources(eventId,data);
     const old=teamById(eventId,teamId);
     if(old&&!['CONFIGURED'].includes(old.state))fail('INITIAL_TEAM_ALREADY_STARTED');
+    const plan=selectDeploymentCores(eventId,teamId);
     db.exec('BEGIN IMMEDIATE');
     try{
       db.prepare('DELETE FROM lab_initial_core_assignments WHERE event_id=? AND team_id=?').run(eventId,teamId);
@@ -179,10 +200,11 @@ export function createInitialDeployment(core){
         VALUES (?,?,?,?,?,?,?,'CONFIGURED',?)
         ON CONFLICT(event_id,team_id) DO UPDATE SET fop_id=excluded.fop_id,pioneer_a_id=excluded.pioneer_a_id,pioneer_b_id=excluded.pioneer_b_id,node_a_id=excluded.node_a_id,node_b_id=excluded.node_b_id,state='CONFIGURED',configured_at=excluded.configured_at,start_core_a_id=NULL,start_core_b_id=NULL,prepared_at=NULL,started_at=NULL,team_activated_at=NULL,released_at=NULL`)
         .run(eventId,teamId,input.fopId,input.pioneerA,input.pioneerB,input.nodeA,input.nodeB,core.clock());
-      for(const [pioneerId,nodeId,ids] of [[input.pioneerA,input.nodeA,input.coreIdsA],[input.pioneerB,input.nodeB,input.coreIdsB]]){
-        ids.forEach((id,i)=>db.prepare('INSERT INTO lab_initial_core_assignments(event_id,team_id,pioneer_id,node_id,core_id,seq) VALUES (?,?,?,?,?,?)').run(eventId,teamId,pioneerId,nodeId,id,i+1));
+      for(const [pioneerId,nodeId,rows] of [[input.pioneerA,input.nodeA,plan.coreSetA],[input.pioneerB,input.nodeB,plan.coreSetB]]){
+        rows.forEach((row,i)=>db.prepare('INSERT INTO lab_initial_core_assignments(event_id,team_id,pioneer_id,node_id,core_id,seq) VALUES (?,?,?,?,?,?)').run(eventId,teamId,pioneerId,nodeId,row.core_id,i+1));
       }
-      log(eventId,founderId,'INITIAL_TEAM_CONFIGURED','OK',null,{teamId,fopId:input.fopId,pioneers:[input.pioneerA,input.pioneerB],nodes:[input.nodeA,input.nodeB],coreIds:[...input.coreIdsA,...input.coreIdsB]});
+      const assigned=[...plan.coreSetA,...plan.coreSetB];
+      log(eventId,founderId,'INITIAL_TEAM_CONFIGURED','OK',null,{teamId,fopId:input.fopId,pioneers:[input.pioneerA,input.pioneerB],nodes:[input.nodeA,input.nodeB],selection:'SYSTEM_BALANCED',cores:assigned.map(x=>({coreId:x.core_id,energy:x.visible_energy}))});
       db.exec('COMMIT');
       return status(eventId);
     }catch(e){db.exec('ROLLBACK');throw e}
@@ -215,10 +237,31 @@ export function createInitialDeployment(core){
     }catch(e){db.exec('ROLLBACK');throw e}
   }
 
+  function issuePioneerKit(eventId,founderId,pioneerId,coreIds){
+    if(actor(eventId,founderId)?.role!=='FOUNDER')fail('INITIAL_FOUNDER_REQUIRED');
+    if(eventState(eventId)!=='INITIALIZED')fail('INITIAL_ISSUE_STATE_INVALID');
+    const t=teamForPioneer(eventId,pioneerId);if(!t||t.state!=='PREPARED')fail('INITIAL_PIONEER_NOT_ASSIGNED');
+    const deployment=db.prepare('SELECT core_id FROM lab_initial_core_assignments WHERE event_id=? AND team_id=? AND pioneer_id=? ORDER BY seq').all(eventId,t.team_id,pioneerId).map(x=>x.core_id);
+    const startCoreId=pioneerId===t.pioneer_a_id?t.start_core_a_id:t.start_core_b_id;
+    const expected=[startCoreId,...deployment];
+    if(!Array.isArray(coreIds)||coreIds.length!==4||!sameSet(coreIds,expected))fail('INITIAL_ISSUE_CORE_MISMATCH');
+    const personal=coreRow(eventId,startCoreId);
+    if(!personal||personal.owner_type!=='PIONEER'||personal.owner_id!==pioneerId||personal.status!=='FIELD')fail('INITIAL_ISSUE_OWNERSHIP_CHANGED',{coreId:startCoreId});
+    for(const id of deployment){const x=coreRow(eventId,id);if(!x||x.owner_type!=='TRANSIT'||x.owner_id!==pioneerId||x.status!=='DEPLOYMENT_TRANSIT')fail('INITIAL_ISSUE_OWNERSHIP_CHANGED',{coreId:id});}
+    const prior=db.prepare('SELECT issued_at FROM lab_initial_pioneer_issue WHERE event_id=? AND team_id=? AND pioneer_id=?').get(eventId,t.team_id,pioneerId);
+    if(prior)return {teamId:t.team_id,pioneerId,replayed:true,issued:issues(eventId,t.team_id).length,energies:expected.map(id=>coreRow(eventId,id)?.visible_energy)};
+    db.prepare('INSERT INTO lab_initial_pioneer_issue(event_id,team_id,pioneer_id,issued_at) VALUES (?,?,?,?)').run(eventId,t.team_id,pioneerId,core.clock());
+    const count=issues(eventId,t.team_id).length;
+    log(eventId,founderId,'INITIAL_PIONEER_KIT_ISSUED','OK',null,{teamId:t.team_id,pioneerId,startCoreId,deploymentCoreIds:deployment});
+    return {teamId:t.team_id,pioneerId,replayed:false,issued:count,energies:expected.map(id=>coreRow(eventId,id)?.visible_energy)};
+  }
+
   function start(eventId,founderId){
     if(actor(eventId,founderId)?.role!=='FOUNDER')fail('INITIAL_FOUNDER_REQUIRED');
     if(eventState(eventId)==='FIELD_ACTIVE'&&teams(eventId).every(t=>['RENDEZVOUS','TEAM_ACTIVE','DEPLOYING','RELEASED'].includes(t.state)))return {...status(eventId),replayed:true};
-    if(eventState(eventId)!=='INITIALIZED'||teams(eventId).some(t=>t.state!=='PREPARED'))fail('INITIAL_START_BLOCKED');
+    const startTeams=teams(eventId);
+    if(eventState(eventId)!=='INITIALIZED'||startTeams.some(t=>t.state!=='PREPARED'))fail('INITIAL_START_BLOCKED');
+    if(startTeams.some(t=>issues(eventId,t.team_id).length!==2))fail('INITIAL_PIONEER_ISSUE_REQUIRED');
     db.exec('BEGIN IMMEDIATE');
     try{
       if(db.prepare("UPDATE events SET state='FIELD_ACTIVE' WHERE event_id=? AND state='INITIALIZED'").run(eventId).changes!==1)fail('INITIAL_EVENT_STATE_CHANGED');
@@ -337,9 +380,9 @@ export function createInitialDeployment(core){
       const act=!!db.prepare('SELECT 1 FROM lab_initial_node_activation WHERE event_id=? AND team_id=? AND pioneer_id=?').get(eventId,pt.team_id,actorId);
       const nodeReady=nodeRow(eventId,ownNode)?.state==='INSTALLED'&&own.every(x=>!!x.installed_at);
       const fopProfile=profile(eventId,pt.fop_id);
-      let next={code:'RENDEZVOUS',label:'FIELD OPERATOR FINDEN',detail:'Zeige dem zuständigen FOP deine Access Card.'};
+      let next={code:'RENDEZVOUS',label:'FIELD OPERATOR FINDEN',detail:'Nimm dein ausgegebenes Start-Kit mit: 1 persönlicher N-Core + 3 Deployment-Cores. Zeige dem zuständigen FOP deine Access Card.'};
       if(pt.state==='RELEASED')next={code:'NORMAL',label:'FELDBETRIEB FREIGEGEBEN',detail:'Initial Deployment abgeschlossen.'};
-      else if(!conf)next={code:'RENDEZVOUS',label:'FIELD OPERATOR FINDEN',detail:'Zeige dem zuständigen FOP deine Access Card.'};
+      else if(!conf)next={code:'RENDEZVOUS',label:'FIELD OPERATOR FINDEN',detail:'Nimm dein ausgegebenes Start-Kit mit: 1 persönlicher N-Core + 3 Deployment-Cores. Zeige dem zuständigen FOP deine Access Card.'};
       else if(!own.every(x=>!!x.handed_to_fop_at))next={code:'HANDOVER',label:'N-CORE-ÜBERGABE',detail:'Bleibe beim FOP. Die drei Deployment-Cores werden gemeinsam bestätigt.'};
       else if(!nodeReady)next={code:'WAIT_INSTALL',label:'FOP FOLGEN',detail:'Der FOP führt euch zu den Start-Nodes und installiert die Deployment-Cores.'};
       else if(!act)next={code:'ACTIVATE_NODE',label:'START-NODE AKTIVIEREN',detail:'Scanne jetzt den vom FOP installierten Start-Node.'};
@@ -354,7 +397,7 @@ export function createInitialDeployment(core){
         return {id,callsign:pr?.callsign||id,nodeId,confirmed:conf.some(x=>x.pioneer_id===id),handedOver:rows.length===3&&rows.every(x=>!!x.handed_to_fop_at),installed:rows.length===3&&rows.every(x=>!!x.installed_at),activated:acts.some(x=>x.pioneer_id===id),cores:rows.map(x=>({id:x.core_id,energy:x.energy}))};
       });
       let next={code:'CONFIRM',label:'PIONEER BESTÄTIGEN',detail:'Scanne beide zugewiesenen Pioneer-Access-Cards.'};
-      if(conf.length===2&&pioneers.some(x=>!x.handedOver))next={code:'HANDOVER',label:'DEPLOYMENT-CORES ÜBERNEHMEN',detail:'Pioneer-Card und die drei zugehörigen N-Cores bestätigen.'};
+      if(conf.length===2&&pioneers.some(x=>!x.handedOver))next={code:'HANDOVER',label:'DEPLOYMENT-CORES ÜBERNEHMEN',detail:'Pioneer-Card scannen und exakt die drei angezeigten Deployment-Cores übernehmen. Der persönliche Start-Core bleibt beim Pioneer.'};
       else if(pioneers.every(x=>x.handedOver)&&pioneers.some(x=>!x.installed))next={code:'INSTALL',label:'START-NODES INSTALLIEREN',detail:'Installiere die beiden zugewiesenen Nodes mit den jeweils richtigen drei Cores.'};
       else if(pioneers.every(x=>x.installed)&&acts.length<2)next={code:'WAIT_ACTIVATION',label:'PIONEER-AKTIVIERUNG',detail:'Beide Pioneers müssen ihren installierten Start-Node scannen.'};
       else if(ft.state==='RELEASED')next={code:'NORMAL',label:'TEAM FREIGEGEBEN',detail:'Initial Deployment abgeschlossen.'};
@@ -364,16 +407,18 @@ export function createInitialDeployment(core){
   }
 
   function fullTeam(eventId,t){
-    const fop=profile(eventId,t.fop_id),pa=profile(eventId,t.pioneer_a_id),pb=profile(eventId,t.pioneer_b_id);
+    const fop=profile(eventId,t.fop_id),pa=profile(eventId,t.pioneer_a_id),pb=profile(eventId,t.pioneer_b_id),issued=issues(eventId,t.team_id);
+    const pioneerView=(id,p,nodeId,startCoreId)=>({id,realName:p?.real_name||null,callsign:p?.callsign||id,nodeId,startCoreId,startCoreEnergy:startCoreId?coreRow(eventId,startCoreId)?.visible_energy??null:null,issued:issued.some(x=>x.pioneer_id===id)});
     return {...t,fop:{id:t.fop_id,realName:fop?.real_name||null,callsign:fop?.callsign||t.fop_id},pioneers:[
-      {id:t.pioneer_a_id,realName:pa?.real_name||null,callsign:pa?.callsign||t.pioneer_a_id,nodeId:t.node_a_id,startCoreId:t.start_core_a_id},
-      {id:t.pioneer_b_id,realName:pb?.real_name||null,callsign:pb?.callsign||t.pioneer_b_id,nodeId:t.node_b_id,startCoreId:t.start_core_b_id}
-    ],assignments:assignments(eventId,t.team_id).map(x=>({pioneerId:x.pioneer_id,nodeId:x.node_id,coreId:x.core_id,energy:x.energy,handedOver:!!x.handed_to_fop_at,installed:!!x.installed_at})),confirmations:confirmations(eventId,t.team_id),activations:activations(eventId,t.team_id)};
+      pioneerView(t.pioneer_a_id,pa,t.node_a_id,t.start_core_a_id),
+      pioneerView(t.pioneer_b_id,pb,t.node_b_id,t.start_core_b_id)
+    ],assignments:assignments(eventId,t.team_id).map(x=>({pioneerId:x.pioneer_id,nodeId:x.node_id,coreId:x.core_id,energy:x.energy,handedOver:!!x.handed_to_fop_at,installed:!!x.installed_at})),issues:issued,confirmations:confirmations(eventId,t.team_id),activations:activations(eventId,t.team_id)};
   }
   function status(eventId){
     reconcile(eventId);
     const ts=teams(eventId).map(t=>fullTeam(eventId,t)),state=eventState(eventId);
-    return {configured:ts.length>0,eventState:state,teams:ts,canEdit:state==='READY',canPrepare:state==='READY'&&ts.length>0&&ts.every(t=>t.state==='CONFIGURED'),canStart:state==='INITIALIZED'&&ts.length>0&&ts.every(t=>t.state==='PREPARED'),released:ts.length>0&&ts.every(t=>t.state==='RELEASED')};
+    const allIssued=ts.length>0&&ts.every(t=>t.pioneers.every(p=>p.issued));
+    return {configured:ts.length>0,eventState:state,teams:ts,canEdit:state==='READY',canPrepare:state==='READY'&&ts.length>0&&ts.every(t=>t.state==='CONFIGURED'),canStart:state==='INITIALIZED'&&ts.every(t=>t.state==='PREPARED')&&allIssued,released:ts.length>0&&ts.every(t=>t.state==='RELEASED')};
   }
   function assertFlexibleAllowed(eventId){if(teams(eventId).length)fail('INITIAL_STRUCTURED_MODE_ACTIVE')}
 
@@ -423,5 +468,5 @@ export function createInitialDeployment(core){
     return `<!doctype html><html lang="de"><meta charset="utf-8"><title>NODIV Auswertung ${esc(eventId)}</title><style>body{font-family:system-ui;background:#071018;color:#e8f7ff;max-width:980px;margin:auto;padding:32px}section{border:1px solid #1d6f8c;padding:18px;margin:14px 0;background:#0b1822}h1,h2{color:#7eeaff}.fact{font-size:1.2rem}</style><h1>NODIV // MISSION WÜRZBURG</h1><p>Testauswertung <strong>${esc(eventId)}</strong> · Zustand ${esc(r.event.state)}</p><section><h2>Einsatz in Zahlen</h2><p class="fact">${r.teams.length} Team(s) · ${coreTotal} registrierte N-Cores · ${energy} E im aktuellen Bestand${dt!==null?' · '+Math.floor(dt/60)+' min protokollierter Ablauf':''}</p><p>Initial Deployment: ${r.teams.every(t=>t.state==='RELEASED')?'vollständig freigegeben':'nicht vollständig freigegeben'}.</p></section>${teamHtml}<section><h2>Automatisch protokollierte Fakten</h2><p>${r.automaticFacts.initialDeployment.length} Initial-Deployment-Ereignisse · ${r.automaticFacts.operations.length} Gameplay-Operationen · ${r.automaticFacts.rejectedActions.length} abgelehnte API-Aktionen.</p><ul>${rejects}</ul></section><section><h2>Spielerfeedback // subjektiv</h2><ul>${feedback}</ul></section></html>`;
   }
 
-  return {status,configureTeam,prepare,start,confirmPioneer,handover,authorizeInstall,markInstalled,activateNode,assertPioneerReleased,assertFopNodeScan,assertFopLoadoutAllowed,assertFopNormalAllowed,actorState,assertFlexibleAllowed,recordHttp,saveFeedback,report,reportCsv,reportHtml};
+  return {status,configureTeam,prepare,issuePioneerKit,start,confirmPioneer,handover,authorizeInstall,markInstalled,activateNode,assertPioneerReleased,assertFopNodeScan,assertFopLoadoutAllowed,assertFopNormalAllowed,actorState,assertFlexibleAllowed,recordHttp,saveFeedback,report,reportCsv,reportHtml};
 }
