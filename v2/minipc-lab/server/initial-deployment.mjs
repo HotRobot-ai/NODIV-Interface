@@ -109,6 +109,19 @@ export function createInitialDeployment(core){
   `).all(eventId,teamId);
   const confirmations=(eventId,teamId)=>db.prepare('SELECT pioneer_id,confirmed_at FROM lab_initial_pioneer_confirm WHERE event_id=? AND team_id=? ORDER BY pioneer_id').all(eventId,teamId);
   const activations=(eventId,teamId)=>db.prepare('SELECT pioneer_id,node_id,activated_at FROM lab_initial_node_activation WHERE event_id=? AND team_id=? ORDER BY node_id').all(eventId,teamId);
+  function reconcile(eventId){
+    for(const t of teams(eventId)){
+      for(const nodeId of [t.node_a_id,t.node_b_id]){
+        const rows=db.prepare('SELECT core_id,installed_at FROM lab_initial_core_assignments WHERE event_id=? AND team_id=? AND node_id=? ORDER BY seq').all(eventId,t.team_id,nodeId);
+        if(rows.length!==3||rows.every(x=>x.installed_at)||nodeRow(eventId,nodeId)?.state!=='INSTALLED')continue;
+        const actual=db.prepare("SELECT core_id FROM cores WHERE event_id=? AND owner_type='NODE' AND owner_id=? AND status='DEPLOYED' ORDER BY core_id").all(eventId,nodeId).map(x=>x.core_id);
+        if(sameSet(actual,rows.map(x=>x.core_id))){
+          db.prepare('UPDATE lab_initial_core_assignments SET installed_at=COALESCE(installed_at,?) WHERE event_id=? AND team_id=? AND node_id=?').run(core.clock(),eventId,t.team_id,nodeId);
+          log(eventId,null,'INITIAL_INSTALL_RECONCILED','OK',null,{teamId:t.team_id,nodeId});
+        }
+      }
+    }
+  }
 
   function validateTeamResources(eventId,{teamId,fopId,pioneerA,pioneerB,nodeA,nodeB,coreIdsA,coreIdsB}){
     if(!TEAM_ID.test(String(teamId||'').trim().toUpperCase()))fail('INITIAL_TEAM_ID_INVALID');
@@ -299,6 +312,7 @@ export function createInitialDeployment(core){
   }
 
   function actorState(eventId,actorId){
+    reconcile(eventId);
     const p=profile(eventId,actorId);
     const pt=teamForPioneer(eventId,actorId);
     if(pt){
@@ -342,6 +356,7 @@ export function createInitialDeployment(core){
     ],assignments:assignments(eventId,t.team_id).map(x=>({pioneerId:x.pioneer_id,nodeId:x.node_id,coreId:x.core_id,energy:x.energy,handedOver:!!x.handed_to_fop_at,installed:!!x.installed_at})),confirmations:confirmations(eventId,t.team_id),activations:activations(eventId,t.team_id)};
   }
   function status(eventId){
+    reconcile(eventId);
     const ts=teams(eventId).map(t=>fullTeam(eventId,t)),state=eventState(eventId);
     return {configured:ts.length>0,eventState:state,teams:ts,canEdit:state==='READY',canPrepare:state==='READY'&&ts.length>0&&ts.every(t=>t.state==='CONFIGURED'),canStart:state==='INITIALIZED'&&ts.length>0&&ts.every(t=>t.state==='PREPARED'),released:ts.length>0&&ts.every(t=>t.state==='RELEASED')};
   }
