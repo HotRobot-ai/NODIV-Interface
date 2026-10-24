@@ -61,6 +61,8 @@ export function seedTestDatabase(dbPath,eventId='TEST-V2',mode=process.env.NODIV
     }
   }
   if(mode==='registration'||mode==='desktop'){
+    // Never treat an ended desktop event as a fresh start. A new event requires
+    // an explicit, separately backed-up rollover; preserving historical results.
     const state=core.db.prepare('SELECT state FROM events WHERE event_id=?').get(eventId)?.state;
     const allowed=mode==='desktop'?['READY','INITIALIZED','FIELD_ACTIVE','TEST_ENDED']:['READY','INITIALIZED','FIELD_ACTIVE','COMPLETED'];
     if(!allowed.includes(state))throw Error('REGISTRATION_DATABASE_STATE_INVALID');
