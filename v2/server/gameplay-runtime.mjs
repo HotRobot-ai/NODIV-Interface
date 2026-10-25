@@ -21,8 +21,10 @@ export function createV2GameplayRuntime(path=':memory:', {
   clock=()=>Math.floor(Date.now()/1000),
   verifyRecoveryNfcProof,
   verifyUploadNfcProof,
+  enforceNodeLocks=true,
 }={}) {
   const core=new SqliteGameCore(path,clock);
+  core.enforceNodeLocks=enforceNodeLocks;
   // Durable startup recovery: expired mission cargo returns to HQ before gameplay resumes.
   for(const e of core.db.prepare("SELECT event_id FROM events WHERE state='FIELD_ACTIVE'").all()) core.recoverExpiredMissions(e.event_id);
   const catchTransaction=new CatchTransaction(core);
@@ -133,6 +135,52 @@ export function createV2GameplayRuntime(path=':memory:', {
     ]});
   }
 
+  // Local handover at HQ: server-side ownership and energy checks are atomic.
+  function localHqUpload({eventId,operationId,localId,coreId}){
+    requiredStrings([eventId,operationId,localId,coreId],'LOCAL_UPLOAD_CONTEXT_REQUIRED');
+    const replay=replayCustodyOperation({eventId,operationId,actorId:localId,kind:'LOCAL_HQ_UPLOAD',expectedDestination:{type:'HQ',id:'HQ'}});
+    if(replay){
+      if(replay.moved.length!==1||replay.moved[0]!==coreId) throw new GameError('IDEMPOTENCY_CONFLICT');
+      return replay;
+    }
+    const c=core.core(eventId,coreId);
+    if(!c||c.owner_type!=='PIONEER'||c.owner_id!==localId||c.status!=='FIELD') throw new GameError('LOCAL_UPLOAD_CORE_INVALID');
+    return core.run({eventId,operationId,actorId:localId,kind:'LOCAL_HQ_UPLOAD',
+      moves:[move(coreId,'PIONEER',localId,'HQ','HQ','SECURED')],energyCredit:c.actual_energy});
+  }
+
+  function replayCustodyOperation({eventId,operationId,actorId,kind,expectedDestination}){
+    const prior=core.db.prepare("SELECT kind,actor_id,response_json FROM operations WHERE event_id=? AND operation_id=?").get(eventId,operationId);
+    if(!prior) return null;
+    if(prior.kind!==kind||prior.actor_id!==actorId) throw new GameError('IDEMPOTENCY_CONFLICT');
+    const audit=core.db.prepare("SELECT to_type,to_id FROM audit WHERE event_id=? AND operation_id=? AND core_id IS NOT NULL").all(eventId,operationId);
+    if(!audit.length||audit.some(a=>a.to_type!==expectedDestination.type||a.to_id!==expectedDestination.id)) throw new GameError('IDEMPOTENCY_CONFLICT');
+    return {...JSON.parse(prior.response_json),replayed:true};
+  }
+
+  function unboundHandover({eventId,operationId,unboundId,fopId}){
+    requiredStrings([eventId,operationId,unboundId,fopId],'HANDOVER_CONTEXT_REQUIRED');
+    const replay=replayCustodyOperation({eventId,operationId,actorId:unboundId,kind:'UNBOUND_HANDOVER',expectedDestination:{type:'TRANSIT',id:fopId}});
+    if(replay) return replay;
+    const held=core.db.prepare("SELECT core_id,actual_energy FROM cores WHERE event_id=? AND owner_type='PIONEER' AND owner_id=? AND status='FIELD' ORDER BY core_id").all(eventId,unboundId);
+    if(!held.length||held.length>2) throw new GameError('HANDOVER_INVENTORY_INVALID');
+    return core.run({eventId,operationId,actorId:unboundId,kind:'UNBOUND_HANDOVER',
+      moves:held.map(c=>move(c.core_id,'PIONEER',unboundId,'TRANSIT',fopId,'FOP_CUSTODY')),
+      energyCredit:held.reduce((n,c)=>n+c.actual_energy,0)});
+  }
+
+  function fopHqReturn({eventId,operationId,fopId,coreIds}){
+    requiredStrings([eventId,operationId,fopId],'RETURN_CONTEXT_REQUIRED');
+    uniqueStrings(coreIds,'RETURN_CORES_REQUIRED');
+    const replay=replayCustodyOperation({eventId,operationId,actorId:fopId,kind:'FOP_HQ_RETURN',expectedDestination:{type:'HQ',id:'HQ'}});
+    if(replay){
+      if(replay.moved.length!==coreIds.length||coreIds.some(id=>!replay.moved.includes(id))) throw new GameError('IDEMPOTENCY_CONFLICT');
+      return replay;
+    }
+    return core.run({eventId,operationId,actorId:fopId,kind:'FOP_HQ_RETURN',
+      moves:coreIds.map(id=>move(id,'TRANSIT',fopId,'HQ','HQ','RESERVE'))});
+  }
+
   function fopInstall({eventId,operationId,fopId,nodeId,coreIds}){
     requiredStrings([eventId,operationId,fopId,nodeId],'FOP_CONTEXT_REQUIRED');uniqueStrings(coreIds,'FOP_CORES_REQUIRED');
     if(coreIds.length!==3)throw new GameError('FOP_THREE_CORES_REQUIRED');
@@ -151,7 +199,7 @@ export function createV2GameplayRuntime(path=':memory:', {
 
   return {
     core,
-    exchange,restore,upload,resupply,hq,roles,
+    exchange,restore,upload,resupply,localHqUpload,unboundHandover,fopHqReturn,hq,roles,
     fop:{install:fopInstall,deinstall:fopDeinstall},
     catch:catchTransaction,
     evac:{start:evacStart,teams:evacTeams,flow:evacFlow,completion:evacCompletion},

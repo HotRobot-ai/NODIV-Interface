@@ -59,7 +59,7 @@ export function createRoleViews(runtime){
     const next=base.event.evacState==='STARTED'
       ? {code:'WAIT',label:'CATCH GESPERRT',detail:'Während EVAC sind normale Catch-Aktionen eingefroren.'}
       : {code:'CATCH',label:'PIONEER ACCESS CARD SCANNEN',detail:'Der Server prüft Ziel, Schutz und Kapazität.'};
-    return {...base,inventory:{used:inv.filter(c=>c.status==='FIELD').length,capacity:base.actor.capacity},protection:protect,nextAction:next};
+    return {...base,inventory:{used:inv.filter(c=>c.status==='FIELD').length,capacity:base.actor.capacity,cores:inv},protection:protect,nextAction:next};
   }
 
   function fop(eventId,actorId,base){

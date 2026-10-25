@@ -79,10 +79,10 @@ test('resupply rejects wrong transit core, non-lowest output and expired mission
  g.clock=()=>2000;assert.throws(()=>g.run({...base,operationId:'s4',moves:[{...move('T','TRANSIT','P1','NODE','N1'),status:'DEPLOYED'},{...move('N1','NODE','N1','PIONEER','P1'),status:'FIELD'}]}),/RESUPPLY_MISSION_DENIED/);
  assert.equal(g.db.prepare("SELECT state FROM missions WHERE mission_id='M1'").get().state,'ASSIGNED');g.close();
 });
-test('resupply requires empty personal inventory and rolls back mission completion',()=>{
+test('resupply rejects full personal inventory and rolls back mission completion',()=>{
  const g=setup();g.seedCore('E1',{id:'T',uid:'UT',energy:220,ownerType:'TRANSIT',ownerId:'P1',status:'IN_TRANSIT'});
  g.clock=()=>1000;g.seedMission('E1',{id:'M1',actorId:'P1',nodeId:'N1',coreId:'T',expiresAt:2000});
- assert.throws(()=>g.run({eventId:'E1',operationId:'s5',actorId:'P1',kind:'RESUPPLY',missionId:'M1',moves:[{...move('T','TRANSIT','P1','NODE','N1'),status:'DEPLOYED'},{...move('N1','NODE','N1','PIONEER','P1'),status:'FIELD'}]}),/RESUPPLY_REQUIRES_EMPTY_INVENTORY/);
+ assert.throws(()=>g.run({eventId:'E1',operationId:'s5',actorId:'P1',kind:'RESUPPLY',missionId:'M1',moves:[{...move('T','TRANSIT','P1','NODE','N1'),status:'DEPLOYED'},{...move('N1','NODE','N1','PIONEER','P1'),status:'FIELD'}]}),/RESUPPLY_REQUIRES_FREE_SLOT/);
  assert.equal(g.core('E1','T').owner_type,'TRANSIT');assert.equal(g.db.prepare("SELECT state FROM missions WHERE mission_id='M1'").get().state,'ASSIGNED');g.close();
 });
 test('resupply cannot bypass server expiry using forged client time',()=>{

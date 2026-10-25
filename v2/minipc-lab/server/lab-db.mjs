@@ -19,6 +19,11 @@ export function installLabSchema(db) {
       event_id TEXT NOT NULL, uid TEXT NOT NULL, node_id TEXT NOT NULL,
       PRIMARY KEY(event_id, uid)
     );
+    CREATE TABLE IF NOT EXISTS lab_node_mechanical_codes (
+      event_id TEXT NOT NULL, node_id TEXT NOT NULL, slot TEXT NOT NULL,
+      code TEXT NOT NULL CHECK(length(code)=4),
+      PRIMARY KEY(event_id,node_id,slot), UNIQUE(event_id,code)
+    );
     CREATE TABLE IF NOT EXISTS lab_sessions (
       token_hash TEXT PRIMARY KEY, event_id TEXT NOT NULL, actor_id TEXT NOT NULL,
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
@@ -64,6 +69,28 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
     db,
     seedAccessCard(eventId,uid,actorId){
       db.prepare('INSERT OR REPLACE INTO lab_access_cards(event_id,uid,actor_id) VALUES (?,?,?)').run(eventId,normalizeUid(uid),actorId);
+    },
+    fopPrimaryCode(session,nodeId){
+      sessionRole(session,['FOP'],'ROLE_DENIED');
+      const node=db.prepare('SELECT node_id FROM nodes WHERE event_id=? AND node_id=?').get(session.event_id,nodeId);
+      if(!node)throw Error('NODE_UNKNOWN');
+      let row=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,nodeId);
+      if(!row){
+        db.exec('BEGIN IMMEDIATE');
+        try{
+          row=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,nodeId);
+          if(!row){
+            for(let i=0;i<10000;i++){
+              const code=String(randomInt(0,10000)).padStart(4,'0');
+              if(db.prepare('SELECT 1 FROM lab_node_mechanical_codes WHERE event_id=? AND code=?').get(session.event_id,code))continue;
+              db.prepare("INSERT INTO lab_node_mechanical_codes(event_id,node_id,slot,code) VALUES (?,?,'PRIMARY',?)").run(session.event_id,nodeId,code);row={code};break;
+            }
+            if(!row)throw Error('NODE_CODE_CAPACITY_EXHAUSTED');
+          }
+          db.exec('COMMIT');
+        }catch(e){db.exec('ROLLBACK');throw e;}
+      }
+      return row.code;
     },
     seedNodeTag(eventId,uid,nodeId){
       db.prepare('INSERT OR REPLACE INTO lab_node_tags(event_id,uid,node_id) VALUES (?,?,?)').run(eventId,normalizeUid(uid),nodeId);
@@ -138,7 +165,10 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
       if(nodeCount!==3) throw Error('NODE_REQUIRES_THREE_CORES');
       const exchangeId=randomBytes(18).toString('base64url');
       const operationId='LAB-EX-'+randomBytes(12).toString('hex');
-      const accessCode=String(randomInt(0,10000)).padStart(4,'0');
+      // The physical lock code is assigned to the Node, not to each Exchange.
+      const mechanical=db.prepare("SELECT code FROM lab_node_mechanical_codes WHERE event_id=? AND node_id=? AND slot='PRIMARY'").get(session.event_id,grant.target_id);
+      if(!mechanical)throw Error('NODE_MECHANICAL_CODE_MISSING');
+      const accessCode=mechanical.code;
       db.exec('BEGIN IMMEDIATE');
       try{
         const used=db.prepare('UPDATE lab_scan_grants SET consumed_at=? WHERE grant_id=? AND consumed_at IS NULL AND expires_at>?').run(now,grantId,now);
@@ -148,6 +178,13 @@ export function createLabStore(core, {clock=()=>Math.floor(Date.now()/1000), ses
         db.exec('COMMIT');
       }catch(e){db.exec('ROLLBACK');throw e;}
       return {exchangeId,nodeId:grant.target_id,count,accessCode,expiresAt:now+exchangeTtl};
+    },
+    exchangeStatus(session,{exchangeId}){
+      sessionRole(session,['PIONEER'],'PIONEER_REQUIRED');
+      const intent=db.prepare('SELECT * FROM lab_exchange_intents WHERE exchange_id=? AND event_id=? AND actor_id=?').get(exchangeId,session.event_id,session.actor_id);
+      if(!intent)throw Error('EXCHANGE_INTENT_DENIED');
+      const now=clock(),incoming=parseList(intent.incoming_core_ids_json),outgoing=parseList(intent.outgoing_core_ids_json);
+      return {exchangeId:intent.exchange_id,nodeId:intent.node_id,count:intent.count,state:intent.state==='PREPARED'&&intent.expires_at<=now?'EXPIRED':intent.state,expiresAt:intent.expires_at,serverNow:now,inCount:incoming.length,outCount:outgoing.length,ready:incoming.length===intent.count&&outgoing.length===intent.count};
     },
     scanExchangeCore(session,{exchangeId,uid}){
       sessionRole(session,['PIONEER'],'PIONEER_REQUIRED');
