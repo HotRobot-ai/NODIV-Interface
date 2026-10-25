@@ -46,7 +46,9 @@ test('BLOCK05 roles: Local and Unbound expose Catch guidance without NODIV inter
       assert.equal(Object.hasOwn(v,'nodes'),false);
       assert.equal(Object.hasOwn(v,'hq'),false);
       assert.equal(Object.hasOwn(v,'mission'),false);
-      assert.deepEqual(Object.keys(v.inventory).sort(),['capacity','used']);
+      assert.deepEqual(Object.keys(v.inventory).sort(),['capacity','cores','used']);
+       assert.ok(Array.isArray(v.inventory.cores));
+       assert.ok(v.inventory.cores.every(c=>Object.keys(c).sort().join(',')==='energy,id,status'));
     }
   }finally{f.runtime.close()}
 });
