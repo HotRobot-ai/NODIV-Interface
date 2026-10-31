@@ -18,12 +18,40 @@ echo.
 echo 1 = Founder Access Card einmalig einrichten
 echo 2 = NODIV V2 TESTMODUS starten
 echo 3 = Founder Access Card wiederherstellen
-set /p "choice=Auswahl (1/2/3): "
+echo 4 = Beendetes Testevent zuruecksetzen / neues Testevent vorbereiten
+set /p "choice=Auswahl (1/2/3/4): "
 if "%choice%"=="1" goto :bootstrap
 if "%choice%"=="2" goto :game
 if "%choice%"=="3" goto :recovery
+if "%choice%"=="4" goto :resettest
 echo Abgebrochen.
 exit /b 0
+
+:resettest
+rem Reset is intentionally limited to the desktop test database.
+rem Do not allow reset while game/bootstrap listeners are active.
+netstat -ano -p tcp | findstr /R /C:":8787 .*LISTENING" /C:":8790 .*LISTENING" >nul && (echo FEHLER: NODIV oder NFC-Setup laeuft noch. Erst das andere NODIV-Fenster beenden.& goto :fail)
+if not exist "data\nodiv-v2-desktop.sqlite" (
+  echo Kein Testspielstand vorhanden. Es gibt nichts zurueckzusetzen.
+  echo Beim naechsten Start wird ein frischer Testbestand angelegt.
+  goto :resetdone
+)
+echo.
+echo ACHTUNG: Der aktuelle TESTSPIELSTAND wird geloescht.
+echo V17-Code, Founder Recovery-Schluessel und Konfiguration bleiben erhalten.
+echo Danach startet NODIV mit einem frischen Testbestand.
+set /p "resetconfirm=Zum Zuruecksetzen exakt RESET eingeben: "
+if /I not "%resetconfirm%"=="RESET" (echo Reset abgebrochen.& exit /b 0)
+node "scripts/reset-test.mjs" || goto :fail
+:resetdone
+echo.
+echo Neues Testevent kann jetzt vorbereitet werden.
+echo Naechster Schritt: Auswahl 2 starten und Hardware im Founder neu registrieren.
+echo Fuer den Desktop-Test stehen NODE-001 bis NODE-015 zur Verfuegung.
+echo.
+pause
+exit /b 0
+
 :bootstrap
 if exist "data\nodiv-v2-desktop.sqlite" (echo FEHLER: Spielstand vorhanden. Founder Recovery mit Auswahl 3 verwenden.& goto :fail)
 set "port=8790"
